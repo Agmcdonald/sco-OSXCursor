@@ -258,7 +258,7 @@ extension Comic {
     
     /// Generate multiple sample comics for testing
     static var samples: [Comic] {
-        [
+        var comics = [
             sample(title: "Absolute Batman", publisher: "DC Comics", issueNumber: "001", year: 2025, status: .unread),
             sample(title: "Absolute Batman", publisher: "DC Comics", issueNumber: "002", year: 2025, status: .reading),
             sample(title: "Absolute Batman", publisher: "DC Comics", issueNumber: "003", year: 2025, status: .completed),
@@ -270,6 +270,18 @@ extension Comic {
             sample(title: "Saga", publisher: "Image Comics", issueNumber: "001", year: 2012, status: .unread),
             sample(title: "Hellboy", publisher: "Dark Horse", issueNumber: "001", year: 1994, status: .reading),
         ]
+        
+        // Mark some as favorites
+        comics[0].isFavorite = true  // Absolute Batman #001
+        comics[5].isFavorite = true  // Amazing Spider-Man #001
+        comics[8].isFavorite = true  // Saga #001
+        
+        // Set some reading progress
+        comics[1].currentPage = 15    // Absolute Batman #002 - 47%
+        comics[5].currentPage = 20    // Amazing Spider-Man - 63%
+        comics[9].currentPage = 8     // Hellboy - 25%
+        
+        return comics
     }
 }
 
