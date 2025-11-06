@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		1A3F2CAD2EBCD7F400257033 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 1A3F2CAC2EBCD7F400257033 /* GRDB */; };
+		1ABFF6492EBC640E00485435 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 1ABFF6482EBC640E00485435 /* ZIPFoundation */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		1ABFF61E2EBC3B6800485435 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +57,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1ABFF6492EBC640E00485435 /* ZIPFoundation in Frameworks */,
+				1A3F2CAD2EBCD7F400257033 /* GRDB in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +119,8 @@
 			);
 			name = "SCO-OSXCursor";
 			packageProductDependencies = (
+				1ABFF6482EBC640E00485435 /* ZIPFoundation */,
+				1A3F2CAC2EBCD7F400257033 /* GRDB */,
 			);
 			productName = "SCO-OSXCursor";
 			productReference = 1ABFF6102EBC3B6600485435 /* SCO-OSXCursor.app */;
@@ -195,6 +204,10 @@
 			);
 			mainGroup = 1ABFF6072EBC3B6600485435;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				1ABFF6472EBC640E00485435 /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
+				1A3F2CAB2EBCD7F400257033 /* XCRemoteSwiftPackageReference "GRDB" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 1ABFF6112EBC3B6600485435 /* Products */;
 			projectDirPath = "";
@@ -395,8 +408,18 @@
 				DEVELOPMENT_TEAM = F52Q28QL3B;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
+				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
@@ -439,8 +462,18 @@
 				DEVELOPMENT_TEAM = F52Q28QL3B;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
+				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
@@ -615,6 +648,38 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		1A3F2CAB2EBCD7F400257033 /* XCRemoteSwiftPackageReference "GRDB" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/groue/GRDB.swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 7.0.0;
+			};
+		};
+		1ABFF6472EBC640E00485435 /* XCRemoteSwiftPackageReference "ZIPFoundation" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/weichsel/ZIPFoundation";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.9.20;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		1A3F2CAC2EBCD7F400257033 /* GRDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1A3F2CAB2EBCD7F400257033 /* XCRemoteSwiftPackageReference "GRDB" */;
+			productName = GRDB;
+		};
+		1ABFF6482EBC640E00485435 /* ZIPFoundation */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1ABFF6472EBC640E00485435 /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
+			productName = ZIPFoundation;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 1ABFF6082EBC3B6600485435 /* Project object */;
 }
