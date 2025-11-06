@@ -12,6 +12,8 @@ struct SCO_OSXCursorApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .preferredColorScheme(.dark)  // Force dark mode
         }
+        .defaultSize(width: Layout.defaultWindowWidth, height: Layout.defaultWindowHeight)
     }
 }
