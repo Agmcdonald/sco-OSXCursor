@@ -10,6 +10,8 @@ import SwiftUI
 
 // MARK: - Comic Model
 struct Comic: Identifiable, Codable {
+    // NOTE: Comic is a struct (value type), so updates create new copies
+    // The ViewModel and Library are responsible for updating the stored copy
     // MARK: - Core Properties
     let id: UUID
     var filePath: URL
@@ -258,7 +260,7 @@ extension Comic {
     
     /// Generate multiple sample comics for testing
     static var samples: [Comic] {
-        var comics = [
+        var comics: [Comic] = [
             sample(title: "Absolute Batman", publisher: "DC Comics", issueNumber: "001", year: 2025, status: .unread),
             sample(title: "Absolute Batman", publisher: "DC Comics", issueNumber: "002", year: 2025, status: .reading),
             sample(title: "Absolute Batman", publisher: "DC Comics", issueNumber: "003", year: 2025, status: .completed),

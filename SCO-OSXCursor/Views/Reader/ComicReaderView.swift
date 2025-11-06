@@ -13,6 +13,7 @@ struct ComicReaderView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel = ReaderViewModel()
     @State private var controlsVisible = true
+    @State private var showingMenu = false
     
     var body: some View {
         ZStack {
@@ -30,6 +31,28 @@ struct ComicReaderView: View {
                 // Reader
                 readerView(comicBook)
             }
+            
+            // Always show close button on iPad (even during loading/error)
+            #if os(iOS)
+            VStack {
+                HStack {
+                    Button(action: { dismiss() }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 44, height: 44)
+                            .background(Color.black.opacity(0.7))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(Spacing.lg)
+                    
+                    Spacer()
+                }
+                Spacer()
+            }
+            .zIndex(999) // Keep on top
+            #endif
         }
         .task {
             await viewModel.loadComic(from: comic)
@@ -59,10 +82,94 @@ struct ComicReaderView: View {
                 onClose: {
                     dismiss()
                 },
-                controlsVisible: $controlsVisible
+                controlsVisible: $controlsVisible,
+                showingMenu: $showingMenu
             )
+            
+            // Navigation menu (iPad only)
+            #if os(iOS)
+            if showingMenu {
+                navigationMenuOverlay
+            }
+            #endif
         }
     }
+    
+    // MARK: - Navigation Menu Overlay (iPad)
+    #if os(iOS)
+    private var navigationMenuOverlay: some View {
+        ZStack {
+            // Dismiss area
+            Color.black.opacity(0.5)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    withAnimation {
+                        showingMenu = false
+                    }
+                }
+            
+            // Menu panel
+            VStack(alignment: .leading, spacing: 0) {
+                Spacer()
+                
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    Text("Navigate To")
+                        .font(Typography.h3)
+                        .foregroundColor(TextColors.primary)
+                        .padding(.horizontal, Spacing.xl)
+                        .padding(.top, Spacing.xl)
+                    
+                    Divider()
+                        .background(BorderColors.subtle)
+                        .padding(.vertical, Spacing.md)
+                    
+                    // Menu items
+                    MenuNavItem(icon: "xmark.circle.fill", title: "Close Reader", color: AccentColors.error) {
+                        showingMenu = false
+                        dismiss()
+                    }
+                    
+                    MenuNavItem(icon: "books.vertical", title: "Library") {
+                        showingMenu = false
+                        dismiss()
+                    }
+                    
+                    MenuNavItem(icon: "folder.badge.gearshape", title: "Organize") {
+                        showingMenu = false
+                        dismiss()
+                    }
+                    
+                    MenuNavItem(icon: "gear", title: "Settings") {
+                        showingMenu = false
+                        dismiss()
+                    }
+                    
+                    Divider()
+                        .background(BorderColors.subtle)
+                        .padding(.vertical, Spacing.md)
+                    
+                    Button(action: {
+                        withAnimation {
+                            showingMenu = false
+                        }
+                    }) {
+                        Text("Cancel")
+                            .font(Typography.button)
+                            .foregroundColor(TextColors.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, Spacing.md)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, Spacing.xl)
+                    .padding(.bottom, Spacing.xl)
+                }
+                .background(BackgroundColors.elevated)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .padding(Spacing.xl)
+            }
+        }
+    }
+    #endif
     
     // MARK: - Loading View
     private var loadingView: some View {
@@ -79,33 +186,54 @@ struct ComicReaderView: View {
     
     // MARK: - Error View
     private func errorView(_ message: String) -> some View {
-        VStack(spacing: Spacing.xxl) {
-            VStack(spacing: Spacing.lg) {
-                Image(systemName: "exclamationmark.triangle")
-                    .font(.system(size: 64))
-                    .foregroundColor(AccentColors.error)
+        ZStack {
+            VStack(spacing: Spacing.xxl) {
+                VStack(spacing: Spacing.lg) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 64))
+                        .foregroundColor(AccentColors.error)
+                    
+                    Text("Unable to Load Comic")
+                        .font(Typography.h2)
+                        .foregroundColor(.white)
+                    
+                    Text(message)
+                        .font(Typography.body)
+                        .foregroundColor(TextColors.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, Spacing.xl)
+                }
                 
-                Text("Unable to Load Comic")
-                    .font(Typography.h2)
-                    .foregroundColor(.white)
-                
-                Text(message)
-                    .font(Typography.body)
-                    .foregroundColor(TextColors.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, Spacing.xl)
+                Button(action: { dismiss() }) {
+                    Text("Close")
+                        .font(Typography.button)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, Spacing.xxl)
+                        .padding(.vertical, Spacing.md)
+                        .background(AccentColors.primary)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
             }
             
-            Button(action: { dismiss() }) {
-                Text("Close")
-                    .font(Typography.button)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, Spacing.xxl)
-                    .padding(.vertical, Spacing.md)
-                    .background(AccentColors.primary)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            // Always show close button in top-left (especially for iPad)
+            VStack {
+                HStack {
+                    Button(action: { dismiss() }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 44, height: 44)
+                            .background(Color.black.opacity(0.5))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(Spacing.lg)
+                    
+                    Spacer()
+                }
+                Spacer()
             }
-            .buttonStyle(.plain)
         }
     }
 }

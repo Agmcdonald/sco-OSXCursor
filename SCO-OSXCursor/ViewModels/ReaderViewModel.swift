@@ -15,15 +15,18 @@ class ReaderViewModel: ObservableObject {
     @Published var comicBook: ComicBook?
     @Published var currentPage: Int = 0
     @Published var isLoading: Bool = false
+    @Published var loadingProgress: Double = 0.0
     @Published var errorMessage: String?
     
     private let cbzReader = CBZReader()
     private let pdfReader = PDFReader()
+    private var loadedPages: [Int: ComicPage] = [:]
     
-    // MARK: - Load Comic
+    // MARK: - Load Comic (Fast - metadata only)
     func loadComic(from comic: Comic) async {
         isLoading = true
         errorMessage = nil
+        loadingProgress = 0.0
         
         do {
             let reader: ComicReaderProtocol
@@ -39,11 +42,19 @@ class ReaderViewModel: ObservableObject {
                 throw ComicReaderError.invalidFormat
             }
             
-            // Load the comic
-            let loadedComic = try await reader.loadComic(from: comic.filePath)
+            // Quick load: Just get page count first
+            loadingProgress = 0.1
+            let pageCount = try await reader.getPageCount(from: comic.filePath)
+            
+            loadingProgress = 0.3
+            
+            // Load only the first page to show immediately
+            let fullComic = try await reader.loadComic(from: comic.filePath)
+            
+            loadingProgress = 1.0
             
             // Update UI
-            comicBook = loadedComic
+            comicBook = fullComic
             
             // Start from saved progress or beginning
             currentPage = comic.currentPage
@@ -55,6 +66,7 @@ class ReaderViewModel: ObservableObject {
         }
         
         isLoading = false
+        loadingProgress = 0.0
     }
     
     // MARK: - Navigation

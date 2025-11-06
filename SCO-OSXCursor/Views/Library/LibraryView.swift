@@ -6,10 +6,10 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct LibraryView: View {
-    // Sample comics for demonstration
-    let comics = Comic.samples
+    @StateObject private var viewModel = LibraryViewModel()
     
     @State private var searchText = ""
     @State private var viewMode: ViewMode = .grid
@@ -22,6 +22,9 @@ struct LibraryView: View {
     @State private var selectedComics: Set<Comic.ID> = []
     @State private var showingReader = false
     @State private var comicToRead: Comic?
+    @State private var showingFilePicker = false
+    @State private var importedFileURLs: [URL] = []
+    @State private var isDropTargeted = false
     
     enum ViewMode {
         case grid, list
@@ -48,7 +51,7 @@ struct LibraryView: View {
     }
     
     var filteredAndSortedComics: [Comic] {
-        var result = comics
+        var result = viewModel.comics
         
         // Apply search filter
         if !searchText.isEmpty {
@@ -89,7 +92,7 @@ struct LibraryView: View {
     }
     
     var publishers: [String] {
-        Array(Set(comics.compactMap { $0.publisher })).sorted()
+        Array(Set(viewModel.comics.compactMap { $0.publisher })).sorted()
     }
     
     var body: some View {
@@ -109,10 +112,61 @@ struct LibraryView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(BackgroundColors.primary)
+        .overlay(
+            // Import progress overlay
+            Group {
+                if viewModel.isImporting {
+                    importProgressOverlay
+                }
+            }
+        )
+        #if os(macOS)
         .sheet(isPresented: $showingReader) {
             if let comic = comicToRead {
                 ComicReaderView(comic: comic)
+                    .frame(minWidth: 1200, minHeight: 800)
             }
+        }
+        #else
+        .fullScreenCover(isPresented: $showingReader) {
+            if let comic = comicToRead {
+                ComicReaderView(comic: comic)
+            }
+        }
+        #endif
+        .fileImporter(
+            isPresented: $showingFilePicker,
+            allowedContentTypes: [.zip, .pdf],
+            allowsMultipleSelection: true
+        ) { result in
+            handleFileImport(result)
+        }
+    }
+    
+    // MARK: - Import Progress Overlay
+    private var importProgressOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.5)
+                .ignoresSafeArea()
+            
+            VStack(spacing: Spacing.lg) {
+                ProgressView(value: viewModel.importProgress) {
+                    Text("Importing Comics...")
+                        .font(Typography.h3)
+                        .foregroundColor(TextColors.primary)
+                }
+                .progressViewStyle(.linear)
+                .tint(AccentColors.primary)
+                .frame(width: 300)
+                
+                Text("\(Int(viewModel.importProgress * 100))%")
+                    .font(Typography.body)
+                    .foregroundColor(TextColors.secondary)
+            }
+            .padding(Spacing.xxl)
+            .background(BackgroundColors.elevated)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .shadow(color: .black.opacity(0.3), radius: 20)
         }
     }
     
@@ -149,8 +203,7 @@ struct LibraryView: View {
                 } else {
                     // Add Comics button
                     Button(action: {
-                        // Placeholder - will be implemented in file import task
-                        print("Add Comics tapped")
+                        showingFilePicker = true
                     }) {
                         HStack(spacing: Spacing.sm) {
                             Image(systemName: "plus")
@@ -402,6 +455,20 @@ struct LibraryView: View {
                 .padding(Spacing.xl)
             }
         }
+        .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
+            handleDrop(providers: providers)
+        }
+        .overlay(
+            // Drop zone indicator
+            Group {
+                if isDropTargeted {
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(AccentColors.primary, style: StrokeStyle(lineWidth: 3, dash: [10, 5]))
+                        .background(AccentColors.primary.opacity(0.1))
+                        .padding(Spacing.xl)
+                }
+            }
+        )
     }
     
     // MARK: - List View
@@ -433,38 +500,80 @@ struct LibraryView: View {
                 .padding(Spacing.xl)
             }
         }
+        .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
+            handleDrop(providers: providers)
+        }
+        .overlay(
+            // Drop zone indicator
+            Group {
+                if isDropTargeted {
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(AccentColors.primary, style: StrokeStyle(lineWidth: 3, dash: [10, 5]))
+                        .background(AccentColors.primary.opacity(0.1))
+                        .padding(Spacing.xl)
+                }
+            }
+        )
     }
     
     // MARK: - Empty State View
     private var emptyStateView: some View {
         VStack(spacing: Spacing.lg) {
-            Image(systemName: "books.vertical")
+            Image(systemName: viewModel.comics.isEmpty ? "tray" : "books.vertical")
                 .font(.system(size: 64))
                 .foregroundColor(TextColors.tertiary)
             
-            Text("No Comics Found")
+            Text(viewModel.comics.isEmpty ? "No Comics Yet" : "No Comics Found")
                 .font(Typography.h2)
                 .foregroundColor(TextColors.primary)
             
-            Text("Try adjusting your filters or search terms")
-                .font(Typography.body)
-                .foregroundColor(TextColors.secondary)
-            
-            if filterStatus != nil || filterPublisher != nil || !searchText.isEmpty {
-                Button(action: {
-                    filterStatus = nil
-                    filterPublisher = nil
-                    searchText = ""
-                }) {
-                    Text("Clear All Filters")
-                        .font(Typography.button)
-                        .foregroundColor(AccentColors.primary)
-                        .padding(.horizontal, Spacing.lg)
-                        .padding(.vertical, Spacing.sm)
-                        .background(AccentColors.primary.opacity(0.12))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+            if viewModel.comics.isEmpty {
+                // First time user
+                Text("Add comics to get started")
+                    .font(Typography.body)
+                    .foregroundColor(TextColors.secondary)
+                
+                Text("Drag and drop CBZ or PDF files here, or click Add Comics")
+                    .font(Typography.bodySmall)
+                    .foregroundColor(TextColors.tertiary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
+                
+                Button(action: { showingFilePicker = true }) {
+                    HStack(spacing: Spacing.sm) {
+                        Image(systemName: "plus")
+                        Text("Add Comics")
+                            .font(Typography.button)
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, Spacing.xxl)
+                    .padding(.vertical, Spacing.md)
+                    .background(AccentColors.primary)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
                 .buttonStyle(.plain)
+            } else {
+                // Filtered results are empty
+                Text("Try adjusting your filters or search terms")
+                    .font(Typography.body)
+                    .foregroundColor(TextColors.secondary)
+                
+                if filterStatus != nil || filterPublisher != nil || !searchText.isEmpty {
+                    Button(action: {
+                        filterStatus = nil
+                        filterPublisher = nil
+                        searchText = ""
+                    }) {
+                        Text("Clear All Filters")
+                            .font(Typography.button)
+                            .foregroundColor(AccentColors.primary)
+                            .padding(.horizontal, Spacing.lg)
+                            .padding(.vertical, Spacing.sm)
+                            .background(AccentColors.primary.opacity(0.12))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -484,6 +593,88 @@ struct LibraryView: View {
         comicToRead = comic
         showingReader = true
     }
+    
+    private func handleFileImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            importedFileURLs = urls
+            // Process files asynchronously
+            Task {
+                await viewModel.importComics(from: urls)
+            }
+        case .failure(let error):
+            print("File import failed: \(error.localizedDescription)")
+        }
+    }
+    
+    private func handleDrop(providers: [NSItemProvider]) -> Bool {
+        #if os(macOS)
+        // macOS drag & drop handling
+        let group = DispatchGroup()
+        var urls: [URL] = []
+        
+        for provider in providers {
+            group.enter()
+            provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) { (urlData, error) in
+                defer { group.leave() }
+                
+                if let error = error {
+                    print("Error loading item: \(error)")
+                    return
+                }
+                
+                if let urlData = urlData as? Data,
+                   let urlString = String(data: urlData, encoding: .utf8),
+                   let url = URL(string: urlString) {
+                    
+                    let fileExtension = url.pathExtension.lowercased()
+                    if fileExtension == "cbz" || fileExtension == "pdf" || fileExtension == "zip" {
+                        // Get bookmark data for persistent access
+                        urls.append(url)
+                    }
+                }
+            }
+        }
+        
+        // Wait for all loads to complete, then import
+        group.notify(queue: .main) {
+            if !urls.isEmpty {
+                print("Importing \(urls.count) dropped files")
+                Task {
+                    await viewModel.importComics(from: urls)
+                }
+            }
+        }
+        
+        return true
+        #else
+        // iOS drag & drop - simpler
+        Task {
+            var urls: [URL] = []
+            
+            for provider in providers {
+                if provider.hasItemConformingToTypeIdentifier("public.file-url") {
+                    do {
+                        if let url = try await provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) as? URL {
+                            let fileExtension = url.pathExtension.lowercased()
+                            if fileExtension == "cbz" || fileExtension == "pdf" || fileExtension == "zip" {
+                                urls.append(url)
+                            }
+                        }
+                    } catch {
+                        print("Failed to load dropped item: \(error)")
+                    }
+                }
+            }
+            
+            if !urls.isEmpty {
+                await viewModel.importComics(from: urls)
+            }
+        }
+        
+        return true
+        #endif
+    }
 }
 
 // MARK: - Comic Row View
@@ -493,23 +684,34 @@ struct ComicRowView: View {
     
     var body: some View {
         HStack(spacing: Spacing.lg) {
-            // Placeholder cover
+            // Cover image
             ZStack {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(
-                        LinearGradient(
-                            colors: [BackgroundColors.secondary, BackgroundColors.primary],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                
-                Image(systemName: comic.fileType.icon)
-                    .font(.system(size: 24))
-                    .foregroundColor(TextColors.tertiary)
+                if let coverData = comic.coverImageData {
+                    #if os(macOS)
+                    if let nsImage = NSImage(data: coverData) {
+                        Image(nsImage: nsImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 60, height: 90)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    } else {
+                        placeholderThumbnail
+                    }
+                    #else
+                    if let uiImage = UIImage(data: coverData) {
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 60, height: 90)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    } else {
+                        placeholderThumbnail
+                    }
+                    #endif
+                } else {
+                    placeholderThumbnail
+                }
             }
-            .frame(width: 60, height: 90)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
             
             // Comic info
             VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -572,6 +774,26 @@ struct ComicRowView: View {
         .onHover { hovering in
             isHovered = hovering
         }
+    }
+    
+    // MARK: - Placeholder Thumbnail
+    private var placeholderThumbnail: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(
+                    LinearGradient(
+                        colors: [BackgroundColors.secondary, BackgroundColors.primary],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+            
+            Image(systemName: comic.fileType.icon)
+                .font(.system(size: 24))
+                .foregroundColor(TextColors.tertiary)
+        }
+        .frame(width: 60, height: 90)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }
 

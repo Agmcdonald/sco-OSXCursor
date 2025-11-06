@@ -99,28 +99,27 @@ struct ComicCardView: View {
     // MARK: - Cover View
     private var coverView: some View {
         ZStack {
-            // Placeholder background with gradient
-            RoundedRectangle(cornerRadius: 8)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            BackgroundColors.secondary,
-                            BackgroundColors.primary
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-            
-            // Placeholder icon
-            VStack(spacing: Spacing.sm) {
-                Image(systemName: "book.closed")
-                    .font(.system(size: 40))
-                    .foregroundColor(TextColors.tertiary)
-                
-                Text(comic.fileType.rawValue.uppercased())
-                    .font(Typography.tiny)
-                    .foregroundColor(TextColors.tertiary)
+            // Cover image or placeholder
+            if let coverData = comic.coverImageData {
+                #if os(macOS)
+                if let nsImage = NSImage(data: coverData) {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    placeholderCover
+                }
+                #else
+                if let uiImage = UIImage(data: coverData) {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    placeholderCover
+                }
+                #endif
+            } else {
+                placeholderCover
             }
             
             // Status badge overlay
@@ -159,6 +158,32 @@ struct ComicCardView: View {
         }
         .aspectRatio(2/3, contentMode: .fit) // Standard comic book aspect ratio
         .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+    
+    // MARK: - Placeholder Cover
+    private var placeholderCover: some View {
+        ZStack {
+            // Gradient background
+            RoundedRectangle(cornerRadius: 8)
+                .fill(
+                    LinearGradient(
+                        colors: [BackgroundColors.secondary, BackgroundColors.primary],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+            
+            // Icon
+            VStack(spacing: Spacing.sm) {
+                Image(systemName: "book.closed")
+                    .font(.system(size: 40))
+                    .foregroundColor(TextColors.tertiary)
+                
+                Text(comic.fileType.rawValue.uppercased())
+                    .font(Typography.tiny)
+                    .foregroundColor(TextColors.tertiary)
+            }
+        }
     }
 }
 

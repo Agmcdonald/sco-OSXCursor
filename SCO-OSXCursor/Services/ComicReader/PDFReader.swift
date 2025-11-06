@@ -14,12 +14,12 @@ class PDFReader: ComicReaderProtocol {
     // MARK: - Load Comic
     func loadComic(from url: URL) async throws -> ComicBook {
         // Start accessing security-scoped resource
+        // NOTE: Don't use defer - we need persistent access for the reader
         let accessing = url.startAccessingSecurityScopedResource()
-        defer {
-            if accessing {
-                url.stopAccessingSecurityScopedResource()
-            }
-        }
+        
+        // We intentionally DON'T call stopAccessingSecurityScopedResource here
+        // The Comic model will maintain the URL, and the reader needs access to it
+        // The system will clean up when the app terminates or the URL is released
         
         // Verify file exists
         guard FileManager.default.fileExists(atPath: url.path) else {

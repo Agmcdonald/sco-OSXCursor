@@ -13,6 +13,7 @@ struct ReaderControlsOverlay: View {
     let totalPages: Int
     let onClose: () -> Void
     @Binding var controlsVisible: Bool
+    @Binding var showingMenu: Bool
     
     var body: some View {
         ZStack {
@@ -70,9 +71,14 @@ struct ReaderControlsOverlay: View {
             
             Spacer()
             
-            // Menu button (placeholder)
+            // Menu button
             Button(action: {
-                // Future: Show reader menu
+                #if os(iOS)
+                withAnimation {
+                    showingMenu.toggle()
+                    controlsVisible = false
+                }
+                #endif
             }) {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 20, weight: .semibold))
@@ -161,11 +167,45 @@ struct ReaderControlsOverlay: View {
     }
 }
 
+// MARK: - Menu Navigation Item
+struct MenuNavItem: View {
+    let icon: String
+    let title: String
+    var color: Color = TextColors.primary
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: Spacing.md) {
+                Image(systemName: icon)
+                    .font(.system(size: 20))
+                    .foregroundColor(color)
+                    .frame(width: 24)
+                
+                Text(title)
+                    .font(Typography.body)
+                    .foregroundColor(color)
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12))
+                    .foregroundColor(TextColors.tertiary)
+            }
+            .padding(.horizontal, Spacing.xl)
+            .padding(.vertical, Spacing.md)
+            .background(Color.clear)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 // MARK: - Preview
 #Preview {
     struct PreviewWrapper: View {
         @State private var currentPage = 5
         @State private var controlsVisible = true
+        @State private var showingMenu = false
         
         var body: some View {
             ZStack {
@@ -175,7 +215,8 @@ struct ReaderControlsOverlay: View {
                     currentPage: $currentPage,
                     totalPages: 32,
                     onClose: { print("Close tapped") },
-                    controlsVisible: $controlsVisible
+                    controlsVisible: $controlsVisible,
+                    showingMenu: $showingMenu
                 )
             }
         }
