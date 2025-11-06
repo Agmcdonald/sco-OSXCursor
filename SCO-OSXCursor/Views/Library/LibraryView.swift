@@ -20,6 +20,8 @@ struct LibraryView: View {
     @State private var showingFilters = false
     @State private var isSelectionMode = false
     @State private var selectedComics: Set<Comic.ID> = []
+    @State private var showingReader = false
+    @State private var comicToRead: Comic?
     
     enum ViewMode {
         case grid, list
@@ -107,6 +109,11 @@ struct LibraryView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(BackgroundColors.primary)
+        .sheet(isPresented: $showingReader) {
+            if let comic = comicToRead {
+                ComicReaderView(comic: comic)
+            }
+        }
     }
     
     // MARK: - Header View
@@ -380,7 +387,7 @@ struct LibraryView: View {
                                     if isSelectionMode {
                                         toggleSelection(for: comic.id)
                                     } else {
-                                        selectedComic = comic
+                                        openReader(for: comic)
                                     }
                                 }
                             
@@ -417,7 +424,7 @@ struct LibraryView: View {
                                     if isSelectionMode {
                                         toggleSelection(for: comic.id)
                                     } else {
-                                        selectedComic = comic
+                                        openReader(for: comic)
                                     }
                                 }
                         }
@@ -471,6 +478,11 @@ struct LibraryView: View {
         } else {
             selectedComics.insert(id)
         }
+    }
+    
+    private func openReader(for comic: Comic) {
+        comicToRead = comic
+        showingReader = true
     }
 }
 
