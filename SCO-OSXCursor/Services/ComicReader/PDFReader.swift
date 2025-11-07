@@ -13,32 +13,64 @@ class PDFReader: ComicReaderProtocol {
     
     // MARK: - Load Comic
     func loadComic(from url: URL) async throws -> ComicBook {
-        // Start accessing security-scoped resource
-        // NOTE: Don't use defer - we need persistent access for the reader
-        let accessing = url.startAccessingSecurityScopedResource()
+        let startTime = Date().timeIntervalSince1970
+        print("    [PDFReader] loadComic() ENTRY at \(startTime)")
+        print("    [PDFReader] URL: \(url.path)")
         
-        // We intentionally DON'T call stopAccessingSecurityScopedResource here
-        // The Comic model will maintain the URL, and the reader needs access to it
-        // The system will clean up when the app terminates or the URL is released
+        // Check if bundled resource
+        let isBundled = url.path.contains(Bundle.main.bundlePath)
+        print("    [PDFReader] Is bundled: \(isBundled)")
+        
+        // Only start security access for user files
+        var accessing = false
+        if !isBundled {
+            print("    [PDFReader] Attempting to start security-scoped access...")
+            accessing = url.startAccessingSecurityScopedResource()
+            print("    [PDFReader] Security access started: \(accessing)")
+        } else {
+            print("    [PDFReader] Skipping security access for bundled resource")
+        }
+        
+        // Note: We keep access open during reading. The ReaderViewModel will release it.
         
         // Verify file exists
-        guard FileManager.default.fileExists(atPath: url.path) else {
+        print("    [PDFReader] Checking if file exists...")
+        let fileExists = FileManager.default.fileExists(atPath: url.path)
+        print("    [PDFReader] File exists: \(fileExists)")
+        
+        guard fileExists else {
+            print("    [PDFReader] ❌ ERROR: File not found")
             throw ComicReaderError.fileNotFound
         }
         
+        // Get file attributes
+        do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+            let fileSize = attributes[.size] as? Int64 ?? 0
+            print("    [PDFReader] File size: \(fileSize) bytes")
+        } catch {
+            print("    [PDFReader] ⚠️ Could not get file attributes: \(error)")
+        }
+        
         // Load PDF document
+        print("    [PDFReader] Attempting to load PDFDocument...")
         guard let pdfDocument = PDFDocument(url: url) else {
+            print("    [PDFReader] ❌ ERROR: Failed to load PDF document")
             throw ComicReaderError.invalidFormat
         }
+        print("    [PDFReader] ✅ PDFDocument loaded successfully")
         
         // Get page count
         let pageCount = pdfDocument.pageCount
+        print("    [PDFReader] Page count: \(pageCount)")
         
         guard pageCount > 0 else {
+            print("    [PDFReader] ❌ ERROR: No pages in PDF")
             throw ComicReaderError.noImages
         }
         
         // Extract all pages as images
+        print("    [PDFReader] Rendering \(pageCount) pages to images...")
         var pages: [ComicPage] = []
         
         for pageIndex in 0..<pageCount {
@@ -55,14 +87,26 @@ class PDFReader: ComicReaderProtocol {
                 fileName: "Page \(pageIndex + 1)"
             )
             pages.append(page)
+            
+            if pageIndex == 0 {
+                print("    [PDFReader] ✅ Rendered first page (\(imageData.count) bytes)")
+            }
         }
         
+        print("    [PDFReader] Successfully rendered \(pages.count) pages")
+        
         guard !pages.isEmpty else {
+            print("    [PDFReader] ❌ ERROR: No pages rendered")
             throw ComicReaderError.extractionFailed
         }
         
         // Extract metadata
+        print("    [PDFReader] Extracting metadata...")
         let metadata = extractMetadata(from: pdfDocument)
+        print("    [PDFReader] Metadata: \(metadata != nil ? "found" : "not found")")
+        
+        let endTime = Date().timeIntervalSince1970
+        print("    [PDFReader] ✅ loadComic() SUCCESS - Time: \(String(format: "%.3f", endTime - startTime))s")
         
         return ComicBook(sourceURL: url, pages: pages, metadata: metadata)
     }

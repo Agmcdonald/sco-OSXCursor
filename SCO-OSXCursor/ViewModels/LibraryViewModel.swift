@@ -28,16 +28,26 @@ class LibraryViewModel: ObservableObject {
         loadBundledTestComic()
     }
     
-    // MARK: - Load Bundled Test Comic
+    // MARK: - Load Bundled Test Comics
     private func loadBundledTestComic() {
-        if let bundleURL = Bundle.main.url(forResource: "Billy_Bunny_01", withExtension: "cbz") {
-            Task {
-                do {
-                    let testComic = try await importComic(from: bundleURL)
-                    // Add to beginning of list
-                    comics.insert(testComic, at: 0)
-                } catch {
-                    print("Failed to load bundled test comic: \(error)")
+        // List of bundled test comics
+        let testFiles = [
+            ("Billy_Bunny_01", "cbz"),
+            ("theprivateeye_01enr00", "cbz"),
+            ("theprivateeye_01enr00", "pdf")
+        ]
+        
+        Task {
+            for (name, ext) in testFiles {
+                if let bundleURL = Bundle.main.url(forResource: name, withExtension: ext) {
+                    do {
+                        let testComic = try await importComic(from: bundleURL)
+                        // Add to beginning of list
+                        comics.insert(testComic, at: 0)
+                        print("📦 Loaded bundled test comic: \(name).\(ext)")
+                    } catch {
+                        print("⚠️ Failed to load bundled test comic \(name).\(ext): \(error)")
+                    }
                 }
             }
         }
@@ -79,23 +89,42 @@ class LibraryViewModel: ObservableObject {
     
     // MARK: - Import Single Comic
     private func importComic(from url: URL) async throws -> Comic {
-        // Start accessing security-scoped resource
-        let accessing = url.startAccessingSecurityScopedResource()
+        // Determine if this is a bundled resource
+        let isBundled = url.path.contains(Bundle.main.bundlePath)
         
-        defer {
-            if accessing {
-                url.stopAccessingSecurityScopedResource()
-            }
+        // Only start security-scoped access for user files (not bundled resources)
+        var accessing = false
+        if !isBundled {
+            accessing = url.startAccessingSecurityScopedResource()
+        } else {
+            print("📦 Bundled resource, skipping security access: \(url.lastPathComponent)")
         }
         
-        // NOTE: We store the original URL. On macOS, when selecting files via fileImporter
-        // or drag & drop, the URLs already have persistent access granted by the system.
-        // Additional bookmarking is only needed for files accessed via NSOpenPanel.
-        let bookmarkedURL = url
+        // Create security bookmark for persistent access (skip for bundled resources)
+        var bookmarkData: Data?
+        if !isBundled {
+            #if os(macOS)
+            // On macOS, create security-scoped bookmark for persistent access
+            do {
+                bookmarkData = try url.bookmarkData(
+                    options: .withSecurityScope,
+                    includingResourceValuesForKeys: nil,
+                    relativeTo: nil
+                )
+                print("✅ Created security bookmark for: \(url.lastPathComponent)")
+            } catch {
+                print("⚠️ Failed to create bookmark for \(url.lastPathComponent): \(error)")
+                // Continue anyway - file may still be accessible
+            }
+            #endif
+        }
         
         // Determine file type
         let fileExtension = url.pathExtension.lowercased()
         guard let fileType = Comic.FileType(rawValue: fileExtension) else {
+            if accessing {
+                url.stopAccessingSecurityScopedResource()
+            }
             throw ComicReaderError.invalidFormat
         }
         
@@ -107,22 +136,28 @@ class LibraryViewModel: ObservableObject {
         case .pdf:
             reader = pdfReader
         case .cbr:
+            if accessing {
+                url.stopAccessingSecurityScopedResource()
+            }
             throw ComicReaderError.invalidFormat // Not yet supported
         }
         
-        // Extract cover
+        // Extract cover and metadata while we have access
         let coverData = try await reader.extractCover(from: url)
-        
-        // Get page count
         let pageCount = try await reader.getPageCount(from: url)
-        
-        // Get file size
         let fileSize = try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64 ?? 0
         
-        // Create comic object with bookmarked URL for persistent access
+        // ALWAYS stop accessing after import - bookmark will restore access later
+        if accessing {
+            url.stopAccessingSecurityScopedResource()
+            print("🔒 Stopped security access after import: \(url.lastPathComponent)")
+        }
+        
+        // Create comic object with bookmark for persistent access
         let comic = Comic(
-            filePath: bookmarkedURL,
+            filePath: url,
             fileName: url.lastPathComponent,
+            bookmarkData: bookmarkData,
             coverImageData: coverData,
             status: .unread,
             currentPage: 0,

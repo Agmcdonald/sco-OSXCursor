@@ -13,37 +13,72 @@ class CBZReader: ComicReaderProtocol {
     
     // MARK: - Load Comic
     func loadComic(from url: URL) async throws -> ComicBook {
-        // Start accessing security-scoped resource
-        // NOTE: Don't use defer - we need persistent access for the reader
-        let accessing = url.startAccessingSecurityScopedResource()
+        let startTime = Date().timeIntervalSince1970
+        print("    [CBZReader] loadComic() ENTRY at \(startTime)")
+        print("    [CBZReader] URL: \(url.path)")
         
-        // We intentionally DON'T call stopAccessingSecurityScopedResource here
-        // The Comic model will maintain the URL, and the reader needs access to it
-        // The system will clean up when the app terminates or the URL is released
+        // Check if bundled resource
+        let isBundled = url.path.contains(Bundle.main.bundlePath)
+        print("    [CBZReader] Is bundled: \(isBundled)")
+        
+        // Only start security access for user files
+        var accessing = false
+        if !isBundled {
+            print("    [CBZReader] Attempting to start security-scoped access...")
+            accessing = url.startAccessingSecurityScopedResource()
+            print("    [CBZReader] Security access started: \(accessing)")
+        } else {
+            print("    [CBZReader] Skipping security access for bundled resource")
+        }
+        
+        // Note: We keep access open during reading. The ReaderViewModel will release it.
         
         // Verify file exists
-        guard FileManager.default.fileExists(atPath: url.path) else {
+        print("    [CBZReader] Checking if file exists...")
+        let fileExists = FileManager.default.fileExists(atPath: url.path)
+        print("    [CBZReader] File exists: \(fileExists)")
+        
+        guard fileExists else {
+            print("    [CBZReader] ❌ ERROR: File not found")
             throw ComicReaderError.fileNotFound
         }
         
-        // Open archive
-        guard let archive = Archive(url: url, accessMode: .read) else {
-            throw ComicReaderError.invalidFormat
+        // Get file attributes
+        do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+            let fileSize = attributes[.size] as? Int64 ?? 0
+            print("    [CBZReader] File size: \(fileSize) bytes")
+        } catch {
+            print("    [CBZReader] ⚠️ Could not get file attributes: \(error)")
         }
         
+        // Open archive
+        print("    [CBZReader] Attempting to open ZIP archive...")
+        guard let archive = Archive(url: url, accessMode: .read) else {
+            print("    [CBZReader] ❌ ERROR: Failed to open archive")
+            throw ComicReaderError.invalidFormat
+        }
+        print("    [CBZReader] ✅ Archive opened successfully")
+        
         // Extract image entries
+        print("    [CBZReader] Extracting image entries...")
         let imageEntries = try getImageEntries(from: archive)
+        print("    [CBZReader] Found \(imageEntries.count) image entries")
         
         guard !imageEntries.isEmpty else {
+            print("    [CBZReader] ❌ ERROR: No images found in archive")
             throw ComicReaderError.noImages
         }
         
         // Sort entries naturally (1, 2, 3, 10, 11, not 1, 10, 11, 2, 3)
+        print("    [CBZReader] Sorting entries naturally...")
         let sortedEntries = imageEntries.sorted { entry1, entry2 in
             entry1.path.localizedStandardCompare(entry2.path) == .orderedAscending
         }
+        print("    [CBZReader] First entry: \(sortedEntries.first?.path ?? "none")")
         
         // Extract images
+        print("    [CBZReader] Extracting \(sortedEntries.count) pages...")
         var pages: [ComicPage] = []
         for (index, entry) in sortedEntries.enumerated() {
             do {
@@ -58,19 +93,31 @@ class CBZReader: ComicReaderProtocol {
                     fileName: entry.path
                 )
                 pages.append(page)
+                
+                if index == 0 {
+                    print("    [CBZReader] ✅ Extracted first page (\(imageData.count) bytes)")
+                }
             } catch {
-                print("Failed to extract page \(entry.path): \(error)")
+                print("    [CBZReader] ⚠️ Failed to extract page \(entry.path): \(error)")
                 // Continue with other pages
                 continue
             }
         }
         
+        print("    [CBZReader] Successfully extracted \(pages.count) pages")
+        
         guard !pages.isEmpty else {
+            print("    [CBZReader] ❌ ERROR: No pages extracted")
             throw ComicReaderError.extractionFailed
         }
         
         // Try to extract metadata
+        print("    [CBZReader] Extracting metadata...")
         let metadata = try? extractMetadata(from: archive)
+        print("    [CBZReader] Metadata: \(metadata != nil ? "found" : "not found")")
+        
+        let endTime = Date().timeIntervalSince1970
+        print("    [CBZReader] ✅ loadComic() SUCCESS - Time: \(String(format: "%.3f", endTime - startTime))s")
         
         return ComicBook(sourceURL: url, pages: pages, metadata: metadata)
     }

@@ -156,7 +156,7 @@ struct ComicCardView: View {
                 }
             }
         }
-        .aspectRatio(2/3, contentMode: .fit) // Standard comic book aspect ratio
+        .aspectRatio(2/3, contentMode: .fill) // Standard comic book aspect ratio - crop to fit
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
     

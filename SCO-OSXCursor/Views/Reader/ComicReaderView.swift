@@ -55,7 +55,10 @@ struct ComicReaderView: View {
             #endif
         }
         .task {
+            print("📖 [ComicReaderView] .task triggered - about to load comic")
+            print("📖 [ComicReaderView] Comic: \(comic.fileName)")
             await viewModel.loadComic(from: comic)
+            print("📖 [ComicReaderView] loadComic() returned")
         }
         .preferredColorScheme(.dark)
         #if os(macOS)

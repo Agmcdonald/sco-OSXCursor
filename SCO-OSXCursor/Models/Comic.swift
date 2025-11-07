@@ -16,6 +16,7 @@ struct Comic: Identifiable, Codable {
     let id: UUID
     var filePath: URL
     var fileName: String
+    var bookmarkData: Data? // Security-scoped bookmark for persistent file access
     
     // MARK: - Metadata
     var title: String?
@@ -58,6 +59,7 @@ struct Comic: Identifiable, Codable {
         id: UUID = UUID(),
         filePath: URL,
         fileName: String,
+        bookmarkData: Data? = nil,
         title: String? = nil,
         publisher: String? = nil,
         series: String? = nil,
@@ -84,6 +86,7 @@ struct Comic: Identifiable, Codable {
         self.id = id
         self.filePath = filePath
         self.fileName = fileName
+        self.bookmarkData = bookmarkData
         self.title = title
         self.publisher = publisher
         self.series = series

@@ -590,6 +590,10 @@ struct LibraryView: View {
     }
     
     private func openReader(for comic: Comic) {
+        print("\n🎯 [LibraryView] User tapped comic: \(comic.fileName)")
+        print("🎯 [LibraryView] File type: \(comic.fileType.rawValue)")
+        print("🎯 [LibraryView] Has bookmark: \(comic.bookmarkData != nil)")
+        print("🎯 [LibraryView] Setting comicToRead and showingReader = true")
         comicToRead = comic
         showingReader = true
     }
