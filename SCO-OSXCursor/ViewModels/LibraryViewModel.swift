@@ -43,6 +43,9 @@ class LibraryViewModel: ObservableObject {
         
         print("[LibraryViewModel] 📖 Restoring progress for \(allProgress.count) comics")
         
+        // Force UI update
+        objectWillChange.send()
+        
         // Update comics with saved progress
         for index in comics.indices {
             if let progress = allProgress[comics[index].id] {
@@ -236,6 +239,9 @@ class LibraryViewModel: ObservableObject {
     // MARK: - Update Comic
     func updateComic(_ comic: Comic) {
         if let index = comics.firstIndex(where: { $0.id == comic.id }) {
+            // Force SwiftUI to detect the change by triggering objectWillChange
+            objectWillChange.send()
+            
             comics[index] = comic
             
             // Also update reading progress if the comic has been read
@@ -246,6 +252,8 @@ class LibraryViewModel: ObservableObject {
                     totalPages: comic.totalPages
                 )
             }
+            
+            print("[LibraryViewModel] ✅ Updated comic '\(comic.fileName)': Page \(comic.currentPage + 1)/\(comic.totalPages), Status: \(comic.status.rawValue)")
         }
     }
     
@@ -253,11 +261,15 @@ class LibraryViewModel: ObservableObject {
     func syncProgressFromTracker() {
         let allProgress = progressTracker.loadAllProgress()
         
+        // Force UI update
+        objectWillChange.send()
+        
         for index in comics.indices {
             if let progress = allProgress[comics[index].id] {
                 comics[index].currentPage = progress.currentPage
                 comics[index].status = progress.status
                 comics[index].lastReadDate = progress.lastReadDate
+                print("[LibraryViewModel] ✅ Synced progress for '\(comics[index].fileName)': Page \(progress.currentPage + 1)")
             }
         }
     }

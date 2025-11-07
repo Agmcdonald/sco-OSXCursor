@@ -122,11 +122,13 @@ struct LibraryView: View {
         #if os(macOS)
         .sheet(item: $comicToRead) { comic in
             ComicReaderView(comic: comic)
+                .environmentObject(viewModel)
                 .frame(minWidth: 1200, minHeight: 800)
         }
         #else
         .fullScreenCover(item: $comicToRead) { comic in
             ComicReaderView(comic: comic)
+                .environmentObject(viewModel)
         }
         #endif
         .fileImporter(

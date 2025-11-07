@@ -11,6 +11,7 @@ import SwiftUI
 struct ComicReaderView: View {
     let comic: Comic
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var libraryViewModel: LibraryViewModel  // To update progress
     @StateObject private var viewModel = ReaderViewModel()
     @State private var controlsVisible = true
     @State private var showingMenu = false
@@ -64,7 +65,29 @@ struct ComicReaderView: View {
             print("📖 [ComicReaderView] Page changed: \(oldValue + 1) → \(newValue + 1)")
             Task {
                 await viewModel.onPageChanged(to: newValue)
+                
+                // Update the comic in library with new progress
+                var updatedComic = comic
+                updatedComic.currentPage = newValue
+                
+                // Update status based on progress
+                if let totalPages = viewModel.comicBook?.totalPages {
+                    if newValue >= totalPages - 1 {
+                        updatedComic.status = .completed
+                    } else if newValue > 0 {
+                        updatedComic.status = .reading
+                    }
+                }
+                updatedComic.lastReadDate = Date()
+                
+                await MainActor.run {
+                    libraryViewModel.updateComic(updatedComic)
+                }
             }
+        }
+        .onDisappear {
+            // Final sync when reader closes
+            libraryViewModel.syncProgressFromTracker()
         }
         .preferredColorScheme(.dark)
         #if os(macOS)

@@ -182,7 +182,8 @@ extension Comic {
     /// Reading progress as percentage (0.0 - 1.0)
     var progress: Double {
         guard totalPages > 0 else { return 0.0 }
-        return Double(currentPage) / Double(totalPages)
+        // currentPage is 0-based, so add 1 for actual page number
+        return Double(currentPage + 1) / Double(totalPages)
     }
     
     /// Reading progress as percentage string
