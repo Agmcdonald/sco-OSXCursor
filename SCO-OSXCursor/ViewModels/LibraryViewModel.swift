@@ -254,18 +254,60 @@ class LibraryViewModel: ObservableObject {
         let pageCount = try await reader.getPageCount(from: url)
         let fileSize = try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64 ?? 0
         
+        // Extract metadata from the file
+        print("[LibraryViewModel] 📖 Extracting metadata from \(url.lastPathComponent)...")
+        let comicBook = try await reader.loadComic(from: url)
+        let extractedMetadata = comicBook.metadata
+        
+        // Parse metadata from filename as fallback
+        let filenameMetadata = MetadataParser.parseFromFilename(url.lastPathComponent)
+        
+        // Merge metadata (file metadata takes priority over filename)
+        var mergedMetadata = MetadataParser.merge(
+            comicInfo: extractedMetadata,
+            pdf: nil,  // PDF metadata already in extractedMetadata
+            filename: filenameMetadata
+        )
+        
+        // Enhance publisher detection and normalization
+        if let extractedPublisher = PublisherDetector.extract(from: mergedMetadata) {
+            mergedMetadata.publisher = extractedPublisher
+            print("[LibraryViewModel] 🔍 Detected publisher: \(extractedPublisher)")
+        } else if let rawPublisher = mergedMetadata.publisher {
+            // Normalize existing publisher
+            mergedMetadata.publisher = PublisherDetector.normalize(rawPublisher)
+        }
+        
+        print("[LibraryViewModel] ✅ Metadata extracted:")
+        print("   Title: \(mergedMetadata.title ?? "none")")
+        print("   Series: \(mergedMetadata.series ?? "none")")
+        print("   Issue: \(mergedMetadata.number ?? "none")")
+        print("   Publisher: \(mergedMetadata.publisher ?? "none")")
+        print("   Year: \(mergedMetadata.year.map { String($0) } ?? "none")")
+        print("   Writer: \(mergedMetadata.writer ?? "none")")
+        
         // ALWAYS stop accessing after import - bookmark will restore access later
         if accessing {
             url.stopAccessingSecurityScopedResource()
             print("🔒 Stopped security access after import: \(url.lastPathComponent)")
         }
         
-        // Create comic object with bookmark for persistent access
+        // Create comic object with bookmark and extracted metadata
         let comic = Comic(
             id: comicID,  // Use deterministic ID for bundled comics
             filePath: url,
             fileName: url.lastPathComponent,
             bookmarkData: bookmarkData,
+            title: mergedMetadata.title,
+            publisher: mergedMetadata.publisher,
+            series: mergedMetadata.series,
+            issueNumber: mergedMetadata.number,
+            volume: mergedMetadata.volume,
+            year: mergedMetadata.year,
+            writer: mergedMetadata.writer,
+            artist: mergedMetadata.penciller,
+            coverArtist: mergedMetadata.coverArtist,
+            summary: mergedMetadata.summary,
             coverImageData: coverData,
             status: .unread,
             currentPage: 0,

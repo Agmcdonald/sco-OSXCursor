@@ -175,7 +175,7 @@ extension Comic {
             result += " #\(issueNumber)"
         }
         if let year = year {
-            result += " (\(year))"
+            result += " (\(String(year)))"
         }
         return result
     }
@@ -211,25 +211,14 @@ extension Comic {
         return formatter.string(fromByteCount: fileSize)
     }
     
-    /// Publisher badge color
+    /// Publisher badge color (using PublisherDetector)
     var publisherColor: Color {
-        guard let publisher = publisher?.lowercased() else {
-            return AccentColors.primary
-        }
-        
-        if publisher.contains("dc") {
-            return SemanticColors.dcComics
-        } else if publisher.contains("marvel") {
-            return SemanticColors.marvel
-        } else if publisher.contains("image") {
-            return SemanticColors.imageComics
-        } else if publisher.contains("dark horse") {
-            return SemanticColors.darkHorse
-        } else if publisher.contains("vertigo") {
-            return SemanticColors.vertigo
-        }
-        
-        return AccentColors.primary
+        return PublisherDetector.color(for: publisher)
+    }
+    
+    /// Normalized publisher name
+    var normalizedPublisher: String? {
+        return PublisherDetector.normalize(publisher)
     }
 }
 

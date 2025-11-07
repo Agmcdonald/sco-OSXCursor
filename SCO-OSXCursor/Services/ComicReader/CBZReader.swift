@@ -208,6 +208,7 @@ class CBZReader: ComicReaderProtocol {
     private func extractMetadata(from archive: Archive) throws -> ComicMetadata? {
         // Look for ComicInfo.xml
         guard let metadataEntry = archive["ComicInfo.xml"] else {
+            print("    [CBZReader] No ComicInfo.xml found in archive")
             return nil
         }
         
@@ -216,92 +217,16 @@ class CBZReader: ComicReaderProtocol {
             metadataData.append(data)
         }
         
-        // Parse XML
-        let decoder = XMLDecoder()
-        decoder.keyDecodingStrategy = .useDefaultKeys
+        print("    [CBZReader] Found ComicInfo.xml (\(metadataData.count) bytes)")
         
-        do {
-            let metadata = try decoder.decode(ComicInfoRoot.self, from: metadataData)
-            return metadata.comicInfo
-        } catch {
-            print("Failed to parse ComicInfo.xml: \(error)")
-            return nil
-        }
-    }
-}
-
-// MARK: - ComicInfo.xml Structure
-private struct ComicInfoRoot: Codable {
-    let comicInfo: ComicMetadata
-    
-    enum CodingKeys: String, CodingKey {
-        case comicInfo = "ComicInfo"
-    }
-}
-
-// MARK: - XML Decoder
-private class XMLDecoder {
-    var keyDecodingStrategy: KeyDecodingStrategy = .useDefaultKeys
-    
-    enum KeyDecodingStrategy {
-        case useDefaultKeys
-    }
-    
-    func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
-        // Simple XML to Plist conversion for basic ComicInfo.xml
-        // This is a simplified version - a full XML parser would be better
-        let parser = ComicInfoXMLParser()
-        guard let metadata = parser.parse(data: data) else {
-            throw ComicReaderError.metadataParsingFailed
-        }
-        
-        // Convert to JSON then decode
-        let jsonData = try JSONSerialization.data(withJSONObject: metadata, options: [])
-        let decoder = JSONDecoder()
-        return try decoder.decode(type, from: jsonData)
-    }
-}
-
-// MARK: - Simple ComicInfo XML Parser
-private class ComicInfoXMLParser: NSObject, XMLParserDelegate {
-    private var currentElement = ""
-    private var metadata: [String: Any] = [:]
-    private var currentValue = ""
-    
-    func parse(data: Data) -> [String: Any]? {
-        let parser = XMLParser(data: data)
-        parser.delegate = self
-        
-        guard parser.parse() else {
+        // Parse using MetadataParser
+        guard let metadata = MetadataParser.parseComicInfo(from: metadataData) else {
+            print("    [CBZReader] Failed to parse ComicInfo.xml")
             return nil
         }
         
-        return ["ComicInfo": metadata]
-    }
-    
-    func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String : String] = [:]) {
-        currentElement = elementName
-        currentValue = ""
-    }
-    
-    func parser(_ parser: XMLParser, foundCharacters string: String) {
-        currentValue += string
-    }
-    
-    func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
-        let trimmedValue = currentValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        if !trimmedValue.isEmpty && elementName != "ComicInfo" {
-            // Try to convert to Int if possible
-            if let intValue = Int(trimmedValue) {
-                metadata[elementName] = intValue
-            } else {
-                metadata[elementName] = trimmedValue
-            }
-        }
-        
-        currentElement = ""
-        currentValue = ""
+        print("    [CBZReader] ✅ Parsed metadata: \(metadata.displayTitle ?? "Unknown")")
+        return metadata
     }
 }
 

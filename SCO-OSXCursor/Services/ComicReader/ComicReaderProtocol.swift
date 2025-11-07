@@ -70,44 +70,9 @@ struct ComicPage: Identifiable {
     #endif
 }
 
-// MARK: - Comic Metadata (from ComicInfo.xml)
-struct ComicMetadata: Codable {
-    var title: String?
-    var series: String?
-    var number: String?
-    var volume: Int?
-    var summary: String?
-    var publisher: String?
-    var writer: String?
-    var penciller: String?
-    var inker: String?
-    var colorist: String?
-    var letterer: String?
-    var coverArtist: String?
-    var year: Int?
-    var month: Int?
-    var pageCount: Int?
-    var languageISO: String?
-    
-    enum CodingKeys: String, CodingKey {
-        case title = "Title"
-        case series = "Series"
-        case number = "Number"
-        case volume = "Volume"
-        case summary = "Summary"
-        case publisher = "Publisher"
-        case writer = "Writer"
-        case penciller = "Penciller"
-        case inker = "Inker"
-        case colorist = "Colorist"
-        case letterer = "Letterer"
-        case coverArtist = "CoverArtist"
-        case year = "Year"
-        case month = "Month"
-        case pageCount = "PageCount"
-        case languageISO = "LanguageISO"
-    }
-}
+// MARK: - Comic Metadata
+// Note: ComicMetadata is now defined in Services/Metadata/ComicMetadata.swift
+// for a more comprehensive metadata model supporting ComicInfo.xml standard
 
 // MARK: - Comic Reader Errors
 enum ComicReaderError: LocalizedError {

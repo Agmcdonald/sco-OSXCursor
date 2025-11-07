@@ -277,40 +277,62 @@ class PDFReader: ComicReaderProtocol {
     /// Extract metadata from PDF document
     private func extractMetadata(from document: PDFDocument) -> ComicMetadata? {
         guard let attributes = document.documentAttributes else {
+            print("    [PDFReader] No document attributes found")
             return nil
         }
         
         var metadata = ComicMetadata()
         
         // Extract standard PDF metadata
-        if let title = attributes[PDFDocumentAttribute.titleAttribute] as? String {
+        if let title = attributes[PDFDocumentAttribute.titleAttribute] as? String, !title.isEmpty {
             metadata.title = title
+            print("    [PDFReader] Found title: \(title)")
         }
         
-        if let author = attributes[PDFDocumentAttribute.authorAttribute] as? String {
+        if let author = attributes[PDFDocumentAttribute.authorAttribute] as? String, !author.isEmpty {
             metadata.writer = author
+            print("    [PDFReader] Found author: \(author)")
         }
         
-        if let subject = attributes[PDFDocumentAttribute.subjectAttribute] as? String {
+        if let subject = attributes[PDFDocumentAttribute.subjectAttribute] as? String, !subject.isEmpty {
             metadata.summary = subject
+            print("    [PDFReader] Found subject: \(subject)")
+        }
+        
+        if let keywords = attributes[PDFDocumentAttribute.keywordsAttribute] as? [String], !keywords.isEmpty {
+            metadata.genre = keywords.joined(separator: ", ")
+            print("    [PDFReader] Found keywords: \(keywords)")
+        }
+        
+        if let creator = attributes[PDFDocumentAttribute.creatorAttribute] as? String, !creator.isEmpty {
+            metadata.notes = "Created with: \(creator)"
+        }
+        
+        if let producer = attributes[PDFDocumentAttribute.producerAttribute] as? String, !producer.isEmpty {
+            metadata.scanInformation = producer
         }
         
         // Extract creation date
         if let creationDate = attributes[PDFDocumentAttribute.creationDateAttribute] as? Date {
             let calendar = Calendar.current
-            let components = calendar.dateComponents([.year, .month], from: creationDate)
+            let components = calendar.dateComponents([.year, .month, .day], from: creationDate)
             metadata.year = components.year
             metadata.month = components.month
+            metadata.day = components.day
+            print("    [PDFReader] Found creation date: \(components.year ?? 0)-\(components.month ?? 0)-\(components.day ?? 0)")
         }
         
         // Page count
         metadata.pageCount = document.pageCount
+        print("    [PDFReader] Page count: \(document.pageCount)")
         
         // Return nil if no useful metadata was found
-        if metadata.title == nil && metadata.writer == nil && metadata.summary == nil {
+        if metadata.title == nil && metadata.writer == nil && metadata.summary == nil && metadata.year == nil {
+            print("    [PDFReader] No useful metadata found")
             return nil
         }
         
+        print("    [PDFReader] ✅ Extracted metadata: \(metadata.displayTitle ?? "Unknown")")
         return metadata
     }
 }

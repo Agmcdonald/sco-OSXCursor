@@ -34,7 +34,7 @@ struct ComicCardView: View {
                             .foregroundColor(TextColors.secondary)
                         
                         if let year = comic.year {
-                            Text("(\(year))")
+                            Text("(\(String(year)))")
                                 .font(Typography.caption)
                                 .foregroundColor(TextColors.tertiary)
                         }
