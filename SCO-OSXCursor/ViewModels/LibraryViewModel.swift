@@ -21,10 +21,10 @@ class LibraryViewModel: ObservableObject {
     private let pdfReader = PDFReader()
     
     init() {
-        // Start with sample data
-        self.comics = Comic.samples
+        // Start with empty library - we'll load bundled test comics
+        self.comics = []
         
-        // Add bundled test comic if available
+        // Load bundled test comics if available
         loadBundledTestComic()
     }
     

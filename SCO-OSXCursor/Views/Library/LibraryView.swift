@@ -20,7 +20,6 @@ struct LibraryView: View {
     @State private var showingFilters = false
     @State private var isSelectionMode = false
     @State private var selectedComics: Set<Comic.ID> = []
-    @State private var showingReader = false
     @State private var comicToRead: Comic?
     @State private var showingFilePicker = false
     @State private var importedFileURLs: [URL] = []
@@ -121,17 +120,13 @@ struct LibraryView: View {
             }
         )
         #if os(macOS)
-        .sheet(isPresented: $showingReader) {
-            if let comic = comicToRead {
-                ComicReaderView(comic: comic)
-                    .frame(minWidth: 1200, minHeight: 800)
-            }
+        .sheet(item: $comicToRead) { comic in
+            ComicReaderView(comic: comic)
+                .frame(minWidth: 1200, minHeight: 800)
         }
         #else
-        .fullScreenCover(isPresented: $showingReader) {
-            if let comic = comicToRead {
-                ComicReaderView(comic: comic)
-            }
+        .fullScreenCover(item: $comicToRead) { comic in
+            ComicReaderView(comic: comic)
         }
         #endif
         .fileImporter(
@@ -593,9 +588,8 @@ struct LibraryView: View {
         print("\n🎯 [LibraryView] User tapped comic: \(comic.fileName)")
         print("🎯 [LibraryView] File type: \(comic.fileType.rawValue)")
         print("🎯 [LibraryView] Has bookmark: \(comic.bookmarkData != nil)")
-        print("🎯 [LibraryView] Setting comicToRead and showingReader = true")
+        print("🎯 [LibraryView] Setting comicToRead (triggers fullScreenCover)")
         comicToRead = comic
-        showingReader = true
     }
     
     private func handleFileImport(_ result: Result<[URL], Error>) {
