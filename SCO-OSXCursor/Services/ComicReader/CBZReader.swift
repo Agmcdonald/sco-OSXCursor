@@ -183,6 +183,13 @@ class CBZReader: ComicReaderProtocol {
         return imageEntries.count
     }
     
+    // MARK: - Load Single Page (Not Used for CBZ - Already Fast)
+    func loadPage(at index: Int, from url: URL) async throws -> ComicPage {
+        // CBZ loading is already fast (< 1 second for full archive)
+        // Lazy loading not needed, but implement for protocol conformance
+        throw ComicReaderError.extractionFailed
+    }
+    
     // MARK: - Helper Methods
     
     /// Get all image entries from archive

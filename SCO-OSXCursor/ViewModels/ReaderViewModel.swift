@@ -17,11 +17,15 @@ class ReaderViewModel: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var loadingProgress: Double = 0.0
     @Published var errorMessage: String?
+    @Published var loadedPages: [Int: ComicPage] = [:]  // For lazy-loaded pages - published to update UI
+    @Published var isBackgroundLoading: Bool = false  // True while pages load in background
     
     private let cbzReader = CBZReader()
     private let pdfReader = PDFReader()
-    private var loadedPages: [Int: ComicPage] = [:]
     private var resolvedURL: URL?
+    private var currentComic: Comic?  // Keep reference for lazy loading
+    private var isLazyLoaded = false  // Track if current comic uses lazy loading
+    private var backgroundLoadTask: Task<Void, Never>?  // Background loading task
     
     // Diagnostic logging
     private static var attemptCounter = 0
@@ -154,6 +158,19 @@ class ReaderViewModel: ObservableObject {
             
             // Update UI
             comicBook = fullComic
+            isLazyLoaded = fullComic.isLazyLoaded
+            currentComic = comic
+            
+            // For lazy-loaded comics, populate initial pages
+            if fullComic.isLazyLoaded {
+                for page in fullComic.pages {
+                    loadedPages[page.pageNumber - 1] = page
+                }
+                print("[ATTEMPT #\(currentAttempt)] Lazy-loaded comic: \(loadedPages.count) pages cached, \(fullComic.totalPages) total")
+                
+                // Start background loading of ALL remaining pages
+                startBackgroundLoading(fileURL: fileURL, totalPages: fullComic.totalPages, fileType: comic.fileType)
+            }
             
             // Start from saved progress or beginning
             currentPage = comic.currentPage
@@ -182,6 +199,9 @@ class ReaderViewModel: ObservableObject {
     
     // MARK: - Cleanup
     deinit {
+        // Cancel background loading task
+        backgroundLoadTask?.cancel()
+        
         // Stop accessing security-scoped resource when done
         #if os(macOS)
         if let url = resolvedURL {
@@ -194,7 +214,8 @@ class ReaderViewModel: ObservableObject {
     // MARK: - Navigation
     func goToPage(_ page: Int) {
         guard let comic = comicBook else { return }
-        currentPage = max(0, min(page, comic.totalPages - 1))
+        let newPage = max(0, min(page, comic.totalPages - 1))
+        currentPage = newPage
     }
     
     func nextPage() {
@@ -208,6 +229,136 @@ class ReaderViewModel: ObservableObject {
         if currentPage > 0 {
             currentPage -= 1
         }
+    }
+    
+    // MARK: - Lazy Loading Support
+    
+    /// Start background loading of all remaining pages
+    private func startBackgroundLoading(fileURL: URL, totalPages: Int, fileType: Comic.FileType) {
+        print("[ReaderViewModel] 🚀 Starting background loading of remaining \(totalPages - loadedPages.count) pages")
+        
+        // Set loading state
+        isBackgroundLoading = true
+        
+        // Cancel any existing task
+        backgroundLoadTask?.cancel()
+        
+        // Start new background task
+        backgroundLoadTask = Task.detached(priority: .background) { [weak self] in
+            guard let self = self else { return }
+            
+            // Load pages sequentially in background
+            for pageIndex in 0..<totalPages {
+                // Check if task was cancelled
+                if Task.isCancelled {
+                    print("[ReaderViewModel] ⚠️ Background loading cancelled")
+                    return
+                }
+                
+                // Skip if already loaded
+                await MainActor.run {
+                    if self.loadedPages[pageIndex] != nil {
+                        return
+                    }
+                }
+                
+                // Load this page
+                do {
+                    let reader: ComicReaderProtocol = fileType == .pdf ? await self.pdfReader : await self.cbzReader
+                    let page = try await reader.loadPage(at: pageIndex, from: fileURL)
+                    
+                    // Update on main actor
+                    await MainActor.run {
+                        self.loadedPages[pageIndex] = page
+                        
+                        // Log progress every 5 pages
+                        if (pageIndex + 1) % 5 == 0 {
+                            print("[ReaderViewModel] 📦 Background loaded \(self.loadedPages.count)/\(totalPages) pages")
+                        }
+                    }
+                } catch {
+                    print("[ReaderViewModel] ⚠️ Background load failed for page \(pageIndex + 1): \(error)")
+                    // Continue with next page
+                }
+            }
+            
+            await MainActor.run {
+                print("[ReaderViewModel] ✅ Background loading complete! All \(totalPages) pages loaded")
+                self.isBackgroundLoading = false
+            }
+        }
+    }
+    
+    /// Called when page changes (via swipe or button)
+    func onPageChanged(to pageIndex: Int) async {
+        print("[ReaderViewModel] 📄 onPageChanged to page \(pageIndex + 1)")
+        guard isLazyLoaded else { return }
+        
+        // If page isn't loaded yet, wait for it (shouldn't happen often with background loading)
+        if loadedPages[pageIndex] == nil {
+            print("[ReaderViewModel] ⏳ Waiting for page \(pageIndex + 1) to load...")
+            await ensurePageLoaded(pageIndex)
+        }
+    }
+    
+    private func ensurePageLoaded(_ pageIndex: Int) async {
+        print("[ReaderViewModel] 🔍 ensurePageLoaded(\(pageIndex + 1)) called")
+        
+        // Check if page is already loaded
+        guard loadedPages[pageIndex] == nil else {
+            print("[ReaderViewModel] Page \(pageIndex + 1) already loaded")
+            return
+        }
+        
+        guard let comic = currentComic,
+              let fileURL = resolvedURL else {
+            print("[ReaderViewModel] ⚠️ Missing comic or URL for lazy loading")
+            return
+        }
+        
+        print("[ReaderViewModel] Loading page \(pageIndex + 1) in background...")
+        
+        do {
+            let reader: ComicReaderProtocol = comic.fileType == .pdf ? pdfReader : cbzReader
+            let page = try await reader.loadPage(at: pageIndex, from: fileURL)
+            loadedPages[pageIndex] = page
+            print("[ReaderViewModel] ✅ Page \(pageIndex + 1) loaded successfully")
+        } catch {
+            print("[ReaderViewModel] ❌ Failed to load page \(pageIndex + 1): \(error)")
+        }
+    }
+    
+    
+    // MARK: - Page Access (for Lazy Loading)
+    /// Get all pages, merging lazy-loaded pages from cache
+    var allPages: [ComicPage] {
+        guard let comic = comicBook else { return [] }
+        
+        if !isLazyLoaded {
+            // Not lazy-loaded, return all pages directly
+            return comic.pages
+        }
+        
+        // For lazy-loaded comics, merge initial pages with loaded pages
+        var result: [ComicPage] = []
+        for pageIndex in 0..<comic.totalPages {
+            if let loadedPage = loadedPages[pageIndex] {
+                result.append(loadedPage)
+            } else if pageIndex < comic.pages.count {
+                // Use initial page if available
+                result.append(comic.pages[pageIndex])
+            } else {
+                // Create placeholder for unloaded page
+                result.append(createPlaceholderPage(pageNumber: pageIndex + 1))
+            }
+        }
+        return result
+    }
+    
+    private func createPlaceholderPage(pageNumber: Int) -> ComicPage {
+        // Create a simple placeholder image
+        let placeholderData = Data()  // Empty for now
+        return ComicPage(pageNumber: pageNumber, imageData: placeholderData, fileName: "Page \(pageNumber)")
     }
     
     // MARK: - Progress

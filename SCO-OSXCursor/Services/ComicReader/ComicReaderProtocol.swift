@@ -18,6 +18,9 @@ protocol ComicReaderProtocol {
     
     /// Get page count without loading entire comic
     func getPageCount(from url: URL) async throws -> Int
+    
+    /// Load a specific page (for lazy loading PDFs)
+    func loadPage(at index: Int, from url: URL) async throws -> ComicPage
 }
 
 // MARK: - Comic Book Structure
@@ -27,13 +30,25 @@ struct ComicBook {
     let pages: [ComicPage]
     let metadata: ComicMetadata?
     let totalPages: Int
+    let isLazyLoaded: Bool  // True for PDFs that load pages on-demand
     
-    init(sourceURL: URL, pages: [ComicPage], metadata: ComicMetadata? = nil) {
+    init(sourceURL: URL, pages: [ComicPage], metadata: ComicMetadata? = nil, isLazyLoaded: Bool = false) {
         self.id = UUID()
         self.sourceURL = sourceURL
         self.pages = pages
         self.metadata = metadata
         self.totalPages = pages.count
+        self.isLazyLoaded = isLazyLoaded
+    }
+    
+    /// Create a lazy-loaded comic book (for PDFs)
+    init(sourceURL: URL, totalPages: Int, initialPages: [ComicPage], metadata: ComicMetadata? = nil) {
+        self.id = UUID()
+        self.sourceURL = sourceURL
+        self.pages = initialPages
+        self.metadata = metadata
+        self.totalPages = totalPages
+        self.isLazyLoaded = true
     }
 }
 

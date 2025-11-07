@@ -56,15 +56,16 @@ struct ComicPageView: View {
                         }
                     #endif
                 } else {
-                    // Fallback if image can't be loaded
+                    // Fallback if image can't be loaded or is loading
                     VStack(spacing: Spacing.lg) {
-                        Image(systemName: "photo")
-                            .font(.system(size: 64))
-                            .foregroundColor(TextColors.tertiary)
+                        ProgressView()
+                            .scaleEffect(1.5)
+                            .tint(.white)
                         
-                        Text("Unable to load page")
+                        Text("Loading page \(page.pageNumber)...")
                             .font(Typography.body)
                             .foregroundColor(TextColors.secondary)
+                            .padding(.top, Spacing.md)
                     }
                 }
             }

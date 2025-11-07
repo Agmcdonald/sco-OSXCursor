@@ -14,6 +14,7 @@ struct ReaderControlsOverlay: View {
     let onClose: () -> Void
     @Binding var controlsVisible: Bool
     @Binding var showingMenu: Bool
+    @Binding var isBackgroundLoading: Bool  // Show loading indicator
     
     var body: some View {
         ZStack {
@@ -60,14 +61,33 @@ struct ReaderControlsOverlay: View {
             
             Spacer()
             
-            // Page counter
-            Text("Page \(currentPage + 1) of \(totalPages)")
-                .font(Typography.body)
-                .foregroundColor(.white)
-                .padding(.horizontal, Spacing.lg)
-                .padding(.vertical, Spacing.sm)
-                .background(Color.black.opacity(0.5))
-                .clipShape(Capsule())
+            // Page counter with loading indicator
+            HStack(spacing: Spacing.sm) {
+                Text("Page \(currentPage + 1) of \(totalPages)")
+                    .font(Typography.body)
+                    .foregroundColor(.white)
+                
+                // Loading badge (only for PDFs during background loading)
+                if isBackgroundLoading {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                            .tint(.white)
+                        
+                        Text("Loading pages...")
+                            .font(Typography.caption)
+                            .foregroundColor(.white.opacity(0.9))
+                    }
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, 6)
+                    .background(AccentColors.primary.opacity(0.8))
+                    .clipShape(Capsule())
+                }
+            }
+            .padding(.horizontal, Spacing.lg)
+            .padding(.vertical, Spacing.sm)
+            .background(Color.black.opacity(0.5))
+            .clipShape(Capsule())
             
             Spacer()
             
@@ -206,6 +226,7 @@ struct MenuNavItem: View {
         @State private var currentPage = 5
         @State private var controlsVisible = true
         @State private var showingMenu = false
+        @State private var isBackgroundLoading = true
         
         var body: some View {
             ZStack {
@@ -216,7 +237,8 @@ struct MenuNavItem: View {
                     totalPages: 32,
                     onClose: { print("Close tapped") },
                     controlsVisible: $controlsVisible,
-                    showingMenu: $showingMenu
+                    showingMenu: $showingMenu,
+                    isBackgroundLoading: $isBackgroundLoading
                 )
             }
         }

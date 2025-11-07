@@ -11,7 +11,7 @@ import PDFKit
 // MARK: - PDF Reader
 class PDFReader: ComicReaderProtocol {
     
-    // MARK: - Load Comic
+    // MARK: - Load Comic (with Lazy Loading)
     func loadComic(from url: URL) async throws -> ComicBook {
         let startTime = Date().timeIntervalSince1970
         print("    [PDFReader] loadComic() ENTRY at \(startTime)")
@@ -69,11 +69,12 @@ class PDFReader: ComicReaderProtocol {
             throw ComicReaderError.noImages
         }
         
-        // Extract all pages as images
-        print("    [PDFReader] Rendering \(pageCount) pages to images...")
-        var pages: [ComicPage] = []
+        // For PDFs, use lazy loading: load only first 3 pages initially
+        print("    [PDFReader] 🚀 Using LAZY LOADING - loading first 3 pages only")
+        var initialPages: [ComicPage] = []
+        let pagesToLoad = min(3, pageCount)
         
-        for pageIndex in 0..<pageCount {
+        for pageIndex in 0..<pagesToLoad {
             guard let pdfPage = pdfDocument.page(at: pageIndex) else {
                 continue
             }
@@ -86,16 +87,16 @@ class PDFReader: ComicReaderProtocol {
                 imageData: imageData,
                 fileName: "Page \(pageIndex + 1)"
             )
-            pages.append(page)
+            initialPages.append(page)
             
             if pageIndex == 0 {
                 print("    [PDFReader] ✅ Rendered first page (\(imageData.count) bytes)")
             }
         }
         
-        print("    [PDFReader] Successfully rendered \(pages.count) pages")
+        print("    [PDFReader] Successfully rendered \(initialPages.count) initial pages")
         
-        guard !pages.isEmpty else {
+        guard !initialPages.isEmpty else {
             print("    [PDFReader] ❌ ERROR: No pages rendered")
             throw ComicReaderError.extractionFailed
         }
@@ -107,8 +108,36 @@ class PDFReader: ComicReaderProtocol {
         
         let endTime = Date().timeIntervalSince1970
         print("    [PDFReader] ✅ loadComic() SUCCESS - Time: \(String(format: "%.3f", endTime - startTime))s")
+        print("    [PDFReader] (Remaining \(pageCount - initialPages.count) pages will load on-demand)")
         
-        return ComicBook(sourceURL: url, pages: pages, metadata: metadata)
+        // Return lazy-loaded comic book
+        return ComicBook(sourceURL: url, totalPages: pageCount, initialPages: initialPages, metadata: metadata)
+    }
+    
+    // MARK: - Load Single Page (for Lazy Loading)
+    func loadPage(at index: Int, from url: URL) async throws -> ComicPage {
+        print("    [PDFReader] loadPage() - Loading page \(index + 1)")
+        
+        // Load PDF document
+        guard let pdfDocument = PDFDocument(url: url) else {
+            throw ComicReaderError.invalidFormat
+        }
+        
+        // Get the specific page
+        guard let pdfPage = pdfDocument.page(at: index) else {
+            throw ComicReaderError.noImages
+        }
+        
+        // Render to image
+        let imageData = renderPageToImageData(pdfPage)
+        
+        print("    [PDFReader] ✅ Loaded page \(index + 1) (\(imageData.count) bytes)")
+        
+        return ComicPage(
+            pageNumber: index + 1,
+            imageData: imageData,
+            fileName: "Page \(index + 1)"
+        )
     }
     
     // MARK: - Extract Cover

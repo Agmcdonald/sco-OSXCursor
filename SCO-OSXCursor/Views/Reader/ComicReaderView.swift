@@ -60,6 +60,12 @@ struct ComicReaderView: View {
             await viewModel.loadComic(from: comic)
             print("📖 [ComicReaderView] loadComic() returned")
         }
+        .onChange(of: viewModel.currentPage) { oldValue, newValue in
+            print("📖 [ComicReaderView] Page changed: \(oldValue + 1) → \(newValue + 1)")
+            Task {
+                await viewModel.onPageChanged(to: newValue)
+            }
+        }
         .preferredColorScheme(.dark)
         #if os(macOS)
         .navigationBarBackButtonHidden(true)
@@ -72,9 +78,9 @@ struct ComicReaderView: View {
     // MARK: - Reader View
     private func readerView(_ comicBook: ComicBook) -> some View {
         ZStack {
-            // Paged reader
+            // Paged reader (uses viewModel.allPages for lazy loading support)
             PagedReaderView(
-                pages: comicBook.pages,
+                pages: viewModel.allPages,
                 currentPage: $viewModel.currentPage
             )
             
@@ -86,7 +92,8 @@ struct ComicReaderView: View {
                     dismiss()
                 },
                 controlsVisible: $controlsVisible,
-                showingMenu: $showingMenu
+                showingMenu: $showingMenu,
+                isBackgroundLoading: $viewModel.isBackgroundLoading
             )
             
             // Navigation menu (iPad only)
