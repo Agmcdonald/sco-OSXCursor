@@ -26,10 +26,45 @@ class ReaderViewModel: ObservableObject {
     private var currentComic: Comic?  // Keep reference for lazy loading
     private var isLazyLoaded = false  // Track if current comic uses lazy loading
     private var backgroundLoadTask: Task<Void, Never>?  // Background loading task
+    private let progressTracker = ReadingProgressTracker.shared
+    
+    // Store values for cleanup (non-MainActor isolated)
+    private var cleanupURL: URL?
+    private var cleanupComicID: UUID?
+    private var cleanupCurrentPage: Int = 0
+    private var cleanupTotalPages: Int = 0
     
     // Diagnostic logging
     private static var attemptCounter = 0
     private var currentAttempt = 0
+    
+    // Page change observation for progress tracking
+    private var cancellables = Set<AnyCancellable>()
+    
+    init() {
+        // Observe page changes and save progress
+        $currentPage
+            .dropFirst() // Skip initial value
+            .debounce(for: .seconds(0.5), scheduler: RunLoop.main) // Wait 0.5s after page change
+            .sink { [weak self] newPage in
+                self?.saveCurrentProgress()
+            }
+            .store(in: &cancellables)
+    }
+    
+    /// Save current reading progress
+    private func saveCurrentProgress() {
+        guard let comic = currentComic, let comicBook = comicBook else { return }
+        
+        progressTracker.updatePage(
+            for: comic.id,
+            currentPage: currentPage,
+            totalPages: comicBook.totalPages
+        )
+        
+        // Also store for cleanup
+        cleanupCurrentPage = currentPage
+    }
     
     // MARK: - Resolve Bookmark
     private func resolveFileURL(from comic: Comic) throws -> URL {
@@ -161,6 +196,11 @@ class ReaderViewModel: ObservableObject {
             isLazyLoaded = fullComic.isLazyLoaded
             currentComic = comic
             
+            // Store for cleanup (deinit can't access MainActor properties)
+            cleanupURL = fileURL
+            cleanupComicID = comic.id
+            cleanupTotalPages = fullComic.totalPages
+            
             // For lazy-loaded comics, populate initial pages
             if fullComic.isLazyLoaded {
                 for page in fullComic.pages {
@@ -173,7 +213,12 @@ class ReaderViewModel: ObservableObject {
             }
             
             // Start from saved progress or beginning
-            currentPage = comic.currentPage
+            if let savedProgress = progressTracker.loadProgress(for: comic.id) {
+                currentPage = savedProgress.currentPage
+                print("[ATTEMPT #\(currentAttempt)] 📖 Restored saved progress: Page \(savedProgress.currentPage + 1)")
+            } else {
+                currentPage = comic.currentPage
+            }
             
             let endTime = Date().timeIntervalSince1970
             print("[ATTEMPT #\(currentAttempt)] [\(endTime)] ✅ loadComic() SUCCESS - Total time: \(String(format: "%.3f", endTime - startTime))s")
@@ -199,14 +244,23 @@ class ReaderViewModel: ObservableObject {
     
     // MARK: - Cleanup
     deinit {
+        // Save reading progress before closing (using stored values, not MainActor properties)
+        if let comicID = cleanupComicID, cleanupTotalPages > 0 {
+            progressTracker.updatePage(
+                for: comicID,
+                currentPage: cleanupCurrentPage,
+                totalPages: cleanupTotalPages
+            )
+        }
+        
         // Cancel background loading task
         backgroundLoadTask?.cancel()
         
-        // Stop accessing security-scoped resource when done
+        // Stop accessing security-scoped resource when done (using stored URL)
         #if os(macOS)
-        if let url = resolvedURL {
+        if let url = cleanupURL {
             url.stopAccessingSecurityScopedResource()
-            print("[ATTEMPT #\(currentAttempt)] 🧹 Released security access for: \(url.lastPathComponent)")
+            print("🧹 Released security access for: \(url.lastPathComponent)")
         }
         #endif
     }

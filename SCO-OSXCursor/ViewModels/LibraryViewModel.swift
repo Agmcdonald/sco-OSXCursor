@@ -19,6 +19,7 @@ class LibraryViewModel: ObservableObject {
     
     private let cbzReader = CBZReader()
     private let pdfReader = PDFReader()
+    private let progressTracker = ReadingProgressTracker.shared
     
     init() {
         // Start with empty library - we'll load bundled test comics
@@ -26,6 +27,31 @@ class LibraryViewModel: ObservableObject {
         
         // Load bundled test comics if available
         loadBundledTestComic()
+        
+        // Note: restoreReadingProgress() is called AFTER comics are loaded
+        // See loadBundledTestComic() Task completion
+    }
+    
+    // MARK: - Restore Progress
+    private func restoreReadingProgress() {
+        let allProgress = progressTracker.loadAllProgress()
+        
+        guard !allProgress.isEmpty else {
+            print("[LibraryViewModel] No saved progress to restore")
+            return
+        }
+        
+        print("[LibraryViewModel] 📖 Restoring progress for \(allProgress.count) comics")
+        
+        // Update comics with saved progress
+        for index in comics.indices {
+            if let progress = allProgress[comics[index].id] {
+                comics[index].currentPage = progress.currentPage
+                comics[index].status = progress.status
+                comics[index].lastReadDate = progress.lastReadDate
+                print("[LibraryViewModel] ✅ Restored \(comics[index].fileName): Page \(progress.currentPage + 1), Status: \(progress.status.rawValue)")
+            }
+        }
     }
     
     // MARK: - Load Bundled Test Comics
@@ -48,6 +74,11 @@ class LibraryViewModel: ObservableObject {
                         print("⚠️ Failed to load bundled test comic \(name).\(ext): \(error)")
                     }
                 }
+            }
+            
+            // After all comics are loaded, restore saved progress
+            await MainActor.run {
+                restoreReadingProgress()
             }
         }
     }
@@ -80,6 +111,9 @@ class LibraryViewModel: ObservableObject {
         if !newComics.isEmpty {
             comics.append(contentsOf: newComics)
             print("Successfully imported \(newComics.count) comics")
+            
+            // Restore any saved progress for newly imported comics
+            syncProgressFromTracker()
         }
         
         isImporting = false
@@ -90,6 +124,29 @@ class LibraryViewModel: ObservableObject {
     private func importComic(from url: URL) async throws -> Comic {
         // Determine if this is a bundled resource
         let isBundled = url.path.contains(Bundle.main.bundlePath)
+        
+        // For bundled resources, create deterministic ID from filename
+        // This ensures same comic has same ID across app restarts
+        let comicID: UUID
+        if isBundled {
+            // Create truly deterministic UUID from filename
+            // Using simple character code sum (not Swift's hashValue which is randomized)
+            let filename = url.lastPathComponent
+            
+            var hash: UInt32 = 0
+            for char in filename.unicodeScalars {
+                hash = hash &* 31 &+ UInt32(char.value)
+            }
+            
+            // Convert to UUID string (deterministic)
+            let uuidString = String(format: "%08x-0000-0000-0000-%012x", 
+                                   hash, 
+                                   UInt64(filename.count))
+            comicID = UUID(uuidString: uuidString) ?? UUID()
+            print("📦 Using deterministic ID for bundled comic '\(filename)': \(comicID)")
+        } else {
+            comicID = UUID()
+        }
         
         // Only start security-scoped access for user files (not bundled resources)
         var accessing = false
@@ -154,6 +211,7 @@ class LibraryViewModel: ObservableObject {
         
         // Create comic object with bookmark for persistent access
         let comic = Comic(
+            id: comicID,  // Use deterministic ID for bundled comics
             filePath: url,
             fileName: url.lastPathComponent,
             bookmarkData: bookmarkData,
@@ -179,6 +237,28 @@ class LibraryViewModel: ObservableObject {
     func updateComic(_ comic: Comic) {
         if let index = comics.firstIndex(where: { $0.id == comic.id }) {
             comics[index] = comic
+            
+            // Also update reading progress if the comic has been read
+            if comic.currentPage > 0 {
+                progressTracker.updatePage(
+                    for: comic.id,
+                    currentPage: comic.currentPage,
+                    totalPages: comic.totalPages
+                )
+            }
+        }
+    }
+    
+    /// Sync progress from tracker to all comics (call after importing new comics)
+    func syncProgressFromTracker() {
+        let allProgress = progressTracker.loadAllProgress()
+        
+        for index in comics.indices {
+            if let progress = allProgress[comics[index].id] {
+                comics[index].currentPage = progress.currentPage
+                comics[index].status = progress.status
+                comics[index].lastReadDate = progress.lastReadDate
+            }
         }
     }
 }
