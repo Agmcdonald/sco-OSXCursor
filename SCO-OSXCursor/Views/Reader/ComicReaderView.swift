@@ -8,6 +8,7 @@
 import SwiftUI
 
 // MARK: - Comic Reader View
+@MainActor
 struct ComicReaderView: View {
     let comic: Comic
     @Environment(\.dismiss) private var dismiss

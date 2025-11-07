@@ -8,7 +8,15 @@
 import SwiftUI
 
 @main
+@MainActor
 struct SCO_OSXCursorApp: App {
+    
+    init() {
+        // Initialize database on app startup
+        _ = DatabaseManager.shared
+        print("[App] ✅ App initialization complete")
+    }
+    
     var body: some Scene {
         WindowGroup {
             ContentView()

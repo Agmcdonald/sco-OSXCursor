@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftUI
+import GRDB
 
 // MARK: - Comic Model
 struct Comic: Identifiable, Codable {
@@ -302,6 +303,126 @@ extension Comic: Equatable {
 extension Comic: Hashable {
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
+    }
+}
+
+// MARK: - GRDB Conformance
+extension Comic: FetchableRecord, PersistableRecord {
+    static let databaseTableName = "comics"
+    
+    // Column names (using string literals to avoid circular reference with CodingKeys)
+    enum Columns {
+        static let id = Column("id")
+        static let filePath = Column("file_path")
+        static let fileName = Column("file_name")
+        static let bookmarkData = Column("bookmark_data")
+        static let title = Column("title")
+        static let publisher = Column("publisher")
+        static let series = Column("series")
+        static let issueNumber = Column("issue_number")
+        static let volume = Column("volume")
+        static let year = Column("year")
+        static let writer = Column("writer")
+        static let artist = Column("artist")
+        static let coverArtist = Column("cover_artist")
+        static let summary = Column("summary")
+        static let coverImageData = Column("cover_image_data")
+        static let status = Column("status")
+        static let currentPage = Column("current_page")
+        static let totalPages = Column("total_pages")
+        static let lastReadDate = Column("last_read_date")
+        static let tags = Column("tags")
+        static let rating = Column("rating")
+        static let isFavorite = Column("is_favorite")
+        static let fileSize = Column("file_size")
+        static let fileType = Column("file_type")
+        static let dateAdded = Column("date_added")
+        static let dateModified = Column("date_modified")
+    }
+    
+    // Custom encoding for database
+    func encode(to container: inout PersistenceContainer) {
+        container[Columns.id] = id.uuidString
+        container[Columns.filePath] = filePath.path  // Store as string
+        container[Columns.fileName] = fileName
+        container[Columns.bookmarkData] = bookmarkData
+        container[Columns.title] = title
+        container[Columns.publisher] = publisher
+        container[Columns.series] = series
+        container[Columns.issueNumber] = issueNumber
+        container[Columns.volume] = volume
+        container[Columns.year] = year
+        container[Columns.writer] = writer
+        container[Columns.artist] = artist
+        container[Columns.coverArtist] = coverArtist
+        container[Columns.summary] = summary
+        container[Columns.coverImageData] = coverImageData
+        container[Columns.status] = status.rawValue
+        container[Columns.currentPage] = currentPage
+        container[Columns.totalPages] = totalPages
+        container[Columns.lastReadDate] = lastReadDate
+        container[Columns.tags] = try? JSONEncoder().encode(tags)  // Store as JSON
+        container[Columns.rating] = rating
+        container[Columns.isFavorite] = isFavorite
+        container[Columns.fileSize] = fileSize
+        container[Columns.fileType] = fileType.rawValue
+        container[Columns.dateAdded] = dateAdded
+        container[Columns.dateModified] = dateModified
+    }
+    
+    // Custom decoding from database
+    init(row: Row) throws {
+        // Required properties
+        guard let idString: String = row["id"],
+              let id = UUID(uuidString: idString),
+              let filePathString: String = row["file_path"],
+              let fileName: String = row["file_name"],
+              let statusString: String = row["status"],
+              let status = Status(rawValue: statusString),
+              let fileTypeString: String = row["file_type"],
+              let fileType = FileType(rawValue: fileTypeString),
+              let currentPage: Int = row["current_page"],
+              let totalPages: Int = row["total_pages"],
+              let fileSize: Int64 = row["file_size"],
+              let dateAdded: Date = row["date_added"],
+              let dateModified: Date = row["date_modified"] else {
+            throw DatabaseError.fetchFailed
+        }
+        
+        // Decode tags from JSON
+        var decodedTags: [String] = []
+        if let tagsData: Data = row["tags"] {
+            decodedTags = (try? JSONDecoder().decode([String].self, from: tagsData)) ?? []
+        }
+        
+        self.init(
+            id: id,
+            filePath: URL(fileURLWithPath: filePathString),
+            fileName: fileName,
+            bookmarkData: row["bookmark_data"],
+            title: row["title"],
+            publisher: row["publisher"],
+            series: row["series"],
+            issueNumber: row["issue_number"],
+            volume: row["volume"],
+            year: row["year"],
+            writer: row["writer"],
+            artist: row["artist"],
+            coverArtist: row["cover_artist"],
+            summary: row["summary"],
+            coverImageData: row["cover_image_data"],
+            status: status,
+            currentPage: currentPage,
+            totalPages: totalPages,
+            lastReadDate: row["last_read_date"],
+            tags: decodedTags,
+            rating: row["rating"],
+            isFavorite: row["is_favorite"] ?? false,
+            fileSize: fileSize,
+            fileType: fileType,
+            dateAdded: dateAdded,
+            dateModified: dateModified
+        )
     }
 }
 

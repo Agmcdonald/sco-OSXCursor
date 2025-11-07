@@ -20,16 +20,46 @@ class LibraryViewModel: ObservableObject {
     private let cbzReader = CBZReader()
     private let pdfReader = PDFReader()
     private let progressTracker = ReadingProgressTracker.shared
+    private let database = DatabaseManager.shared
     
     init() {
-        // Start with empty library - we'll load bundled test comics
+        // Start with empty library
         self.comics = []
         
-        // Load bundled test comics if available
-        loadBundledTestComic()
-        
-        // Note: restoreReadingProgress() is called AFTER comics are loaded
-        // See loadBundledTestComic() Task completion
+        // Load comics from database and bundled test comics
+        loadComicsFromDatabase()
+    }
+    
+    // MARK: - Load from Database
+    private func loadComicsFromDatabase() {
+        Task {
+            do {
+                // Load all comics from database
+                let dbComics = try await database.fetchAllComics()
+                
+                await MainActor.run {
+                    self.comics = dbComics
+                    print("[LibraryViewModel] 📚 Loaded \(dbComics.count) comics from database")
+                }
+                
+                // Load bundled test comics
+                await loadBundledTestComic()
+                
+                // Restore reading progress after all comics are loaded
+                await MainActor.run {
+                    restoreReadingProgress()
+                }
+                
+            } catch {
+                print("[LibraryViewModel] ⚠️ Failed to load from database: \(error)")
+                
+                // Fallback: load bundled comics
+                await loadBundledTestComic()
+                await MainActor.run {
+                    restoreReadingProgress()
+                }
+            }
+        }
     }
     
     // MARK: - Restore Progress
@@ -58,30 +88,39 @@ class LibraryViewModel: ObservableObject {
     }
     
     // MARK: - Load Bundled Test Comics
-    private func loadBundledTestComic() {
+    private func loadBundledTestComic() async {
         // List of bundled test comics
         let testFiles = [
             ("Billy_Bunny_01", "cbz"),
             ("theprivateeye_01enr00", "pdf")
         ]
         
-        Task {
-            for (name, ext) in testFiles {
-                if let bundleURL = Bundle.main.url(forResource: name, withExtension: ext) {
-                    do {
-                        let testComic = try await importComic(from: bundleURL)
-                        // Add to beginning of list
-                        comics.insert(testComic, at: 0)
-                        print("📦 Loaded bundled test comic: \(name).\(ext)")
-                    } catch {
-                        print("⚠️ Failed to load bundled test comic \(name).\(ext): \(error)")
+        for (name, ext) in testFiles {
+            if let bundleURL = Bundle.main.url(forResource: name, withExtension: ext) {
+                do {
+                    let testComic = try await importComic(from: bundleURL)
+                    
+                    // Check if already in database
+                    let exists = try await database.comicExists(withID: testComic.id)
+                    
+                    if !exists {
+                        // Save to database
+                        try await database.saveComic(testComic)
+                        
+                        await MainActor.run {
+                            // Add to array if not already present
+                            if !comics.contains(where: { $0.id == testComic.id }) {
+                                comics.insert(testComic, at: 0)
+                            }
+                        }
+                        
+                        print("📦 Loaded and saved bundled test comic: \(name).\(ext)")
+                    } else {
+                        print("📦 Bundled test comic already in database: \(name).\(ext)")
                     }
+                } catch {
+                    print("⚠️ Failed to load bundled test comic \(name).\(ext): \(error)")
                 }
-            }
-            
-            // After all comics are loaded, restore saved progress
-            await MainActor.run {
-                restoreReadingProgress()
             }
         }
     }
@@ -110,8 +149,17 @@ class LibraryViewModel: ObservableObject {
             }
         }
         
-        // Add to comics array
+        // Save to database and add to comics array
         if !newComics.isEmpty {
+            // Save to database
+            for comic in newComics {
+                do {
+                    try await database.saveComic(comic)
+                } catch {
+                    print("⚠️ Failed to save comic to database: \(comic.fileName)")
+                }
+            }
+            
             comics.append(contentsOf: newComics)
             print("Successfully imported \(newComics.count) comics")
             
@@ -231,8 +279,23 @@ class LibraryViewModel: ObservableObject {
     
     // MARK: - Delete Comics
     func deleteComics(_ comicsToDelete: [Comic]) {
-        comics.removeAll { comic in
-            comicsToDelete.contains { $0.id == comic.id }
+        Task {
+            // Delete from database
+            for comic in comicsToDelete {
+                do {
+                    try await database.deleteComic(withID: comic.id)
+                    print("[LibraryViewModel] 🗑️ Deleted from database: \(comic.fileName)")
+                } catch {
+                    print("[LibraryViewModel] ⚠️ Failed to delete from database: \(comic.fileName)")
+                }
+            }
+            
+            // Remove from array
+            await MainActor.run {
+                comics.removeAll { comic in
+                    comicsToDelete.contains { $0.id == comic.id }
+                }
+            }
         }
     }
     
@@ -243,6 +306,15 @@ class LibraryViewModel: ObservableObject {
             objectWillChange.send()
             
             comics[index] = comic
+            
+            // Update in database
+            Task {
+                do {
+                    try await database.updateComic(comic)
+                } catch {
+                    print("[LibraryViewModel] ⚠️ Failed to update comic in database: \(error)")
+                }
+            }
             
             // Also update reading progress if the comic has been read
             if comic.currentPage > 0 {

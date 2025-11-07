@@ -8,6 +8,7 @@
 import SwiftUI
 
 // MARK: - Comic Page View
+@MainActor
 struct ComicPageView: View {
     let page: ComicPage
     @State private var scale: CGFloat = 1.0

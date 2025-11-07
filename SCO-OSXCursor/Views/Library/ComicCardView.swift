@@ -7,6 +7,7 @@
 
 import SwiftUI
 
+@MainActor
 struct ComicCardView: View {
     let comic: Comic
     @State private var isHovered = false

@@ -7,6 +7,7 @@
 
 import SwiftUI
 
+@MainActor
 struct OrganizeView: View {
     var body: some View {
         VStack(spacing: Spacing.lg) {

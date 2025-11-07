@@ -8,6 +8,7 @@
 import SwiftUI
 
 // MARK: - Reader Controls Overlay
+@MainActor
 struct ReaderControlsOverlay: View {
     @Binding var currentPage: Int
     let totalPages: Int

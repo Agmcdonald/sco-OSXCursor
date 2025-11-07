@@ -8,6 +8,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+@MainActor
 struct LibraryView: View {
     @StateObject private var viewModel = LibraryViewModel()
     

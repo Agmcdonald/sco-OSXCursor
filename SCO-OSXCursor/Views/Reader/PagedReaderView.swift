@@ -8,6 +8,7 @@
 import SwiftUI
 
 // MARK: - Paged Reader View
+@MainActor
 struct PagedReaderView: View {
     let pages: [ComicPage]
     @Binding var currentPage: Int
