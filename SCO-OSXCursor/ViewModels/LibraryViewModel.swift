@@ -33,7 +33,6 @@ class LibraryViewModel: ObservableObject {
         // List of bundled test comics
         let testFiles = [
             ("Billy_Bunny_01", "cbz"),
-            ("theprivateeye_01enr00", "cbz"),
             ("theprivateeye_01enr00", "pdf")
         ]
         

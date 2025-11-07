@@ -164,10 +164,14 @@ class PDFReader: ComicReaderProtocol {
     /// Render PDF page to image data
     private func renderPageToImageData(_ page: PDFPage) -> Data {
         let pageBounds = page.bounds(for: .mediaBox)
+        let rotation = page.rotation
+        
+        print("    [PDFReader] Page rotation: \(rotation)°")
+        print("    [PDFReader] Page bounds: \(pageBounds)")
         
         #if os(macOS)
         // macOS rendering
-        let scale: CGFloat = 2.0 // Retina resolution
+        let scale: CGFloat = 2.0 // Fixed 2x for performance
         let scaledSize = CGSize(
             width: pageBounds.width * scale,
             height: pageBounds.height * scale
@@ -204,7 +208,8 @@ class PDFReader: ComicReaderProtocol {
         
         #else
         // iOS/iPadOS rendering
-        let scale: CGFloat = UIScreen.main.scale
+        let scale: CGFloat = 2.0 // Fixed 2x for performance (not device scale)
+        
         let scaledSize = CGSize(
             width: pageBounds.width * scale,
             height: pageBounds.height * scale
@@ -218,6 +223,16 @@ class PDFReader: ComicReaderProtocol {
             
             // Save state
             context.cgContext.saveGState()
+            
+            // iOS PDFKit renders some PDFs upside down (macOS handles this automatically)
+            // Flip vertically only (not horizontally) to fix upside-down landscape PDFs
+            if pageBounds.width > pageBounds.height {
+                // Landscape page - flip vertically only
+                print("    [PDFReader] Landscape page detected, flipping vertically")
+                // Translate to bottom, scale Y by -1, translate back
+                context.cgContext.translateBy(x: 0, y: scaledSize.height)
+                context.cgContext.scaleBy(x: 1.0, y: -1.0)
+            }
             
             // Scale and render
             context.cgContext.scaleBy(x: scale, y: scale)

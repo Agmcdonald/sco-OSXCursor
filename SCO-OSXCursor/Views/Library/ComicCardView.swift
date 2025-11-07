@@ -98,65 +98,71 @@ struct ComicCardView: View {
     
     // MARK: - Cover View
     private var coverView: some View {
-        ZStack {
-            // Cover image or placeholder
-            if let coverData = comic.coverImageData {
-                #if os(macOS)
-                if let nsImage = NSImage(data: coverData) {
-                    Image(nsImage: nsImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
+        // Force portrait aspect ratio container
+        GeometryReader { geometry in
+            ZStack {
+                // Cover image or placeholder
+                if let coverData = comic.coverImageData {
+                    #if os(macOS)
+                    if let nsImage = NSImage(data: coverData) {
+                        Image(nsImage: nsImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                    } else {
+                        placeholderCover
+                    }
+                    #else
+                    if let uiImage = UIImage(data: coverData) {
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                    } else {
+                        placeholderCover
+                    }
+                    #endif
                 } else {
                     placeholderCover
                 }
-                #else
-                if let uiImage = UIImage(data: coverData) {
-                    Image(uiImage: uiImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } else {
-                    placeholderCover
-                }
-                #endif
-            } else {
-                placeholderCover
-            }
-            
-            // Status badge overlay
-            VStack {
-                HStack {
+                
+                // Status badge overlay
+                VStack {
+                    HStack {
+                        Spacer()
+                        
+                        // Status indicator
+                        Circle()
+                            .fill(comic.status.color)
+                            .frame(width: 12, height: 12)
+                            .overlay(
+                                Circle()
+                                    .stroke(BackgroundColors.elevated, lineWidth: 2)
+                            )
+                            .padding(Spacing.sm)
+                    }
+                    
                     Spacer()
                     
-                    // Status indicator
-                    Circle()
-                        .fill(comic.status.color)
-                        .frame(width: 12, height: 12)
-                        .overlay(
-                            Circle()
-                                .stroke(BackgroundColors.elevated, lineWidth: 2)
-                        )
-                        .padding(Spacing.sm)
-                }
-                
-                Spacer()
-                
-                // Favorite indicator
-                if comic.isFavorite {
-                    HStack {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 12))
-                            .foregroundColor(AccentColors.warning)
-                            .padding(Spacing.xs)
-                            .background(BackgroundColors.elevated.opacity(0.9))
-                            .clipShape(Circle())
-                            .padding(Spacing.sm)
-                        
-                        Spacer()
+                    // Favorite indicator
+                    if comic.isFavorite {
+                        HStack {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: 12))
+                                .foregroundColor(AccentColors.warning)
+                                .padding(Spacing.xs)
+                                .background(BackgroundColors.elevated.opacity(0.9))
+                                .clipShape(Circle())
+                                .padding(Spacing.sm)
+                            
+                            Spacer()
+                        }
                     }
                 }
             }
+            .clipped() // Clip content to geometry bounds
         }
-        .aspectRatio(2/3, contentMode: .fill) // Standard comic book aspect ratio - crop to fit
+        .aspectRatio(2/3, contentMode: .fit) // Standard comic book portrait aspect ratio
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
     
