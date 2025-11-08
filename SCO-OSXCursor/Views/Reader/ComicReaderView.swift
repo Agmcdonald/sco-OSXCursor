@@ -60,6 +60,7 @@ struct ComicReaderView: View {
     @StateObject private var viewModel = ReaderViewModel()
     @State private var controlsVisible = true
     @State private var showingMenu = false
+    @State private var showingThumbnails = false
     @State private var autoHideTimer: Timer?
     @State private var isFullScreen = false  // Only functional on iPad
     #if os(macOS)
@@ -186,11 +187,14 @@ struct ComicReaderView: View {
             ReaderControlsOverlay(
                 currentPage: $viewModel.currentPage,
                 totalPages: comicBook.totalPages,
+                comicTitle: comic.displayTitle,
+                pages: viewModel.allPages,
                 onClose: {
                     dismiss()
                 },
                 controlsVisible: $controlsVisible,
                 showingMenu: $showingMenu,
+                showingThumbnails: $showingThumbnails,
                 isBackgroundLoading: $viewModel.isBackgroundLoading,
                 isFullScreen: $isFullScreen,
                 isSpreadMode: $viewModel.isSpreadMode,
@@ -198,6 +202,17 @@ struct ComicReaderView: View {
                     resetAutoHideTimer()
                 }
             )
+            
+            // Thumbnail grid overlay
+            if showingThumbnails {
+                ThumbnailGridView(
+                    pages: viewModel.allPages,
+                    currentPage: $viewModel.currentPage,
+                    isPresented: $showingThumbnails
+                )
+                .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                .zIndex(1000)
+            }
             
             // Navigation menu (iPad only)
             #if os(iOS)
