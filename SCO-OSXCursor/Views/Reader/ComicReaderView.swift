@@ -6,6 +6,50 @@
 //
 
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
+
+// MARK: - Keyboard Monitor (macOS)
+#if os(macOS)
+class KeyboardMonitor {
+    private var monitor: Any?
+    var onLeftArrow: (() -> Void)?
+    var onRightArrow: (() -> Void)?
+    var onEscape: (() -> Void)?
+    
+    func start() {
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self else { return event }
+            
+            switch event.keyCode {
+            case 123:  // Left arrow
+                self.onLeftArrow?()
+                return nil  // Consume the event
+            case 124:  // Right arrow
+                self.onRightArrow?()
+                return nil  // Consume the event
+            case 53:   // Escape
+                self.onEscape?()
+                return nil  // Consume the event
+            default:
+                return event  // Pass through other keys
+            }
+        }
+    }
+    
+    func stop() {
+        if let monitor = monitor {
+            NSEvent.removeMonitor(monitor)
+            self.monitor = nil
+        }
+    }
+    
+    deinit {
+        stop()
+    }
+}
+#endif
 
 // MARK: - Comic Reader View
 @MainActor
@@ -18,6 +62,9 @@ struct ComicReaderView: View {
     @State private var showingMenu = false
     @State private var autoHideTimer: Timer?
     @State private var isFullScreen = false  // Only functional on iPad
+    #if os(macOS)
+    @State private var keyboardMonitor: KeyboardMonitor? = nil
+    #endif
     
     var body: some View {
         ZStack {
@@ -101,11 +148,12 @@ struct ComicReaderView: View {
         .preferredColorScheme(.dark)
         #if os(macOS)
         .navigationBarBackButtonHidden(true)
+        .focusable()
         .onAppear {
-            // Reset responder chain for keyboard navigation (async ensures window exists)
-            DispatchQueue.main.async {
-                NSApp.mainWindow?.makeFirstResponder(nil)
-            }
+            setupKeyboardMonitoring()
+        }
+        .onDisappear {
+            removeKeyboardMonitoring()
         }
         #else
         .statusBar(hidden: !controlsVisible)
@@ -116,11 +164,23 @@ struct ComicReaderView: View {
     // MARK: - Reader View
     private func readerView(_ comicBook: ComicBook) -> some View {
         ZStack {
-            // Paged reader (uses viewModel.allPages for lazy loading support)
-            PagedReaderView(
-                pages: viewModel.allPages,
-                currentPage: $viewModel.currentPage
-            )
+            // Reader mode: single-page or two-page spread
+            if viewModel.isSpreadMode {
+                SpreadReaderView(
+                    spreads: viewModel.pageSpreads,
+                    currentSpreadIndex: Binding(
+                        get: { spreadIndexForPage(viewModel.currentPage) },
+                        set: { newSpreadIndex in
+                            viewModel.currentPage = pageForSpreadIndex(newSpreadIndex)
+                        }
+                    )
+                )
+            } else {
+                PagedReaderView(
+                    pages: viewModel.allPages,
+                    currentPage: $viewModel.currentPage
+                )
+            }
             
             // Controls overlay
             ReaderControlsOverlay(
@@ -133,6 +193,7 @@ struct ComicReaderView: View {
                 showingMenu: $showingMenu,
                 isBackgroundLoading: $viewModel.isBackgroundLoading,
                 isFullScreen: $isFullScreen,
+                isSpreadMode: $viewModel.isSpreadMode,
                 onUserInteraction: {
                     resetAutoHideTimer()
                 }
@@ -319,6 +380,87 @@ struct ComicReaderView: View {
         autoHideTimer?.invalidate()
         autoHideTimer = nil
     }
+    
+    // MARK: - Spread Mode Helpers
+    
+    /// Convert page index to spread index
+    private func spreadIndexForPage(_ pageIndex: Int) -> Int {
+        let spreads = viewModel.pageSpreads
+        
+        // Find which spread contains this page
+        for (index, spread) in spreads.enumerated() {
+            if spread.leftPage.pageNumber - 1 == pageIndex {
+                return index
+            }
+            if let rightPage = spread.rightPage, rightPage.pageNumber - 1 == pageIndex {
+                return index
+            }
+        }
+        
+        return 0  // Fallback to first spread
+    }
+    
+    /// Convert spread index to page index (returns left page of spread)
+    private func pageForSpreadIndex(_ spreadIndex: Int) -> Int {
+        let spreads = viewModel.pageSpreads
+        guard spreadIndex < spreads.count else { return 0 }
+        
+        return spreads[spreadIndex].leftPage.pageNumber - 1
+    }
+    
+    #if os(macOS)
+    // MARK: - Keyboard Navigation
+    
+    /// Setup keyboard event monitoring
+    private func setupKeyboardMonitoring() {
+        let monitor = KeyboardMonitor()
+        
+        monitor.onLeftArrow = { [weak viewModel] in
+            guard let viewModel = viewModel else { return }
+            guard viewModel.currentPage > 0 else { return }
+            
+            Task { @MainActor in
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    if viewModel.isSpreadMode {
+                        viewModel.currentPage = max(0, viewModel.currentPage - 2)
+                    } else {
+                        viewModel.currentPage -= 1
+                    }
+                }
+            }
+        }
+        
+        monitor.onRightArrow = { [weak viewModel] in
+            guard let viewModel = viewModel else { return }
+            guard let totalPages = viewModel.comicBook?.totalPages else { return }
+            guard viewModel.currentPage < totalPages - 1 else { return }
+            
+            Task { @MainActor in
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    if viewModel.isSpreadMode {
+                        viewModel.currentPage = min(totalPages - 1, viewModel.currentPage + 2)
+                    } else {
+                        viewModel.currentPage += 1
+                    }
+                }
+            }
+        }
+        
+        monitor.onEscape = { [dismiss] in
+            Task { @MainActor in
+                dismiss()
+            }
+        }
+        
+        monitor.start()
+        keyboardMonitor = monitor
+    }
+    
+    /// Remove keyboard event monitoring
+    private func removeKeyboardMonitoring() {
+        keyboardMonitor?.stop()
+    }
+    #endif
 }
 
 // MARK: - Preview

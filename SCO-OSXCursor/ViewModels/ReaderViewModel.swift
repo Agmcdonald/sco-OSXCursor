@@ -9,6 +9,18 @@ import Foundation
 import SwiftUI
 import Combine
 
+// MARK: - Page Spread Model
+struct PageSpread: Identifiable {
+    let id: String
+    let leftPage: ComicPage
+    let rightPage: ComicPage?  // nil for single pages or last odd page
+    let spreadIndex: Int
+    
+    var isSinglePage: Bool {
+        rightPage == nil
+    }
+}
+
 // MARK: - Reader ViewModel
 @MainActor
 class ReaderViewModel: ObservableObject {
@@ -19,6 +31,7 @@ class ReaderViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var loadedPages: [Int: ComicPage] = [:]  // For lazy-loaded pages - published to update UI
     @Published var isBackgroundLoading: Bool = false  // True while pages load in background
+    @Published var isSpreadMode: Bool = false  // Two-page spread view
     
     private let cbzReader = CBZReader()
     private let pdfReader = PDFReader()
@@ -430,6 +443,62 @@ class ReaderViewModel: ObservableObject {
             }
         }
         return result
+    }
+    
+    /// Page spreads for two-page view mode
+    var pageSpreads: [PageSpread] {
+        let pages = allPages
+        guard !pages.isEmpty else { return [] }
+        
+        var spreads: [PageSpread] = []
+        
+        // First page (cover) is always alone
+        if isWidePageAtIndex(0, in: pages) {
+            // Wide cover - show alone
+            spreads.append(PageSpread(id: "spread-0", leftPage: pages[0], rightPage: nil, spreadIndex: 0))
+        } else {
+            spreads.append(PageSpread(id: "spread-0", leftPage: pages[0], rightPage: nil, spreadIndex: 0))
+        }
+        
+        // Pair remaining pages
+        var currentIndex = 1
+        var spreadIndex = 1
+        while currentIndex < pages.count {
+            let leftPage = pages[currentIndex]
+            
+            // Check if this is a wide page (double-page spread in the comic itself)
+            if isWidePageAtIndex(currentIndex, in: pages) {
+                // Wide page - show alone
+                spreads.append(PageSpread(id: "spread-\(spreadIndex)", leftPage: leftPage, rightPage: nil, spreadIndex: spreadIndex))
+                currentIndex += 1
+            } else {
+                // Normal page - pair with next page if available
+                let rightPage = (currentIndex + 1 < pages.count) ? pages[currentIndex + 1] : nil
+                spreads.append(PageSpread(id: "spread-\(spreadIndex)", leftPage: leftPage, rightPage: rightPage, spreadIndex: spreadIndex))
+                currentIndex += rightPage != nil ? 2 : 1
+            }
+            
+            spreadIndex += 1
+        }
+        
+        return spreads
+    }
+    
+    /// Check if a page is wide (likely a double-page spread)
+    private func isWidePageAtIndex(_ index: Int, in pages: [ComicPage]) -> Bool {
+        guard index < pages.count else { return false }
+        let page = pages[index]
+        
+        guard let image = page.image else { return false }
+        
+        #if os(macOS)
+        let size = image.size
+        #else
+        let size = image.size
+        #endif
+        
+        // If aspect ratio > 1.5, it's likely a wide spread
+        return (size.width / size.height) > 1.5
     }
     
     private func createPlaceholderPage(pageNumber: Int) -> ComicPage {

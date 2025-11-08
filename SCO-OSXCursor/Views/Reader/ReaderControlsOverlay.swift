@@ -17,6 +17,7 @@ struct ReaderControlsOverlay: View {
     @Binding var showingMenu: Bool
     @Binding var isBackgroundLoading: Bool  // Show loading indicator
     @Binding var isFullScreen: Bool  // Fullscreen mode
+    @Binding var isSpreadMode: Bool  // Two-page spread mode
     let onUserInteraction: () -> Void  // Called when user interacts
     
     var body: some View {
@@ -65,6 +66,9 @@ struct ReaderControlsOverlay: View {
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
+            #if os(macOS)
+            .help("Close Reader (Esc)")
+            #endif
             
             Spacer()
             
@@ -97,6 +101,25 @@ struct ReaderControlsOverlay: View {
             .clipShape(Capsule())
             
             Spacer()
+            
+            // Spread mode toggle button
+            Button(action: {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    isSpreadMode.toggle()
+                }
+                onUserInteraction()
+            }) {
+                Image(systemName: isSpreadMode ? "rectangle.split.2x1" : "rectangle")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 44, height: 44)
+                    .background(Color.black.opacity(0.5))
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+            #if os(macOS)
+            .help(isSpreadMode ? "Switch to Single Page" : "Switch to Two-Page Spread")
+            #endif
             
             // Fullscreen toggle button (iOS only - macOS uses sheets which can't enter native fullscreen)
             #if os(iOS)
@@ -160,6 +183,9 @@ struct ReaderControlsOverlay: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(currentPage == 0)
+                #if os(macOS)
+                .help("Previous Page (←)")
+                #endif
                 
                 // Slider
                 if totalPages > 1 {
@@ -183,6 +209,9 @@ struct ReaderControlsOverlay: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(currentPage >= totalPages - 1)
+                #if os(macOS)
+                .help("Next Page (→)")
+                #endif
             }
             .padding(.horizontal, Spacing.xl)
         }
@@ -201,7 +230,13 @@ struct ReaderControlsOverlay: View {
     private func previousPage() {
         guard currentPage > 0 else { return }
         withAnimation(.easeInOut(duration: 0.3)) {
-            currentPage -= 1
+            if isSpreadMode {
+                // In spread mode, jump to previous spread (usually 2 pages back)
+                currentPage = max(0, currentPage - 2)
+            } else {
+                // Single page mode - go back one page
+                currentPage -= 1
+            }
         }
         onUserInteraction()
     }
@@ -209,7 +244,13 @@ struct ReaderControlsOverlay: View {
     private func nextPage() {
         guard currentPage < totalPages - 1 else { return }
         withAnimation(.easeInOut(duration: 0.3)) {
-            currentPage += 1
+            if isSpreadMode {
+                // In spread mode, jump to next spread (usually 2 pages forward)
+                currentPage = min(totalPages - 1, currentPage + 2)
+            } else {
+                // Single page mode - go forward one page
+                currentPage += 1
+            }
         }
         onUserInteraction()
     }
@@ -256,6 +297,7 @@ struct MenuNavItem: View {
         @State private var showingMenu = false
         @State private var isBackgroundLoading = true
         @State private var isFullScreen = false
+        @State private var isSpreadMode = false
         
         var body: some View {
             ZStack {
@@ -269,6 +311,7 @@ struct MenuNavItem: View {
                     showingMenu: $showingMenu,
                     isBackgroundLoading: $isBackgroundLoading,
                     isFullScreen: $isFullScreen,
+                    isSpreadMode: $isSpreadMode,
                     onUserInteraction: { print("User interacted") }
                 )
             }
