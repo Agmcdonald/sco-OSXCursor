@@ -16,6 +16,8 @@ struct ReaderControlsOverlay: View {
     @Binding var controlsVisible: Bool
     @Binding var showingMenu: Bool
     @Binding var isBackgroundLoading: Bool  // Show loading indicator
+    @Binding var isFullScreen: Bool  // Fullscreen mode
+    let onUserInteraction: () -> Void  // Called when user interacts
     
     var body: some View {
         ZStack {
@@ -26,6 +28,7 @@ struct ReaderControlsOverlay: View {
                     withAnimation(.easeInOut(duration: 0.3)) {
                         controlsVisible.toggle()
                     }
+                    onUserInteraction()
                 }
             
             VStack(spacing: 0) {
@@ -50,7 +53,10 @@ struct ReaderControlsOverlay: View {
     private var topBar: some View {
         HStack(spacing: Spacing.lg) {
             // Close button
-            Button(action: onClose) {
+            Button(action: {
+                onClose()
+                onUserInteraction()
+            }) {
                 Image(systemName: "xmark")
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundColor(.white)
@@ -92,6 +98,24 @@ struct ReaderControlsOverlay: View {
             
             Spacer()
             
+            // Fullscreen toggle button (iOS only - macOS uses sheets which can't enter native fullscreen)
+            #if os(iOS)
+            Button(action: {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    isFullScreen.toggle()
+                }
+                onUserInteraction()
+            }) {
+                Image(systemName: isFullScreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 44, height: 44)
+                    .background(Color.black.opacity(0.5))
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+            #endif
+            
             // Menu button
             Button(action: {
                 #if os(iOS)
@@ -100,6 +124,7 @@ struct ReaderControlsOverlay: View {
                     controlsVisible = false
                 }
                 #endif
+                onUserInteraction()
             }) {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 20, weight: .semibold))
@@ -178,6 +203,7 @@ struct ReaderControlsOverlay: View {
         withAnimation(.easeInOut(duration: 0.3)) {
             currentPage -= 1
         }
+        onUserInteraction()
     }
     
     private func nextPage() {
@@ -185,6 +211,7 @@ struct ReaderControlsOverlay: View {
         withAnimation(.easeInOut(duration: 0.3)) {
             currentPage += 1
         }
+        onUserInteraction()
     }
 }
 
@@ -228,6 +255,7 @@ struct MenuNavItem: View {
         @State private var controlsVisible = true
         @State private var showingMenu = false
         @State private var isBackgroundLoading = true
+        @State private var isFullScreen = false
         
         var body: some View {
             ZStack {
@@ -239,7 +267,9 @@ struct MenuNavItem: View {
                     onClose: { print("Close tapped") },
                     controlsVisible: $controlsVisible,
                     showingMenu: $showingMenu,
-                    isBackgroundLoading: $isBackgroundLoading
+                    isBackgroundLoading: $isBackgroundLoading,
+                    isFullScreen: $isFullScreen,
+                    onUserInteraction: { print("User interacted") }
                 )
             }
         }

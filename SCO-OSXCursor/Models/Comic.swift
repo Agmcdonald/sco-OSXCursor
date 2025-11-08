@@ -415,3 +415,24 @@ extension Comic: FetchableRecord, PersistableRecord {
     }
 }
 
+// MARK: - Bundle Detection
+extension Comic {
+    /// Memoized list of known bundled files (scanned once)
+    private static let knownBundledFiles: [String] = {
+        let exts = ["cbz", "pdf"]
+        return exts.flatMap {
+            Bundle.main.urls(forResourcesWithExtension: $0, subdirectory: nil)?
+                .map { $0.lastPathComponent } ?? []
+        }
+    }()
+    
+    /// Check if a comic is a bundled sample resource
+    static func isBundled(_ comic: Comic) -> Bool {
+        let isInBundle = comic.filePath.path.contains(Bundle.main.bundlePath)
+        let matchesBundledFilename = knownBundledFiles.contains {
+            $0.caseInsensitiveCompare(comic.fileName) == .orderedSame
+        }
+        return isInBundle || matchesBundledFilename
+    }
+}
+

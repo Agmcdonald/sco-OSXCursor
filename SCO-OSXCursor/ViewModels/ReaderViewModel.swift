@@ -74,15 +74,38 @@ class ReaderViewModel: ObservableObject {
         print("[ATTEMPT #\(currentAttempt)] FilePath: \(comic.filePath.path)")
         print("[ATTEMPT #\(currentAttempt)] Has bookmark: \(comic.bookmarkData != nil)")
         
-        // Check if this is a bundled resource
-        let isBundled = comic.filePath.path.contains(Bundle.main.bundlePath)
-        print("[ATTEMPT #\(currentAttempt)] Is bundled: \(isBundled)")
+        // Use Comic helper for clean detection
+        let isBundled = Comic.isBundled(comic)
+        #if DEBUG
+        print("[Reader][Attempt #\(currentAttempt)] Is bundled: \(isBundled)")
+        #endif
         
         if isBundled {
-            // Bundled resources don't need security access - just use the URL
-            print("[ATTEMPT #\(currentAttempt)] 📦 Using bundled resource directly: \(comic.fileName)")
-            print("[ATTEMPT #\(currentAttempt)] File exists: \(FileManager.default.fileExists(atPath: comic.filePath.path))")
-            return comic.filePath
+            let fileName = comic.fileName
+            let fileExtension = comic.fileType.rawValue
+            
+            // Extract base name safely using NSString (handles multiple periods correctly)
+            let baseName = (fileName as NSString).deletingPathExtension
+            
+            // Try to find the file in the bundle
+            if let bundleURL = Bundle.main.url(forResource: baseName, withExtension: fileExtension) {
+                #if DEBUG
+                print("[Reader][Attempt #\(currentAttempt)] 📦 Re-resolved: \(fileName)")
+                print("[Reader][Attempt #\(currentAttempt)] Bundle URL: \(bundleURL.path)")
+                #endif
+                
+                // Validate the file actually exists (catches Xcode bundle-copy bugs)
+                if FileManager.default.fileExists(atPath: bundleURL.path) {
+                    return bundleURL
+                } else {
+                    print("[Reader][Attempt #\(currentAttempt)] ⚠️ Bundle URL exists but file missing: \(bundleURL.path)")
+                    throw ComicReaderError.fileNotFound
+                }
+            } else {
+                print("[Reader][Attempt #\(currentAttempt)] ⚠️ Could not locate bundled comic \(fileName).")
+                print("[Reader] ⚠️ Falling back to user documents – likely stale reference or missing asset.")
+                throw ComicReaderError.fileNotFound
+            }
         }
         
         #if os(macOS)

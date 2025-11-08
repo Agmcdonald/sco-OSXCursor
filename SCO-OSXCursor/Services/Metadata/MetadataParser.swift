@@ -39,51 +39,103 @@ class MetadataParser {
     /// Extract metadata from filename using common patterns
     /// Examples:
     /// - "Batman #001 (2024).cbz" -> series: Batman, issueNumber: 001, year: 2024
-    /// - "Amazing Spider-Man 001 (Marvel).cbz" -> series: Amazing Spider-Man, issueNumber: 001, publisher: Marvel
+    /// - "Blade - Red Band 002 (2024) (Paper) (Glix).cbz" -> series: Blade - Red Band, number: 002, year: 2024, format: Paper, publisher: Glix
+    /// - "Laura Kinney - Sabretooth 002 (2025) (Digital) (Kileko-Empire).cbz" -> full extraction
     static func parseFromFilename(_ filename: String) -> ComicMetadata {
         var metadata = ComicMetadata()
         
         // Remove file extension
         let nameWithoutExt = filename.replacingOccurrences(of: "\\.cbz$|\\.cbr$|\\.pdf$", with: "", options: .regularExpression)
         
-        // Pattern 1: "Series #Issue (Year)" or "Series Issue (Year)"
-        if let match = nameWithoutExt.range(of: #"^(.+?)\s+#?(\d+[A-Za-z]?)\s+\((\d{4})\)"#, options: .regularExpression) {
-            let components = nameWithoutExt[match].components(separatedBy: .whitespaces)
-            if components.count >= 3 {
-                // Extract series (everything before the issue number)
-                if let hashIndex = nameWithoutExt.firstIndex(of: "#") {
-                    metadata.series = String(nameWithoutExt[..<hashIndex]).trimmingCharacters(in: .whitespaces)
-                } else {
-                    // Find where numbers start
-                    let words = components.filter { !$0.starts(with: "(") && !$0.allSatisfy({ $0.isNumber }) }
-                    metadata.series = words.joined(separator: " ")
-                }
-                
-                // Extract issue number
-                if let numberMatch = nameWithoutExt.range(of: #"\d+[A-Za-z]?"#, options: .regularExpression) {
-                    metadata.number = String(nameWithoutExt[numberMatch])
-                }
-                
-                // Extract year
-                if let yearMatch = nameWithoutExt.range(of: #"\((\d{4})\)"#, options: .regularExpression) {
-                    let yearStr = String(nameWithoutExt[yearMatch]).trimmingCharacters(in: CharacterSet(charactersIn: "()"))
-                    metadata.year = Int(yearStr)
+        print("[MetadataParser] 📝 Parsing filename: \(nameWithoutExt)")
+        
+        // Extract all parenthetical content: (2024), (Paper), (Glix), etc.
+        var parentheticals: [String] = []
+        let parenPattern = #"\(([^)]+)\)"#
+        let parenRegex = try? NSRegularExpression(pattern: parenPattern)
+        let parenMatches = parenRegex?.matches(in: nameWithoutExt, range: NSRange(nameWithoutExt.startIndex..., in: nameWithoutExt))
+        
+        for match in parenMatches ?? [] {
+            if let range = Range(match.range(at: 1), in: nameWithoutExt) {
+                let content = String(nameWithoutExt[range])
+                parentheticals.append(content)
+            }
+        }
+        
+        print("[MetadataParser]    Parentheticals found: \(parentheticals)")
+        
+        // Extract metadata from parentheticals
+        for content in parentheticals {
+            // Check if it's a year (4 digits)
+            if let year = Int(content), content.count == 4, year > 1900, year < 2100 {
+                metadata.year = year
+                print("[MetadataParser]    ✓ Year: \(year)")
+            }
+            // Check if it's a format indicator
+            else if ["Digital", "Paper", "Scan", "Print"].contains(where: { content.localizedCaseInsensitiveContains($0) }) {
+                metadata.format = content
+                print("[MetadataParser]    ✓ Format: \(content)")
+            }
+            // Check if it's a publisher (ends with common patterns or contains known publishers)
+            else if content.hasSuffix("-Empire") || content.hasSuffix("Comics") || content.hasSuffix("Publishing") ||
+                    content.contains("Marvel") || content.contains("DC") || content.contains("Image") {
+                metadata.publisher = content
+                print("[MetadataParser]    ✓ Publisher: \(content)")
+            }
+            // Check for scan group or release group patterns
+            else if content.count < 30 && content.count > 2 {
+                // Skip common non-publisher terms
+                let skipTerms = ["covers", "cover", "variant", "variants", "remastered", "hd", "graphic novel"]
+                if !skipTerms.contains(where: { content.localizedCaseInsensitiveContains($0) }) {
+                    // Likely a publisher/release group (Glix, dekabro-Empire, Paper, etc.)
+                    if metadata.publisher == nil {
+                        metadata.publisher = content
+                        print("[MetadataParser]    ✓ Publisher (group): \(content)")
+                    }
+                    metadata.scanInformation = content
                 }
             }
         }
         
-        // Pattern 2: Extract publisher from parentheses
-        if let publisherMatch = nameWithoutExt.range(of: #"\(([^)]+)\)(?!.*\()"#, options: .regularExpression) {
-            let publisherStr = String(nameWithoutExt[publisherMatch]).trimmingCharacters(in: CharacterSet(charactersIn: "()"))
-            // Check if it's not a year
-            if Int(publisherStr) == nil && publisherStr.count > 2 {
-                metadata.publisher = publisherStr
-            }
-        }
+        // Remove all parenthetical content to get base name
+        let baseName = nameWithoutExt.replacingOccurrences(of: #"\s*\([^)]+\)"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespaces)
+        print("[MetadataParser]    Base name: \(baseName)")
         
-        // If no series extracted, use the full filename
-        if metadata.series == nil {
-            metadata.series = nameWithoutExt
+        // Extract issue number from base name
+        // Look for patterns like: "002", "#002", " 002 ", "- 002", ending with "002"
+        // Try multiple patterns in order of specificity
+        if let issueMatch = baseName.range(of: #"[\s#-](\d{3,4}[A-Za-z]?)(?:\s|$)"#, options: .regularExpression) {
+            let issueStr = String(baseName[issueMatch])
+                .trimmingCharacters(in: CharacterSet(charactersIn: " #-"))
+            metadata.number = issueStr
+            print("[MetadataParser]    ✓ Issue: \(issueStr)")
+            
+            // Extract series (everything before the issue number)
+            if let issueRange = baseName.range(of: #"[\s#-]\d{3,4}[A-Za-z]?"#, options: .regularExpression) {
+                let seriesName = String(baseName[..<issueRange.lowerBound]).trimmingCharacters(in: CharacterSet(charactersIn: " -#"))
+                if !seriesName.isEmpty {
+                    metadata.series = seriesName
+                    print("[MetadataParser]    ✓ Series: \(seriesName)")
+                }
+            }
+        } 
+        // Try shorter issue numbers (1-2 digits) at end of string
+        else if let issueMatch = baseName.range(of: #"[\s#-](\d{1,3}[A-Za-z]?)$"#, options: .regularExpression) {
+            let issueStr = String(baseName[issueMatch])
+                .trimmingCharacters(in: CharacterSet(charactersIn: " #-"))
+            metadata.number = issueStr
+            print("[MetadataParser]    ✓ Issue (short): \(issueStr)")
+            
+            // Extract series (everything before the issue number)
+            let seriesName = String(baseName[..<issueMatch.lowerBound]).trimmingCharacters(in: CharacterSet(charactersIn: " -#"))
+            if !seriesName.isEmpty {
+                metadata.series = seriesName
+                print("[MetadataParser]    ✓ Series: \(seriesName)")
+            }
+        } else {
+            // No clear issue number, use full base name as series
+            metadata.series = baseName
+            print("[MetadataParser]    ✓ Series (no issue): \(baseName)")
         }
         
         return metadata
@@ -112,6 +164,8 @@ class MetadataParser {
         result.year = pick(comicInfo?.year, pdf?.year, filename?.year)
         result.month = pick(comicInfo?.month, pdf?.month, filename?.month)
         result.pageCount = pick(comicInfo?.pageCount, pdf?.pageCount, filename?.pageCount)
+        result.format = pick(comicInfo?.format, pdf?.format, filename?.format)
+        result.scanInformation = pick(comicInfo?.scanInformation, pdf?.scanInformation, filename?.scanInformation)
         
         return result
     }

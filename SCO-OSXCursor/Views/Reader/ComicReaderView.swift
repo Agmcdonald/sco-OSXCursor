@@ -16,6 +16,8 @@ struct ComicReaderView: View {
     @StateObject private var viewModel = ReaderViewModel()
     @State private var controlsVisible = true
     @State private var showingMenu = false
+    @State private var autoHideTimer: Timer?
+    @State private var isFullScreen = false  // Only functional on iPad
     
     var body: some View {
         ZStack {
@@ -34,26 +36,29 @@ struct ComicReaderView: View {
                 readerView(comicBook)
             }
             
-            // Always show close button on iPad (even during loading/error)
+            // Close button on iPad (hides/shows with controls)
             #if os(iOS)
-            VStack {
-                HStack {
-                    Button(action: { dismiss() }) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(width: 44, height: 44)
-                            .background(Color.black.opacity(0.7))
-                            .clipShape(Circle())
+            if controlsVisible {
+                VStack {
+                    HStack {
+                        Button(action: { dismiss() }) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundColor(.white)
+                                .frame(width: 44, height: 44)
+                                .background(Color.black.opacity(0.7))
+                                .clipShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(Spacing.lg)
+                        
+                        Spacer()
                     }
-                    .buttonStyle(.plain)
-                    .padding(Spacing.lg)
-                    
                     Spacer()
                 }
-                Spacer()
+                .zIndex(999) // Keep on top
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
-            .zIndex(999) // Keep on top
             #endif
         }
         .task {
@@ -61,6 +66,9 @@ struct ComicReaderView: View {
             print("📖 [ComicReaderView] Comic: \(comic.fileName)")
             await viewModel.loadComic(from: comic)
             print("📖 [ComicReaderView] loadComic() returned")
+            
+            // Start auto-hide timer when reader loads
+            resetAutoHideTimer()
         }
         .onChange(of: viewModel.currentPage) { oldValue, newValue in
             print("📖 [ComicReaderView] Page changed: \(oldValue + 1) → \(newValue + 1)")
@@ -93,6 +101,12 @@ struct ComicReaderView: View {
         .preferredColorScheme(.dark)
         #if os(macOS)
         .navigationBarBackButtonHidden(true)
+        .onAppear {
+            // Reset responder chain for keyboard navigation (async ensures window exists)
+            DispatchQueue.main.async {
+                NSApp.mainWindow?.makeFirstResponder(nil)
+            }
+        }
         #else
         .statusBar(hidden: !controlsVisible)
         .navigationBarHidden(true)
@@ -117,7 +131,11 @@ struct ComicReaderView: View {
                 },
                 controlsVisible: $controlsVisible,
                 showingMenu: $showingMenu,
-                isBackgroundLoading: $viewModel.isBackgroundLoading
+                isBackgroundLoading: $viewModel.isBackgroundLoading,
+                isFullScreen: $isFullScreen,
+                onUserInteraction: {
+                    resetAutoHideTimer()
+                }
             )
             
             // Navigation menu (iPad only)
@@ -269,6 +287,37 @@ struct ComicReaderView: View {
                 Spacer()
             }
         }
+    }
+    
+    // MARK: - Helper Methods
+    
+    /// Reset the auto-hide timer - hides controls after 3 seconds of inactivity
+    private func resetAutoHideTimer() {
+        #if os(iOS)
+        // iPad: auto-hide controls after inactivity (swipe/tap navigation)
+        autoHideTimer?.invalidate()
+        
+        // Don't restart timer if controls are already hidden
+        if !controlsVisible {
+            return
+        }
+        
+        // Start new timer
+        autoHideTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { _ in
+            withAnimation(.easeInOut(duration: 0.3)) {
+                controlsVisible = false
+            }
+        }
+        #else
+        // macOS: controls stay visible (users need buttons, can't swipe)
+        // No auto-hide timer needed
+        #endif
+    }
+    
+    /// Cancel the auto-hide timer
+    private func cancelAutoHideTimer() {
+        autoHideTimer?.invalidate()
+        autoHideTimer = nil
     }
 }
 

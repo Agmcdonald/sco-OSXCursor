@@ -18,6 +18,8 @@ struct LibraryView: View {
     @State private var sortOption: SortOption = .dateAdded
     @State private var filterStatus: Comic.Status? = nil
     @State private var filterPublisher: String? = nil
+    @State private var filterSeries: String? = nil
+    @State private var filterYear: Int? = nil
     @State private var showingFilters = false
     @State private var isSelectionMode = false
     @State private var selectedComics: Set<Comic.ID> = []
@@ -25,6 +27,7 @@ struct LibraryView: View {
     @State private var showingFilePicker = false
     @State private var importedFileURLs: [URL] = []
     @State private var isDropTargeted = false
+    @State private var showingDeleteConfirmation = false
     
     enum ViewMode {
         case grid, list
@@ -53,12 +56,20 @@ struct LibraryView: View {
     var filteredAndSortedComics: [Comic] {
         var result = viewModel.comics
         
-        // Apply search filter
+        // Apply search filter - searches across all metadata fields
         if !searchText.isEmpty {
             result = result.filter { comic in
                 comic.displayTitle.localizedCaseInsensitiveContains(searchText) ||
+                comic.fileName.localizedCaseInsensitiveContains(searchText) ||
+                comic.title?.localizedCaseInsensitiveContains(searchText) == true ||
                 comic.publisher?.localizedCaseInsensitiveContains(searchText) == true ||
-                comic.series?.localizedCaseInsensitiveContains(searchText) == true
+                comic.series?.localizedCaseInsensitiveContains(searchText) == true ||
+                comic.writer?.localizedCaseInsensitiveContains(searchText) == true ||
+                comic.artist?.localizedCaseInsensitiveContains(searchText) == true ||
+                comic.coverArtist?.localizedCaseInsensitiveContains(searchText) == true ||
+                comic.summary?.localizedCaseInsensitiveContains(searchText) == true ||
+                comic.issueNumber?.localizedCaseInsensitiveContains(searchText) == true ||
+                comic.tags.contains(where: { $0.localizedCaseInsensitiveContains(searchText) })
             }
         }
         
@@ -70,6 +81,16 @@ struct LibraryView: View {
         // Apply publisher filter
         if let publisher = filterPublisher {
             result = result.filter { $0.publisher == publisher }
+        }
+        
+        // Apply series filter
+        if let series = filterSeries {
+            result = result.filter { $0.series == series }
+        }
+        
+        // Apply year filter
+        if let year = filterYear {
+            result = result.filter { $0.year == year }
         }
         
         // Apply sorting
@@ -93,6 +114,18 @@ struct LibraryView: View {
     
     var publishers: [String] {
         Array(Set(viewModel.comics.compactMap { $0.publisher })).sorted()
+    }
+    
+    var series: [String] {
+        Array(Set(viewModel.comics.compactMap { $0.series })).sorted()
+    }
+    
+    var years: [Int] {
+        Array(Set(viewModel.comics.compactMap { $0.year })).sorted(by: >)
+    }
+    
+    var hasActiveFilters: Bool {
+        filterStatus != nil || filterPublisher != nil || filterSeries != nil || filterYear != nil
     }
     
     var body: some View {
@@ -124,7 +157,9 @@ struct LibraryView: View {
         .sheet(item: $comicToRead) { comic in
             ComicReaderView(comic: comic)
                 .environmentObject(viewModel)
-                .frame(minWidth: 1200, minHeight: 800)
+                .frame(minWidth: 1400, idealWidth: 1600, maxWidth: .infinity,
+                       minHeight: 900, idealHeight: 1000, maxHeight: .infinity)
+                .ignoresSafeArea()
         }
         #else
         .fullScreenCover(item: $comicToRead) { comic in
@@ -138,6 +173,14 @@ struct LibraryView: View {
             allowsMultipleSelection: true
         ) { result in
             handleFileImport(result)
+        }
+        .alert("Delete Comics", isPresented: $showingDeleteConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                deleteSelectedComics()
+            }
+        } message: {
+            Text("Are you sure you want to delete \(selectedComics.count) comic\(selectedComics.count == 1 ? "" : "s")? This action cannot be undone.")
         }
     }
     
@@ -190,6 +233,26 @@ struct LibraryView: View {
                         Text("\(selectedComics.count) selected")
                             .font(Typography.body)
                             .foregroundColor(TextColors.secondary)
+                        
+                        // Delete button
+                        Button(action: {
+                            if !selectedComics.isEmpty {
+                                showingDeleteConfirmation = true
+                            }
+                        }) {
+                            HStack(spacing: Spacing.xs) {
+                                Image(systemName: "trash")
+                                Text("Delete")
+                                    .font(Typography.bodySmall)
+                            }
+                            .foregroundColor(selectedComics.isEmpty ? TextColors.tertiary : .red)
+                            .padding(.horizontal, Spacing.md)
+                            .padding(.vertical, Spacing.sm)
+                            .background(selectedComics.isEmpty ? BackgroundColors.elevated : Color.red.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(selectedComics.isEmpty)
                         
                         Button("Cancel") {
                             isSelectionMode = false
@@ -278,7 +341,7 @@ struct LibraryView: View {
                         Image(systemName: "line.3.horizontal.decrease.circle")
                         Text("Filters")
                             .font(Typography.bodySmall)
-                        if filterStatus != nil || filterPublisher != nil {
+                        if hasActiveFilters {
                             Circle()
                                 .fill(AccentColors.primary)
                                 .frame(width: 6, height: 6)
@@ -333,12 +396,79 @@ struct LibraryView: View {
                 }
             }
             
-            // Filter chips (shown when filters are active)
+            // Active filter badges (always visible when filters applied)
+            if hasActiveFilters && !showingFilters {
+                activeFilterBadges
+            }
+            
+            // Filter panel (shown when filters button is clicked)
             if showingFilters {
                 filterView
             }
         }
         .padding(Spacing.xl)
+    }
+    
+    // MARK: - Active Filter Badges
+    private var activeFilterBadges: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Spacing.sm) {
+                if let status = filterStatus {
+                    FilterBadge(
+                        title: "Status: \(status.rawValue)",
+                        icon: status.icon,
+                        onRemove: { filterStatus = nil }
+                    )
+                }
+                
+                if let publisher = filterPublisher {
+                    FilterBadge(
+                        title: "Publisher: \(publisher)",
+                        icon: "building.2",
+                        onRemove: { filterPublisher = nil }
+                    )
+                }
+                
+                if let series = filterSeries {
+                    FilterBadge(
+                        title: "Series: \(series)",
+                        icon: "books.vertical",
+                        onRemove: { filterSeries = nil }
+                    )
+                }
+                
+                if let year = filterYear {
+                    FilterBadge(
+                        title: "Year: \(String(year))",
+                        icon: "calendar",
+                        onRemove: { filterYear = nil }
+                    )
+                }
+                
+                // Clear all button
+                Button(action: {
+                    filterStatus = nil
+                    filterPublisher = nil
+                    filterSeries = nil
+                    filterYear = nil
+                }) {
+                    HStack(spacing: Spacing.xs) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 14))
+                        Text("Clear All")
+                            .font(Typography.caption)
+                    }
+                    .foregroundColor(TextColors.tertiary)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.sm)
+                    .background(BackgroundColors.elevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, Spacing.xl)
+            .padding(.vertical, Spacing.sm)
+        }
     }
     
     // MARK: - Filter View
@@ -398,11 +528,67 @@ struct LibraryView: View {
                 }
             }
             
+            // Series filter
+            if !series.isEmpty {
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    Text("Series")
+                        .font(Typography.bodySmall)
+                        .foregroundColor(TextColors.secondary)
+                    
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: Spacing.sm) {
+                            FilterChip(
+                                title: "All",
+                                isSelected: filterSeries == nil,
+                                action: { filterSeries = nil }
+                            )
+                            
+                            ForEach(series, id: \.self) { seriesName in
+                                FilterChip(
+                                    title: seriesName,
+                                    isSelected: filterSeries == seriesName,
+                                    action: { filterSeries = seriesName }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Year filter
+            if !years.isEmpty {
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    Text("Year")
+                        .font(Typography.bodySmall)
+                        .foregroundColor(TextColors.secondary)
+                    
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: Spacing.sm) {
+                            FilterChip(
+                                title: "All",
+                                isSelected: filterYear == nil,
+                                action: { filterYear = nil }
+                            )
+                            
+                            ForEach(years, id: \.self) { year in
+                                FilterChip(
+                                    title: String(year),
+                                    isSelected: filterYear == year,
+                                    action: { filterYear = year }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            
             // Clear all filters
-            if filterStatus != nil || filterPublisher != nil {
+            if hasActiveFilters {
                 Button(action: {
                     filterStatus = nil
                     filterPublisher = nil
+                    filterSeries = nil
+                    filterYear = nil
                 }) {
                     HStack(spacing: Spacing.xs) {
                         Image(systemName: "xmark.circle.fill")
@@ -439,6 +625,19 @@ struct LibraryView: View {
                                         toggleSelection(for: comic.id)
                                     } else {
                                         openReader(for: comic)
+                                    }
+                                }
+                                .contextMenu {
+                                    Button(action: { openReader(for: comic) }) {
+                                        Label("Read", systemImage: "book.fill")
+                                    }
+                                    
+                                    Divider()
+                                    
+                                    Button(role: .destructive, action: {
+                                        viewModel.deleteComics([comic])
+                                    }) {
+                                        Label("Delete", systemImage: "trash")
                                     }
                                 }
                             
@@ -490,6 +689,19 @@ struct LibraryView: View {
                                         toggleSelection(for: comic.id)
                                     } else {
                                         openReader(for: comic)
+                                    }
+                                }
+                                .contextMenu {
+                                    Button(action: { openReader(for: comic) }) {
+                                        Label("Read", systemImage: "book.fill")
+                                    }
+                                    
+                                    Divider()
+                                    
+                                    Button(role: .destructive, action: {
+                                        viewModel.deleteComics([comic])
+                                    }) {
+                                        Label("Delete", systemImage: "trash")
                                     }
                                 }
                         }
@@ -585,6 +797,23 @@ struct LibraryView: View {
         } else {
             selectedComics.insert(id)
         }
+    }
+    
+    private func deleteSelectedComics() {
+        // Get the comic objects to delete
+        let comicsToDelete = viewModel.comics.filter { selectedComics.contains($0.id) }
+        
+        print("\n🗑️ [LibraryView] Deleting \(comicsToDelete.count) comics:")
+        for comic in comicsToDelete {
+            print("   - \(comic.fileName)")
+        }
+        
+        // Delete them
+        viewModel.deleteComics(comicsToDelete)
+        
+        // Reset selection mode
+        selectedComics.removeAll()
+        isSelectionMode = false
     }
     
     private func openReader(for comic: Comic) {
@@ -855,6 +1084,41 @@ struct FilterChip: View {
             )
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Filter Badge
+struct FilterBadge: View {
+    let title: String
+    var icon: String? = nil
+    let onRemove: () -> Void
+    
+    var body: some View {
+        HStack(spacing: Spacing.xs) {
+            if let icon = icon {
+                Image(systemName: icon)
+                    .font(.system(size: 12))
+            }
+            
+            Text(title)
+                .font(Typography.caption)
+            
+            Button(action: onRemove) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 14))
+                    .foregroundColor(TextColors.tertiary)
+            }
+            .buttonStyle(.plain)
+        }
+        .foregroundColor(TextColors.primary)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
+        .background(AccentColors.primary.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(AccentColors.primary.opacity(0.3), lineWidth: 1)
+        )
     }
 }
 

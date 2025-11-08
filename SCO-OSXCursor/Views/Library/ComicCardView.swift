@@ -27,11 +27,13 @@ struct ComicCardView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 
                 // Issue number and year
-                if let issueNumber = comic.issueNumber {
+                if comic.issueNumber != nil || comic.year != nil {
                     HStack(spacing: Spacing.xs) {
-                        Text("Issue #\(issueNumber)")
-                            .font(Typography.caption)
-                            .foregroundColor(TextColors.secondary)
+                        if let issueNumber = comic.issueNumber {
+                            Text("Issue #\(issueNumber)")
+                                .font(Typography.caption)
+                                .foregroundColor(TextColors.secondary)
+                        }
                         
                         if let year = comic.year {
                             Text("(\(String(year)))")
