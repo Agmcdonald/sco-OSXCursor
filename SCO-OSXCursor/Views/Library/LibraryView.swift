@@ -211,6 +211,159 @@ struct LibraryView: View {
         }
     }
     
+    // MARK: - Toolbar Components
+    
+    private var searchBar: some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "magnifyingglass")
+                .foregroundColor(TextColors.tertiary)
+            
+            TextField("Search comics, series, publisher...", text: $searchText)
+                .textFieldStyle(.plain)
+                .font(Typography.body)
+                .foregroundColor(TextColors.primary)
+            
+            if !searchText.isEmpty {
+                Button(action: { searchText = "" }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(TextColors.tertiary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(Spacing.md)
+        .background(BackgroundColors.elevated)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+    
+    private var sortMenu: some View {
+        Menu {
+            ForEach(SortOption.allCases, id: \.self) { option in
+                Button(action: { sortOption = option }) {
+                    Label {
+                        Text(option.rawValue)
+                    } icon: {
+                        Image(systemName: sortOption == option ? "checkmark" : option.icon)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: Spacing.sm) {
+                Image(systemName: sortOption.icon)
+                Text(sortOption.rawValue)
+                    .font(Typography.bodySmall)
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10))
+            }
+            .foregroundColor(TextColors.secondary)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
+            .background(BackgroundColors.elevated)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .frame(minWidth: 180)
+    }
+    
+    private var filtersButton: some View {
+        Button(action: { showingFilters.toggle() }) {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "line.3.horizontal.decrease.circle")
+                Text("Filters")
+                    .font(Typography.bodySmall)
+                if hasActiveFilters {
+                    Circle()
+                        .fill(AccentColors.primary)
+                        .frame(width: 6, height: 6)
+                }
+            }
+            .foregroundColor(showingFilters ? AccentColors.primary : TextColors.secondary)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
+            .background(showingFilters ? AccentColors.primary.opacity(0.12) : BackgroundColors.elevated)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+    }
+    
+    private var selectButton: some View {
+        Button(action: { isSelectionMode = true }) {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "checkmark.circle")
+                Text("Select")
+                    .font(Typography.bodySmall)
+            }
+            .foregroundColor(TextColors.secondary)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
+            .background(BackgroundColors.elevated)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+    }
+    
+    private var viewModeToggle: some View {
+        HStack(spacing: Spacing.sm) {
+            Button(action: { viewMode = .grid }) {
+                Image(systemName: "square.grid.2x2")
+                    .font(.system(size: 16))
+                    .foregroundColor(viewMode == .grid ? AccentColors.primary : TextColors.secondary)
+                    .frame(width: 32, height: 32)
+                    .background(viewMode == .grid ? AccentColors.primary.opacity(0.12) : Color.clear)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+            .buttonStyle(.plain)
+            
+            Button(action: { viewMode = .list }) {
+                Image(systemName: "list.bullet")
+                    .font(.system(size: 16))
+                    .foregroundColor(viewMode == .list ? AccentColors.primary : TextColors.secondary)
+                    .frame(width: 32, height: 32)
+                    .background(viewMode == .list ? AccentColors.primary.opacity(0.12) : Color.clear)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+    
+    private var moreMenu: some View {
+        Menu {
+            // Sort section
+            Section("Sort By") {
+                ForEach(SortOption.allCases, id: \.self) { option in
+                    Button(action: { sortOption = option }) {
+                        Label(option.rawValue, systemImage: sortOption == option ? "checkmark" : option.icon)
+                    }
+                }
+            }
+            
+            // Actions section
+            Section {
+                Button(action: { showingFilters.toggle() }) {
+                    Label("Filters", systemImage: "line.3.horizontal.decrease.circle")
+                    if hasActiveFilters {
+                        Text("•").foregroundColor(AccentColors.primary)
+                    }
+                }
+                
+                if !isSelectionMode {
+                    Button(action: { isSelectionMode = true }) {
+                        Label("Select Comics", systemImage: "checkmark.circle")
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.system(size: 20))
+                .foregroundColor(TextColors.secondary)
+                .frame(width: 44, height: 44)
+                .background(BackgroundColors.elevated)
+                .clipShape(Circle())
+        }
+        .buttonStyle(.plain)
+    }
+    
     // MARK: - Header View
     private var headerView: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
@@ -284,116 +437,22 @@ struct LibraryView: View {
             // Search and toolbar
             HStack(spacing: Spacing.md) {
                 // Search bar
-                HStack(spacing: Spacing.sm) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundColor(TextColors.tertiary)
-                    
-                    TextField("Search comics, series, publisher...", text: $searchText)
-                        .textFieldStyle(.plain)
-                        .font(Typography.body)
-                        .foregroundColor(TextColors.primary)
-                    
-                    if !searchText.isEmpty {
-                        Button(action: { searchText = "" }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(TextColors.tertiary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(Spacing.md)
-                .background(BackgroundColors.elevated)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .frame(maxWidth: .infinity)
+                searchBar
+                    .frame(maxWidth: .infinity)
                 
-                // Sort menu
-                Menu {
-                    ForEach(SortOption.allCases, id: \.self) { option in
-                        Button(action: { sortOption = option }) {
-                            Label {
-                                Text(option.rawValue)
-                            } icon: {
-                                Image(systemName: sortOption == option ? "checkmark" : option.icon)
-                            }
-                        }
-                    }
-                } label: {
-                    HStack(spacing: Spacing.sm) {
-                        Image(systemName: sortOption.icon)
-                        Text(sortOption.rawValue)
-                            .font(Typography.bodySmall)
-                            .lineLimit(1)
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 10))
-                    }
-                    .foregroundColor(TextColors.secondary)
-                    .padding(.horizontal, Spacing.md)
-                    .padding(.vertical, Spacing.sm)
-                    .background(BackgroundColors.elevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
-                .buttonStyle(.plain)
-                .frame(minWidth: 180)
-                
-                // Filter button
-                Button(action: { showingFilters.toggle() }) {
-                    HStack(spacing: Spacing.xs) {
-                        Image(systemName: "line.3.horizontal.decrease.circle")
-                        Text("Filters")
-                            .font(Typography.bodySmall)
-                        if hasActiveFilters {
-                            Circle()
-                                .fill(AccentColors.primary)
-                                .frame(width: 6, height: 6)
-                        }
-                    }
-                    .foregroundColor(showingFilters ? AccentColors.primary : TextColors.secondary)
-                    .padding(.horizontal, Spacing.md)
-                    .padding(.vertical, Spacing.sm)
-                    .background(showingFilters ? AccentColors.primary.opacity(0.12) : BackgroundColors.elevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
-                .buttonStyle(.plain)
-                
-                // Selection mode button
+                #if os(macOS)
+                // macOS: Show all controls (plenty of space)
+                sortMenu
+                filtersButton
                 if !isSelectionMode {
-                    Button(action: { isSelectionMode = true }) {
-                        HStack(spacing: Spacing.xs) {
-                            Image(systemName: "checkmark.circle")
-                            Text("Select")
-                                .font(Typography.bodySmall)
-                        }
-                        .foregroundColor(TextColors.secondary)
-                        .padding(.horizontal, Spacing.md)
-                        .padding(.vertical, Spacing.sm)
-                        .background(BackgroundColors.elevated)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-                    .buttonStyle(.plain)
+                    selectButton
                 }
-                
-                // View mode toggle
-                HStack(spacing: Spacing.sm) {
-                    Button(action: { viewMode = .grid }) {
-                        Image(systemName: "square.grid.2x2")
-                            .font(.system(size: 16))
-                            .foregroundColor(viewMode == .grid ? AccentColors.primary : TextColors.secondary)
-                            .frame(width: 32, height: 32)
-                            .background(viewMode == .grid ? AccentColors.primary.opacity(0.12) : Color.clear)
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                    }
-                    .buttonStyle(.plain)
-                    
-                    Button(action: { viewMode = .list }) {
-                        Image(systemName: "list.bullet")
-                            .font(.system(size: 16))
-                            .foregroundColor(viewMode == .list ? AccentColors.primary : TextColors.secondary)
-                            .frame(width: 32, height: 32)
-                            .background(viewMode == .list ? AccentColors.primary.opacity(0.12) : Color.clear)
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                    }
-                    .buttonStyle(.plain)
-                }
+                viewModeToggle
+                #else
+                // iPad/iOS: Compact "More" menu
+                moreMenu
+                viewModeToggle
+                #endif
             }
             
             // Active filter badges (always visible when filters applied)

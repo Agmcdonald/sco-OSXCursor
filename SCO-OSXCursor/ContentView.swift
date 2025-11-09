@@ -87,19 +87,49 @@ struct ContentView: View {
 struct SidebarView: View {
     @Binding var selectedTab: ContentView.Tab
     
+    // Fallback text if logo not found
+    private var fallbackText: some View {
+        VStack(spacing: 12) {
+            Text("Super Comic")
+                .font(Typography.h3)
+                .foregroundColor(TextColors.primary)
+            
+            Text("Organizer")
+                .font(Typography.body)
+                .foregroundColor(TextColors.secondary)
+        }
+        .padding(.vertical, Spacing.xxl)
+    }
+    
     var body: some View {
         VStack(spacing: 0) {
-            // Top section: App logo/title
-            VStack(spacing: 12) {
-                Text("Super Comic")
-                    .font(Typography.h3)
-                    .foregroundColor(TextColors.primary)
-                
-                Text("Organizer")
-                    .font(Typography.body)
-                    .foregroundColor(TextColors.secondary)
+            // Top section: App logo
+            #if os(macOS)
+            if let logo = NSImage(named: "logo_SCO") {
+                Image(nsImage: logo)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .scaleEffect(1.2) // 👈 makes logo ~20% larger visually
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Spacing.md)
+                    .padding(.horizontal, Spacing.md)
+            } else {
+                fallbackText
             }
-            .padding(.vertical, Spacing.xxl)
+            #else
+            if let logo = UIImage(named: "logo_SCO") {
+                Image(uiImage: logo)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .scaleEffect(1.2) // 👈 same tweak for iPad/iPhone
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Spacing.md)
+                    .padding(.horizontal, Spacing.md)
+            } else {
+                fallbackText
+            }
+            #endif
+
             
             Divider()
                 .background(BorderColors.subtle)
