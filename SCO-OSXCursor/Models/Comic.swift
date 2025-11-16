@@ -47,6 +47,9 @@ struct Comic: Identifiable, Codable {
     var rating: Int? // 1-5 stars
     var isFavorite: Bool
     
+    // MARK: - Reader Preferences
+    var preferredTransition: String? // Per-book transition override (PageTransition.rawValue)
+    
     // MARK: - File Info
     var fileSize: Int64 // in bytes
     var fileType: FileType
@@ -79,6 +82,7 @@ struct Comic: Identifiable, Codable {
         tags: [String] = [],
         rating: Int? = nil,
         isFavorite: Bool = false,
+        preferredTransition: String? = nil,
         fileSize: Int64 = 0,
         fileType: FileType = .cbz,
         dateAdded: Date = Date(),
@@ -106,6 +110,7 @@ struct Comic: Identifiable, Codable {
         self.tags = tags
         self.rating = rating
         self.isFavorite = isFavorite
+        self.preferredTransition = preferredTransition
         self.fileSize = fileSize
         self.fileType = fileType
         self.dateAdded = dateAdded
@@ -323,6 +328,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         static let tags = Column("tags")
         static let rating = Column("rating")
         static let isFavorite = Column("is_favorite")
+        static let preferredTransition = Column("preferred_transition")
         static let fileSize = Column("file_size")
         static let fileType = Column("file_type")
         static let dateAdded = Column("date_added")
@@ -353,6 +359,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         container[Columns.tags] = try? JSONEncoder().encode(tags)  // Store as JSON
         container[Columns.rating] = rating
         container[Columns.isFavorite] = isFavorite
+        container[Columns.preferredTransition] = preferredTransition
         container[Columns.fileSize] = fileSize
         container[Columns.fileType] = fileType.rawValue
         container[Columns.dateAdded] = dateAdded
@@ -407,6 +414,7 @@ extension Comic: FetchableRecord, PersistableRecord {
             tags: decodedTags,
             rating: row["rating"],
             isFavorite: row["is_favorite"] ?? false,
+            preferredTransition: row["preferred_transition"],
             fileSize: fileSize,
             fileType: fileType,
             dateAdded: dateAdded,

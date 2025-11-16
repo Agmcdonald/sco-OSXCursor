@@ -12,28 +12,117 @@ import SwiftUI
 struct PagedReaderView: View {
     let pages: [ComicPage]
     @Binding var currentPage: Int
+    var comic: Comic? = nil  // For per-book transition settings
+    @ObservedObject private var settings = ReaderSettings.shared
     
-    @State private var dragOffset: CGFloat = 0
-    @State private var isDragging = false
+    // Gesture state callbacks for container tap guard
+    var onBeginDragging: () -> Void = {}
+    var onEndDragging: () -> Void = {}
+    var onBeginPinching: () -> Void = {}
+    var onEndPinching: () -> Void = {}
+    
+    @State private var transitionDirection: Edge = .trailing
+    
+    // Computed effective transition (per-book or global default)
+    private var effectiveTransition: PageTransition {
+        settings.effectiveTransition(for: comic)
+    }
+    
+    // MARK: - Debug Logging
+    
+    @inline(__always) private func debugLog(_ msg: @autoclosure () -> String) {
+        #if DEBUG
+        print(msg())
+        #endif
+    }
+    
+    private let platform: String = {
+        #if os(iOS)
+        return "📱 iOS"
+        #else
+        return "💻 macOS"
+        #endif
+    }()
     
     var body: some View {
         GeometryReader { geometry in
-            ZStack {
-                // Background
-                Color.black
-                    .ignoresSafeArea()
+            #if os(iOS)
+            if effectiveTransition == .curl {
+                PageCurlView(pages: pages, currentPage: $currentPage)
+            } else {
+                standardPageView
+            }
+            #else
+            standardPageView
+            #endif
+        }
+    }
+    
+    private var standardPageView: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            
+            // GUARD: Prevent crash if pages array is empty during reload
+            if pages.isEmpty {
+                Color.clear.ignoresSafeArea()
+            } else {
+                let safeIndex = min(max(currentPage, 0), pages.count - 1)
                 
-                // Pages with swipe gesture
-                TabView(selection: $currentPage) {
-                    ForEach(Array(pages.enumerated()), id: \.element.id) { index, page in
-                        ComicPageView(page: page)
-                            .tag(index)
-                    }
+                ComicPageView(
+                    page: pages[safeIndex],
+                    onSwipeLeft: {
+                        debugLog("[\(platform)][PagedReaderView] ⬅️ onSwipeLeft called! currentPage=\(currentPage), count=\(pages.count)")
+                        guard currentPage < pages.count - 1 else {
+                            debugLog("[\(platform)][PagedReaderView] ❌ Already at last page")
+                            return
+                        }
+                        debugLog("[\(platform)][PagedReaderView] → Navigating to page \(currentPage + 1)")
+                        withAnimation(effectiveTransition.animation()) {
+                            currentPage += 1
+                        }
+                    },
+                    onSwipeRight: {
+                        debugLog("[\(platform)][PagedReaderView] ➡️ onSwipeRight called! currentPage=\(currentPage)")
+                        guard currentPage > 0 else {
+                            debugLog("[\(platform)][PagedReaderView] ❌ Already at first page")
+                            return
+                        }
+                        debugLog("[\(platform)][PagedReaderView] → Navigating to page \(currentPage - 1)")
+                        withAnimation(effectiveTransition.animation()) {
+                            currentPage -= 1
+                        }
+                    },
+                    onBeginDragging: onBeginDragging,
+                    onEndDragging: onEndDragging,
+                    onBeginPinching: onBeginPinching,
+                    onEndPinching: onEndPinching
+                )
+                .background(Color.black)
+                .id(safeIndex)
+                .zIndex(Double(safeIndex))
+                .clipped()
+                .transition(effectiveTransition.transition(for: transitionDirection))
+                .animation(nil, value: currentPage)
+            }
+        }
+        .onChange(of: currentPage) { oldValue, newValue in
+            // Required for macOS 26/iOS 20 - prevents double-fire
+            guard newValue != oldValue else {
+                debugLog("[\(platform)][PagedReaderView] ⚠️ Double-fire guard triggered")
+                return
+            }
+            
+            let transition = effectiveTransition
+            debugLog("[\(platform)][PagedReaderView] 📄 Page changed: \(oldValue) → \(newValue)")
+            debugLog("[\(platform)][PagedReaderView] 🎬 Transition: \(transition.rawValue)")
+            debugLog("[\(platform)][PagedReaderView] ⏱️ Animation: \(transition.animation())")
+            
+            transitionDirection = newValue > oldValue ? .trailing : .leading
+            
+            withTransaction(Transaction(animation: effectiveTransition.animation())) {
+                withAnimation(effectiveTransition.animation()) {
+                    _ = newValue
                 }
-                #if os(iOS)
-                .tabViewStyle(.page(indexDisplayMode: .never))
-                .indexViewStyle(.page(backgroundDisplayMode: .never))
-                #endif
             }
         }
     }

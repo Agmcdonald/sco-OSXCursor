@@ -61,11 +61,21 @@ struct ComicReaderView: View {
     @State private var controlsVisible = true
     @State private var showingMenu = false
     @State private var showingThumbnails = false
+    @State private var showingReaderSettings = false
     @State private var autoHideTimer: Timer?
     @State private var isFullScreen = false  // Only functional on iPad
+    @State private var currentComic: Comic  // Mutable copy for settings changes
+    @State private var isDragging = false
+    @State private var isPinching = false
+    @State private var gestureCooldownTask: Task<Void, Never>?
     #if os(macOS)
     @State private var keyboardMonitor: KeyboardMonitor? = nil
     #endif
+    
+    init(comic: Comic) {
+        self.comic = comic
+        _currentComic = State(initialValue: comic)
+    }
     
     var body: some View {
         ZStack {
@@ -174,12 +184,22 @@ struct ComicReaderView: View {
                         set: { newSpreadIndex in
                             viewModel.currentPage = pageForSpreadIndex(newSpreadIndex)
                         }
-                    )
+                    ),
+                    comic: currentComic,
+                    onBeginDragging: beginDragging,
+                    onEndDragging: endDragging,
+                    onBeginPinching: beginPinching,
+                    onEndPinching: endPinching
                 )
             } else {
                 PagedReaderView(
                     pages: viewModel.allPages,
-                    currentPage: $viewModel.currentPage
+                    currentPage: $viewModel.currentPage,
+                    comic: currentComic,
+                    onBeginDragging: beginDragging,
+                    onEndDragging: endDragging,
+                    onBeginPinching: beginPinching,
+                    onEndPinching: endPinching
                 )
             }
             
@@ -220,6 +240,23 @@ struct ComicReaderView: View {
                 navigationMenuOverlay
             }
             #endif
+        }
+        .contentShape(Rectangle()) // Ensure entire area is tappable
+        .onTapGesture {
+            guard !controlsVisible, !isDragging, !isPinching else { return }
+            withAnimation(.easeInOut(duration: 0.3)) {
+                controlsVisible = true
+            }
+            resetAutoHideTimer()
+        }
+        .sheet(isPresented: $showingReaderSettings) {
+            InReaderSettingsView(
+                comic: $currentComic,
+                isPresented: $showingReaderSettings,
+                onComicUpdated: { updatedComic in
+                    libraryViewModel.updateComic(updatedComic)
+                }
+            )
         }
     }
     
@@ -267,7 +304,16 @@ struct ComicReaderView: View {
                         dismiss()
                     }
                     
-                    MenuNavItem(icon: "gear", title: "Settings") {
+                    Divider()
+                        .background(BorderColors.subtle)
+                        .padding(.vertical, Spacing.sm)
+                    
+                    MenuNavItem(icon: "slider.horizontal.3", title: "Reader Settings", color: AccentColors.primary) {
+                        showingMenu = false
+                        showingReaderSettings = true
+                    }
+                    
+                    MenuNavItem(icon: "gear", title: "App Settings") {
                         showingMenu = false
                         dismiss()
                     }
@@ -394,6 +440,42 @@ struct ComicReaderView: View {
     private func cancelAutoHideTimer() {
         autoHideTimer?.invalidate()
         autoHideTimer = nil
+    }
+    
+    // MARK: - Gesture State Management
+    
+    /// Begin dragging state (called by page gestures)
+    private func beginDragging() {
+        gestureCooldownTask?.cancel()
+        isDragging = true
+    }
+    
+    /// End dragging state with cooldown (200ms)
+    private func endDragging() {
+        gestureCooldownTask?.cancel()
+        gestureCooldownTask = Task {
+            try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
+            if !Task.isCancelled {
+                isDragging = false
+            }
+        }
+    }
+    
+    /// Begin pinching state (called by page gestures)
+    private func beginPinching() {
+        gestureCooldownTask?.cancel()
+        isPinching = true
+    }
+    
+    /// End pinching state with cooldown (200ms)
+    private func endPinching() {
+        gestureCooldownTask?.cancel()
+        gestureCooldownTask = Task {
+            try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
+            if !Task.isCancelled {
+                isPinching = false
+            }
+        }
     }
     
     // MARK: - Spread Mode Helpers

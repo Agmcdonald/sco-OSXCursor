@@ -25,16 +25,21 @@ struct ReaderControlsOverlay: View {
     
     var body: some View {
         ZStack {
-            // Tap area to toggle controls (entire screen except control areas)
+            // BACKGROUND TAP TARGET (behind controls)
+            // Only hit-testable when controls are visible (allows pass-through when hidden)
             Color.clear
                 .contentShape(Rectangle())
+                .accessibilityHidden(true)  // Hide from VoiceOver
+                .allowsHitTesting(controlsVisible)  // Blocks when visible, allows pass-through when hidden
                 .onTapGesture {
                     withAnimation(.easeInOut(duration: 0.3)) {
                         controlsVisible.toggle()
                     }
                     onUserInteraction()
                 }
+                .zIndex(0)  // Behind controls
             
+            // CONTROLS
             VStack(spacing: 0) {
                 // Top bar
                 if controlsVisible {
@@ -50,6 +55,7 @@ struct ReaderControlsOverlay: View {
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
+            .zIndex(1)  // Above background tap
         }
     }
     

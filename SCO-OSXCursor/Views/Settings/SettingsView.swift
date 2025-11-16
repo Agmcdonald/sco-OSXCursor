@@ -9,28 +9,29 @@ import SwiftUI
 
 @MainActor
 struct SettingsView: View {
+    @ObservedObject private var settings = ReaderSettings.shared
+    
     var body: some View {
-        VStack(spacing: Spacing.lg) {
-            Image(systemName: "gear")
-                .font(.system(size: 64))
-                .foregroundColor(TextColors.tertiary)
-            
-            Text("Settings View")
-                .font(Typography.h1)
-                .foregroundColor(TextColors.primary)
-            
-            Text("Configure your preferences")
-                .font(Typography.body)
-                .foregroundColor(TextColors.secondary)
-            
-            Text("Customize organization rules, folder structures, and more")
-                .font(Typography.bodySmall)
-                .foregroundColor(TextColors.tertiary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
+        Form {
+            Section("Reader") {
+                Picker("Page Transition", selection: $settings.pageTransition) {
+                    ForEach(
+                        PageTransition.allCases.filter { $0.isAvailableOnCurrentPlatform },
+                        id: \.self
+                    ) { transition in
+                        Label(transition.rawValue, systemImage: transition.icon)
+                            .tag(transition)
+                    }
+                }
+                #if os(macOS)
+                .pickerStyle(.menu)
+                #endif
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(BackgroundColors.primary)
+        #if os(macOS)
+        .formStyle(.grouped)
+        .frame(minWidth: 500, minHeight: 400)
+        #endif
     }
 }
 
