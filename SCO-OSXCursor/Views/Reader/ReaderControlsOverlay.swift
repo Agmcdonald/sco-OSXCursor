@@ -25,37 +25,38 @@ struct ReaderControlsOverlay: View {
     
     var body: some View {
         ZStack {
-            // BACKGROUND TAP TARGET (behind controls)
-            // Only hit-testable when controls are visible (allows pass-through when hidden)
-            Color.clear
-                .contentShape(Rectangle())
-                .accessibilityHidden(true)  // Hide from VoiceOver
-                .allowsHitTesting(controlsVisible)  // Blocks when visible, allows pass-through when hidden
-                .onTapGesture {
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        controlsVisible.toggle()
-                    }
-                    onUserInteraction()
-                }
-                .zIndex(0)  // Behind controls
+            // Scrim is visual only - does NOT block gestures
+            Color.black.opacity(controlsVisible ? 0.15 : 0.0)
+                .ignoresSafeArea()
+                .allowsHitTesting(false)  // Critical: lets swipes pass through
             
             // CONTROLS
             VStack(spacing: 0) {
-                // Top bar
+                // Top bar - hit-testable
                 if controlsVisible {
                     topBar
                         .transition(.move(edge: .top).combined(with: .opacity))
+                        .contentShape(Rectangle())
                 }
                 
-                Spacer()
+                Spacer(minLength: 0)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        // Tap center area to hide controls
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            controlsVisible = false
+                        }
+                        onUserInteraction()
+                    }
                 
-                // Bottom bar
+                // Bottom bar - hit-testable
                 if controlsVisible {
                     bottomBar
                         .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .contentShape(Rectangle())
                 }
             }
-            .zIndex(1)  // Above background tap
+            .zIndex(10)
         }
     }
     

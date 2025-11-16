@@ -68,6 +68,7 @@ struct ComicReaderView: View {
     @State private var isDragging = false
     @State private var isPinching = false
     @State private var gestureCooldownTask: Task<Void, Never>?
+    private let tapCooldown: TimeInterval = 0.22
     #if os(macOS)
     @State private var keyboardMonitor: KeyboardMonitor? = nil
     #endif
@@ -186,6 +187,7 @@ struct ComicReaderView: View {
                         }
                     ),
                     comic: currentComic,
+                    viewModel: viewModel,
                     onBeginDragging: beginDragging,
                     onEndDragging: endDragging,
                     onBeginPinching: beginPinching,
@@ -196,6 +198,7 @@ struct ComicReaderView: View {
                     pages: viewModel.allPages,
                     currentPage: $viewModel.currentPage,
                     comic: currentComic,
+                    viewModel: viewModel,
                     onBeginDragging: beginDragging,
                     onEndDragging: endDragging,
                     onBeginPinching: beginPinching,
@@ -243,11 +246,16 @@ struct ComicReaderView: View {
         }
         .contentShape(Rectangle()) // Ensure entire area is tappable
         .onTapGesture {
-            guard !controlsVisible, !isDragging, !isPinching else { return }
-            withAnimation(.easeInOut(duration: 0.3)) {
-                controlsVisible = true
+            // Don't toggle immediately after a swipe/pinch
+            guard Date().timeIntervalSince(viewModel.lastInteractionAt) > tapCooldown else { return }
+            
+            withAnimation(.easeInOut(duration: 0.25)) {
+                controlsVisible.toggle()
             }
-            resetAutoHideTimer()
+            
+            if controlsVisible {
+                resetAutoHideTimer()
+            }
         }
         .sheet(isPresented: $showingReaderSettings) {
             InReaderSettingsView(

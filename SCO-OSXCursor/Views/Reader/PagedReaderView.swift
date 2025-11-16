@@ -14,6 +14,7 @@ struct PagedReaderView: View {
     @Binding var currentPage: Int
     var comic: Comic? = nil  // For per-book transition settings
     @ObservedObject private var settings = ReaderSettings.shared
+    var viewModel: ReaderViewModel? = nil  // For debounced turns
     
     // Gesture state callbacks for container tap guard
     var onBeginDragging: () -> Void = {}
@@ -71,24 +72,20 @@ struct PagedReaderView: View {
                 ComicPageView(
                     page: pages[safeIndex],
                     onSwipeLeft: {
-                        debugLog("[\(platform)][PagedReaderView] ⬅️ onSwipeLeft called! currentPage=\(currentPage), count=\(pages.count)")
-                        guard currentPage < pages.count - 1 else {
-                            debugLog("[\(platform)][PagedReaderView] ❌ Already at last page")
-                            return
-                        }
-                        debugLog("[\(platform)][PagedReaderView] → Navigating to page \(currentPage + 1)")
-                        withAnimation(effectiveTransition.animation()) {
+                        if let viewModel = viewModel {
+                            viewModel.turn(by: +1)
+                        } else {
+                            // Fallback for compatibility
+                            guard currentPage < pages.count - 1 else { return }
                             currentPage += 1
                         }
                     },
                     onSwipeRight: {
-                        debugLog("[\(platform)][PagedReaderView] ➡️ onSwipeRight called! currentPage=\(currentPage)")
-                        guard currentPage > 0 else {
-                            debugLog("[\(platform)][PagedReaderView] ❌ Already at first page")
-                            return
-                        }
-                        debugLog("[\(platform)][PagedReaderView] → Navigating to page \(currentPage - 1)")
-                        withAnimation(effectiveTransition.animation()) {
+                        if let viewModel = viewModel {
+                            viewModel.turn(by: -1)
+                        } else {
+                            // Fallback for compatibility
+                            guard currentPage > 0 else { return }
                             currentPage -= 1
                         }
                     },
@@ -105,6 +102,7 @@ struct PagedReaderView: View {
                 .animation(nil, value: currentPage)
             }
         }
+        .animation(effectiveTransition.animation(), value: currentPage)
         .onChange(of: currentPage) { oldValue, newValue in
             // Required for macOS 26/iOS 20 - prevents double-fire
             guard newValue != oldValue else {

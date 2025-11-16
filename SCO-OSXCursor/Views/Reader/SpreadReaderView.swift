@@ -14,6 +14,7 @@ struct SpreadReaderView: View {
     @Binding var currentSpreadIndex: Int
     var comic: Comic? = nil  // For per-book transition settings
     @ObservedObject private var settings = ReaderSettings.shared
+    var viewModel: ReaderViewModel? = nil  // For debounced turns
     
     // Gesture state callbacks for container tap guard
     var onBeginDragging: () -> Void = {}
@@ -73,24 +74,20 @@ struct SpreadReaderView: View {
                 SpreadView(
                     spread: spreads[safeIndex],
                     onSwipeLeft: {
-                        debugLog("[\(platform)][SpreadReaderView] ⬅️ onSwipeLeft called! spread=\(currentSpreadIndex)")
-                        guard currentSpreadIndex < spreads.count - 1 else {
-                            debugLog("[\(platform)][SpreadReaderView] ❌ Already at last spread")
-                            return
-                        }
-                        debugLog("[\(platform)][SpreadReaderView] → Navigating to spread \(currentSpreadIndex + 1)")
-                        withAnimation(effectiveTransition.animation()) {
+                        if let viewModel = viewModel {
+                            viewModel.turn(by: +1)  // +1 spread = +2 pages (VM handles conversion)
+                        } else {
+                            // Fallback for compatibility
+                            guard currentSpreadIndex < spreads.count - 1 else { return }
                             currentSpreadIndex += 1
                         }
                     },
                     onSwipeRight: {
-                        debugLog("[\(platform)][SpreadReaderView] ➡️ onSwipeRight called! spread=\(currentSpreadIndex)")
-                        guard currentSpreadIndex > 0 else {
-                            debugLog("[\(platform)][SpreadReaderView] ❌ Already at first spread")
-                            return
-                        }
-                        debugLog("[\(platform)][SpreadReaderView] → Navigating to spread \(currentSpreadIndex - 1)")
-                        withAnimation(effectiveTransition.animation()) {
+                        if let viewModel = viewModel {
+                            viewModel.turn(by: -1)  // -1 spread = -2 pages (VM handles conversion)
+                        } else {
+                            // Fallback for compatibility
+                            guard currentSpreadIndex > 0 else { return }
                             currentSpreadIndex -= 1
                         }
                     },
@@ -107,6 +104,7 @@ struct SpreadReaderView: View {
                 .animation(nil, value: safeIndex)
             }
         }
+        .animation(effectiveTransition.animation(), value: currentSpreadIndex)
         .onChange(of: currentSpreadIndex) { oldValue, newValue in
             // Required for macOS 26/iOS 20
             guard newValue != oldValue else {

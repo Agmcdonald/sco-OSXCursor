@@ -32,6 +32,8 @@ class ReaderViewModel: ObservableObject {
     @Published var loadedPages: [Int: ComicPage] = [:]  // For lazy-loaded pages - published to update UI
     @Published var isBackgroundLoading: Bool = false  // True while pages load in background
     @Published var isSpreadMode: Bool = false  // Two-page spread view
+    @Published private(set) var isAnimatingTurn: Bool = false
+    @Published private(set) var lastInteractionAt: Date = .distantPast
     
     private let cbzReader = CBZReader()
     private let pdfReader = PDFReader()
@@ -40,6 +42,8 @@ class ReaderViewModel: ObservableObject {
     private var isLazyLoaded = false  // Track if current comic uses lazy loading
     private var backgroundLoadTask: Task<Void, Never>?  // Background loading task
     private let progressTracker = ReadingProgressTracker.shared
+    private var lastTurnAt: Date = .distantPast
+    private let turnCooldown: TimeInterval = 0.18
     
     // Store values for cleanup (non-MainActor isolated)
     private var cleanupURL: URL?
@@ -321,6 +325,39 @@ class ReaderViewModel: ObservableObject {
         }
     }
     
+    /// Centralized, debounced page turn.
+    /// `steps`: +1 for next, -1 for previous (in spread mode, each step = 2 pages)
+    func turn(by steps: Int) {
+        guard steps != 0 else { return }
+        guard let comic = comicBook else { return }
+        guard !isLoading, !isBackgroundLoading else { return }
+        guard !isAnimatingTurn else { return }
+        
+        let now = Date()
+        guard now.timeIntervalSince(lastTurnAt) > turnCooldown else { return }
+        
+        // In spread mode, each logical step equals 2 pages
+        let pageDelta = isSpreadMode ? (steps * 2) : steps
+        let totalPages = comic.totalPages
+        let target = clamp(currentPage + pageDelta, lower: 0, upper: max(0, totalPages - 1))
+        guard target != currentPage else { return }
+        
+        isAnimatingTurn = true
+        lastTurnAt = now
+        lastInteractionAt = now
+        
+        currentPage = target
+        
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(turnCooldown * 1_000_000_000))
+            isAnimatingTurn = false
+        }
+        
+        #if DEBUG
+        print("[ReaderViewModel] turn(by: \(steps)) -> page \(target) (spread:\(isSpreadMode))")
+        #endif
+    }
+    
     // MARK: - Lazy Loading Support
     
     /// Start background loading of all remaining pages
@@ -516,5 +553,10 @@ class ReaderViewModel: ObservableObject {
     var progressPercentage: String {
         "\(Int(progress * 100))%"
     }
+}
+
+// MARK: - Helper Functions
+private func clamp<T: Comparable>(_ x: T, lower: T, upper: T) -> T {
+    min(max(x, lower), upper)
 }
 
