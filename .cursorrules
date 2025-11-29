@@ -1,0 +1,1008 @@
+# Super Comic Organizer - Cursor IDE Agent Rules
+
+# This file guides the AI agent to stay on task and follow proven patterns
+
+# SAVE THIS AS: .cursorrules (with the dot at the start) in your project root
+
+
+
+## Project Context
+
+
+
+You are helping build Super Comic Organizer, a native Swift app for macOS and iPadOS that intelligently organizes and reads comic book files.
+
+
+
+**Development Approach:** Task-based (not day-based)
+
+- Work through tasks sequentially
+
+- Respect task dependencies
+
+- Move at developer's pace
+
+- Check off tasks as completed
+
+
+
+**Current Task:** [DEVELOPER UPDATES THIS]
+
+- Format: TASK-XXX: Task Name
+
+- Track in TASKS.md file
+
+
+
+## Core Principles
+
+
+
+### 1. Follow the Task-Based Plan
+
+- Reference: `docs/Task_Based_Implementation_Plan.md`
+
+- Complete current task before moving to next
+
+- Verify dependencies are met before starting task
+
+- Check success criteria before marking complete
+
+
+
+### 2. Use Proven Code Patterns
+
+When generating code, ALWAYS reference these documents:
+
+- `docs/Code_Examples_Part1.md` - Production-ready code to copy
+
+- `docs/Task_Based_Implementation_Plan.md` - Task requirements and success criteria
+
+- `docs/SuperComicOrganizer_Development_Blueprint.md` - Architecture patterns (when needed)
+
+- `docs/Panels_Clone_Plus_SuperComicOrganizer_Plan.md` - Reader implementation (when building reader)
+
+
+
+### 3. Technology Constraints
+
+
+
+#### ✅ APPROVED Technologies (Use These Only)
+
+```swift
+
+// Built-in Frameworks
+
+import SwiftUI
+
+import PDFKit
+
+import Combine
+
+import Foundation
+
+import AppKit    // macOS
+
+import UIKit     // iOS
+
+
+
+// External Packages (ONLY these two)
+
+import ZIPFoundation  // For CBZ files
+
+import GRDB           // For database
+
+```
+
+
+
+#### ❌ DO NOT Suggest or Use
+
+- No RAR libraries (CBR support comes later)
+
+- No experimental Swift packages
+
+- No JavaScript/Web technologies
+
+- No Python dependencies
+
+- No Electron or cross-platform frameworks
+
+- No unproven or "cool new" libraries
+
+- No SwiftData until explicitly requested (using GRDB for now)
+
+
+
+### 4. Code Generation Rules
+
+
+
+#### Always Include Error Handling
+
+```swift
+
+// ✅ CORRECT - Use try-catch
+
+do {
+
+    let result = try await operation()
+
+} catch {
+
+    print("Error: \(error.localizedDescription)")
+
+    throw ComicReaderError.operationFailed
+
+}
+
+
+
+// ❌ WRONG - No error handling
+
+let result = try! operation()
+
+```
+
+
+
+#### Always Use Security-Scoped Resources
+
+```swift
+
+// ✅ CORRECT - For user-selected files
+
+guard url.startAccessingSecurityScopedResource() else {
+
+    throw ComicReaderError.accessDenied
+
+}
+
+defer { url.stopAccessingSecurityScopedResource() }
+
+// ... file operations ...
+
+
+
+// ❌ WRONG - Direct access without permission
+
+let data = try Data(contentsOf: url)
+
+```
+
+
+
+#### Always Use Natural Sorting
+
+```swift
+
+// ✅ CORRECT - Natural sorting (1, 2, 3, 10, 11)
+
+entries.sorted { 
+
+    $0.path.localizedStandardCompare($1.path) == .orderedAscending 
+
+}
+
+
+
+// ❌ WRONG - Alphabetical sorting (1, 10, 11, 2, 3)
+
+entries.sorted { $0.path < $1.path }
+
+```
+
+
+
+#### Always Use Proper Swift Concurrency
+
+```swift
+
+// ✅ CORRECT - Modern async/await
+
+Task {
+
+    do {
+
+        let comics = try await loadComics()
+
+        await MainActor.run {
+
+            self.comics = comics
+
+        }
+
+    } catch {
+
+        print("Error: \(error)")
+
+    }
+
+}
+
+
+
+// ❌ WRONG - Completion handlers
+
+loadComics { result in
+
+    switch result {
+
+    case .success(let comics):
+
+        self.comics = comics
+
+    case .failure(let error):
+
+        print("Error: \(error)")
+
+    }
+
+}
+
+```
+
+
+
+### 5. Code Structure Requirements
+
+
+
+#### File Organization
+
+```
+
+SuperComicOrganizer/
+
+├── Models/           # Data models
+
+├── Views/           # SwiftUI views
+
+│   ├── Library/
+
+│   ├── Reader/
+
+│   ├── Organize/
+
+│   └── Settings/
+
+├── ViewModels/      # Business logic
+
+├── Services/        # Core services
+
+│   ├── ComicReader/
+
+│   ├── Organization/
+
+│   ├── Learning/
+
+│   ├── Progress/
+
+│   └── Database/
+
+└── Utilities/       # Helpers & extensions
+
+```
+
+
+
+Always place files in the correct folder. Ask if unsure.
+
+
+
+#### Naming Conventions
+
+- Views: `LibraryView.swift`, `ComicReaderView.swift`
+
+- ViewModels: `LibraryViewModel.swift`, `ReaderViewModel.swift`
+
+- Services: `CBZReader.swift`, `PDFReader.swift`
+
+- Models: `Comic.swift`, `PublisherMapping.swift`
+
+
+
+### 6. Testing Requirements
+
+
+
+After generating code, ALWAYS include:
+
+1. How to test the feature manually
+
+2. What success looks like
+
+3. Common issues to watch for
+
+
+
+Example:
+
+```
+
+## Testing This Feature
+
+1. Build the project (⌘B)
+
+2. Run on macOS (⌘R)
+
+3. Navigate to [section]
+
+4. Try [action]
+
+5. Verify [expected result]
+
+
+
+## Success Criteria
+
+- [ ] Code compiles without errors
+
+- [ ] Feature works as described
+
+- [ ] No crashes during normal use
+
+
+
+## Watch For
+
+- Memory leaks with large files
+
+- UI responsiveness issues
+
+- Platform-specific bugs
+
+```
+
+
+
+## Response Format
+
+
+
+### When Asked to Implement a Feature
+
+
+
+1. **Confirm understanding:**
+
+   ```
+
+   I'll implement [FEATURE] for TASK-XXX.
+
+   This will involve:
+
+   - [Step 1]
+
+   - [Step 2]
+
+   - [Step 3]
+
+   ```
+
+
+
+2. **Reference documentation:**
+
+   ```
+
+   Following the pattern from:
+
+   - docs/Task_Based_Implementation_Plan.md - TASK-XXX
+
+   - docs/Code_Examples_Part1.md - [Section]
+
+   ```
+
+
+
+3. **Generate code with:**
+
+   - Complete implementation
+
+   - Error handling
+
+   - Comments explaining key parts
+
+   - Platform-specific code when needed
+
+
+
+4. **Provide testing instructions**
+
+
+
+### When Asked to Debug
+
+
+
+1. **Understand the issue:**
+
+   ```
+
+   The error is: [ERROR]
+
+   This is happening in: [LOCATION]
+
+   Expected behavior: [EXPECTED]
+
+   Actual behavior: [ACTUAL]
+
+   ```
+
+
+
+2. **Check against examples:**
+
+   ```
+
+   Comparing to the reference implementation in [DOCUMENT]...
+
+   The issue is: [ISSUE]
+
+   ```
+
+
+
+3. **Provide solution:**
+
+   - Corrected code
+
+   - Explanation of what was wrong
+
+   - How to verify the fix
+
+
+
+### When Uncertain
+
+
+
+**If unsure about implementation details:**
+
+```
+
+I need clarification on [SPECIFIC PART] for TASK-XXX.
+
+Based on the documentation, I see [OPTIONS].
+
+Which approach should I use?
+
+```
+
+
+
+**If asked to add something not in current task:**
+
+```
+
+This feature ([FEATURE]) is not part of TASK-XXX.
+
+It might be in a later task: [FUTURE TASK]
+
+Should I:
+
+1. Skip it for now and continue with current task
+
+2. Add it to notes for later
+
+3. Implement it now (may affect task order)
+
+```
+
+
+
+## Common Prompts & Expected Responses
+
+
+
+### "Implement the CBZ reader"
+
+**Response should include:**
+
+- Reference to Code_Examples_Part1.md CBZReader section
+
+- Complete CBZReader.swift implementation
+
+- Security-scoped resource access
+
+- Natural sorting for image files
+
+- ComicInfo.xml parsing
+
+- Error handling
+
+- Testing instructions
+
+
+
+### "Create the library grid view"
+
+**Response should include:**
+
+- Reference to LibraryView example
+
+- LazyVGrid implementation
+
+- ComicCard component
+
+- Mock data for testing initially
+
+- Search bar UI (non-functional at first)
+
+- Testing instructions
+
+
+
+### "Add reading progress tracking"
+
+**Response should include:**
+
+- ReadingProgressTracker service
+
+- UserDefaults persistence
+
+- Save/restore logic
+
+- Progress indicator on cards
+
+- Testing instructions
+
+
+
+## Code Review Checklist
+
+
+
+Before providing code, verify:
+
+- [ ] Imports are correct (SwiftUI, Foundation, etc.)
+
+- [ ] Error handling is present
+
+- [ ] No force unwrapping (!)
+
+- [ ] Security-scoped resources used for file access
+
+- [ ] Natural sorting used for page ordering
+
+- [ ] Async/await pattern used correctly
+
+- [ ] Platform differences handled (#if os())
+
+- [ ] Code matches blueprint examples
+
+- [ ] No unapproved dependencies added
+
+- [ ] Comments explain complex logic
+
+
+
+## Anti-Patterns to Avoid
+
+
+
+### ❌ Don't Overcomplicate
+
+```swift
+
+// ❌ WRONG - Unnecessary abstraction
+
+protocol ComicReaderStrategy {
+
+    func read() -> Comic
+
+}
+
+
+
+class CBZReaderStrategy: ComicReaderStrategy { }
+
+class PDFReaderStrategy: ComicReaderStrategy { }
+
+
+
+// ✅ CORRECT - Simple and direct
+
+class CBZReader { }
+
+class PDFReader { }
+
+```
+
+
+
+### ❌ Don't Add Premature Optimization
+
+```swift
+
+// ❌ WRONG - Complex caching before needed
+
+class AdvancedImageCache {
+
+    private var lruCache: LRUCache
+
+    private var diskCache: DiskCache
+
+    private var memoryCache: NSCache
+
+}
+
+
+
+// ✅ CORRECT - Simple solution first
+
+class ImageCache {
+
+    private var cache: [UUID: NSImage] = [:]
+
+}
+
+```
+
+
+
+### ❌ Don't Skip Error Handling
+
+```swift
+
+// ❌ WRONG
+
+let data = try! Data(contentsOf: url)
+
+
+
+// ✅ CORRECT
+
+do {
+
+    let data = try Data(contentsOf: url)
+
+} catch {
+
+    print("Failed to read file: \(error)")
+
+    throw ComicReaderError.fileReadFailed
+
+}
+
+```
+
+
+
+## Success Indicators
+
+
+
+### Good Code Submission
+
+- Matches blueprint examples
+
+- Includes error handling
+
+- Has testing instructions
+
+- Platform-appropriate
+
+- Well-commented
+
+- Single responsibility
+
+- No unapproved dependencies
+
+
+
+### Code That Needs Revision
+
+- Doesn't match examples
+
+- Missing error handling
+
+- No testing instructions
+
+- Uses unapproved libraries
+
+- Overly complex
+
+- Force unwrapping
+
+- No comments on complex parts
+
+
+
+## Milestone-Specific Guidance
+
+
+
+### MILESTONE 1: Project Foundation (Tasks 1-4)
+
+**Focus:** Project setup and structure
+
+**Key Files:** Xcode project, folder structure, DesignSystem.swift, ContentView.swift
+
+**Testing:** Does it build? Does navigation work?
+
+**Pitfall:** Don't add functionality yet - structure only!
+
+
+
+### MILESTONE 2-3: Library UI (Tasks 5-9)
+
+**Focus:** Visual layout with mock data
+
+**Key Files:** Comic.swift, LibraryView.swift, ComicCardView.swift
+
+**Testing:** Does it look good? Does grid display?
+
+**Pitfall:** Use mock data - no real files yet!
+
+
+
+### MILESTONE 4: Comic Reading Engine (Tasks 10-16) ⭐
+
+**Focus:** Actually reading comic files
+
+**Key Files:** CBZReader.swift, PDFReader.swift, ComicReaderView.swift, PagedReaderView.swift
+
+**Testing:** Can you open and read a real CBZ file?
+
+**Pitfall:** Memory management - don't load all pages at once!
+
+
+
+### MILESTONE 5-6: File Import & Progress (Tasks 17-21)
+
+**Focus:** Get comics into app and track reading
+
+**Key Files:** Import handling, ReadingProgressTracker.swift
+
+**Testing:** Can you import and read comics?
+
+**Pitfall:** Security-scoped resources required!
+
+
+
+### MILESTONE 7: Database (Tasks 22-24)
+
+**Focus:** Persistent storage
+
+**Key Files:** DatabaseManager.swift
+
+**Testing:** Data persists across app restarts?
+
+**Pitfall:** Test migrations carefully!
+
+
+
+### MILESTONE 8-9: Organization (Tasks 25-31)
+
+**Focus:** File organization and metadata
+
+**Key Files:** MetadataExtractor.swift, FileOrganizer.swift
+
+**Testing:** Files organized correctly?
+
+**Pitfall:** Don't lose or corrupt user files!
+
+
+
+### MILESTONE 10: Learning System (Tasks 32-38)
+
+**Focus:** Smart suggestions and learning
+
+**Key Files:** LearningEngine.swift, PatternMatcher.swift
+
+**Testing:** Do suggestions improve with corrections?
+
+**Pitfall:** Start simple - complex patterns come later!
+
+
+
+### MILESTONE 11: API Integration (Tasks 39-41, Optional)
+
+**Focus:** ComicVine metadata
+
+**Key Files:** ComicVineService.swift
+
+**Testing:** Can you fetch metadata?
+
+**Pitfall:** Rate limiting - max 1 request/second!
+
+
+
+### MILESTONE 12: Polish (Tasks 42-47)
+
+**Focus:** Production quality
+
+**Testing:** Smooth, stable, no crashes?
+
+**Pitfall:** Don't over-optimize too early!
+
+
+
+## Task Workflow
+
+
+
+### Starting a Task
+
+1. Review current task in Task_Based_Implementation_Plan.md
+
+2. Check dependencies are complete
+
+3. Read relevant code example sections
+
+4. Confirm task requirements
+
+
+
+### During Task Development
+
+1. Reference examples frequently
+
+2. Test after each major change
+
+3. Commit working code
+
+4. Stay focused on current task
+
+
+
+### Completing a Task
+
+1. Verify all success criteria met
+
+2. Test on both platforms
+
+3. Commit final changes
+
+4. Mark complete in TASKS.md
+
+5. Move to next task
+
+
+
+## Emergency Protocols
+
+
+
+### If Build Fails
+
+1. Check error message carefully
+
+2. Compare to blueprint example
+
+3. Verify all imports present
+
+4. Check for typos in new code
+
+5. Clean build folder (⇧⌘K)
+
+6. Rebuild
+
+
+
+### If Feature Doesn't Work
+
+1. Add print statements to debug
+
+2. Check if inputs are valid
+
+3. Verify error handling works
+
+4. Test with simpler case
+
+5. Compare to example code
+
+
+
+### If Stuck >30 Minutes
+
+1. Re-read relevant blueprint section
+
+2. Check code examples again
+
+3. Search Apple documentation
+
+4. Break problem into smaller steps
+
+5. Ask for help with specific issue
+
+
+
+## Quality Standards
+
+
+
+### Code must be:
+
+- **Readable** - Clear variable names, logical structure
+
+- **Tested** - Manually verified on both platforms
+
+- **Safe** - Error handling, no force unwrapping
+
+- **Documented** - Comments on complex logic
+
+- **Consistent** - Follows project patterns
+
+
+
+### Code should NOT be:
+
+- Overly clever or complex
+
+- Poorly named (x, temp, data1)
+
+- Missing error handling
+
+- Untested assumptions
+
+- Different from examples
+
+
+
+## Final Reminders
+
+
+
+1. **Follow the task order** - Don't skip ahead or add extra features
+
+2. **Use proven patterns** - Copy from examples, don't improvise
+
+3. **Test frequently** - Build and run after each task
+
+4. **Commit often** - Save working code regularly
+
+5. **Ask when unsure** - Better to ask than to guess wrong
+
+6. **Complete current task** - Finish before moving to next
+
+7. **No unapproved tech** - Stick to ZIPFoundation and GRDB
+
+8. **Both platforms** - Test on macOS AND iPad
+
+
+
+## Getting Help
+
+
+
+If you need clarification:
+
+1. Reference specific task number (TASK-XXX)
+
+2. Describe what you're trying to do
+
+3. Explain what's unclear
+
+4. Ask specific question
+
+
+
+Example:
+
+```
+
+I'm implementing TASK-010 (CBZ reader).
+
+The Code_Examples_Part1.md shows archive extraction.
+
+I'm unclear about handling security-scoped resources.
+
+Should I call startAccessingSecurityScopedResource() 
+
+before opening the archive or after?
+
+```
+
+
+
+---
+
+
+
+**Remember:** The goal is to build a working comic reader with smart organization features. Follow the proven patterns, test frequently, and stay focused on the current task. You've got this! 🚀
+
