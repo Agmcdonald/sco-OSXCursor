@@ -37,7 +37,7 @@ struct AppSettings: Codable {
     // MARK: - Default Initializer
     init(
         folderStructure: FolderStructure = .publisherSeriesIssue,
-        namingPattern: String = "{publisher}/{series}/#{issue} ({year})",
+        namingPattern: String = "{publisher}/{series}/{series} - #{issue} ({year})",
         rootLibraryPath: URL? = nil,
         autoOrganize: Bool = false,
         confidenceThreshold: Double = 0.7,

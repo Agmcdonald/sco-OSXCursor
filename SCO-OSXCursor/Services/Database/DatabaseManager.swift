@@ -73,6 +73,27 @@ final class DatabaseManager {
             print("[DatabaseManager] ✅ Migration v1_initial_schema complete")
         }
         
+        // Version 2: Add preferred_transition column to comics table
+        migrator.registerMigration("v2_add_preferred_transition") { db in
+            print("[DatabaseManager] 🔄 Running migration: v2_add_preferred_transition")
+            
+            // Add column if it doesn't exist
+            // GRDB will handle the case where column already exists gracefully
+            if try db.tableExists("comics") {
+                do {
+                    try db.alter(table: "comics") { t in
+                        t.add(column: "preferred_transition", .text)
+                    }
+                    print("[DatabaseManager] ✅ Added preferred_transition column")
+                } catch {
+                    // Column might already exist, which is fine
+                    print("[DatabaseManager] ℹ️ preferred_transition column may already exist: \(error.localizedDescription)")
+                }
+            }
+            
+            print("[DatabaseManager] ✅ Migration v2_add_preferred_transition complete")
+        }
+        
         return migrator
     }
     
@@ -110,6 +131,7 @@ final class DatabaseManager {
             t.column("tags", .text)  // JSON array
             t.column("rating", .integer)
             t.column("is_favorite", .boolean).notNull().defaults(to: false)
+            t.column("preferred_transition", .text)
             
             // File Info
             t.column("file_size", .integer).notNull()
@@ -274,6 +296,17 @@ final class DatabaseManager {
         
         return try await dbQueue.read { db in
             try Comic.exists(db, key: id.uuidString)
+        }
+    }
+    
+    /// Fetch a single comic by ID from the database
+    func fetchComic(id: UUID) async throws -> Comic? {
+        guard let dbQueue = dbQueue else {
+            throw DatabaseError.notInitialized
+        }
+        
+        return try await dbQueue.read { db in
+            try Comic.fetchOne(db, key: id.uuidString)
         }
     }
     

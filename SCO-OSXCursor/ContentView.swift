@@ -109,7 +109,6 @@ struct SidebarView: View {
                 Image(nsImage: logo)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .scaleEffect(1.2) // 👈 makes logo ~20% larger visually
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, Spacing.md)
                     .padding(.horizontal, Spacing.md)
@@ -121,15 +120,13 @@ struct SidebarView: View {
                 Image(uiImage: logo)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .scaleEffect(1.2) // 👈 same tweak for iPad/iPhone
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, Spacing.md)
-                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.xxl)
+                    .padding(.horizontal, Spacing.lg)
             } else {
                 fallbackText
             }
             #endif
-
             
             Divider()
                 .background(BorderColors.subtle)

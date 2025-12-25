@@ -8,9 +8,14 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+// Wrapper to make UUID work with .sheet(item:)
+private struct ComicID: Identifiable {
+    let id: UUID
+}
+
 @MainActor
 struct LibraryView: View {
-    @StateObject private var viewModel = LibraryViewModel()
+    @StateObject private var viewModel = LibraryViewModel(database: DatabaseManager.shared)
     
     @State private var searchText = ""
     @State private var viewMode: ViewMode = .grid
@@ -28,6 +33,7 @@ struct LibraryView: View {
     @State private var importedFileURLs: [URL] = []
     @State private var isDropTargeted = false
     @State private var showingDeleteConfirmation = false
+    @State private var editingComicID: ComicID?
     
     enum ViewMode {
         case grid, list
@@ -181,6 +187,42 @@ struct LibraryView: View {
             }
         } message: {
             Text("Are you sure you want to delete \(selectedComics.count) comic\(selectedComics.count == 1 ? "" : "s")? This action cannot be undone.")
+        }
+        .onAppear {
+            // Ensure comics are loaded when view appears
+            if viewModel.comics.isEmpty {
+                Task {
+                    await viewModel.loadComics()
+                }
+            }
+        }
+        .sheet(item: $editingComicID) { comicIDWrapper in
+            if let binding = bindingForComic(comicIDWrapper.id) {
+                ComicDetailView(comic: binding)
+                    .environmentObject(viewModel)
+                    .onAppear {
+                        viewModel.editingComicIDs.insert(comicIDWrapper.id)
+                    }
+                    .onDisappear {
+                        viewModel.editingComicIDs.remove(comicIDWrapper.id)
+                    }
+            } else {
+                // Fallback view if comic can't be found
+                VStack(spacing: Spacing.lg) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 48))
+                        .foregroundColor(TextColors.tertiary)
+                    Text("Could not load comic for editing")
+                        .font(Typography.body)
+                        .foregroundColor(TextColors.secondary)
+                    Button("Close") {
+                        editingComicID = nil
+                    }
+                    .buttonStyle(.plain)
+                }
+                .frame(width: 400, height: 200)
+                .padding()
+            }
         }
     }
     
@@ -691,6 +733,10 @@ struct LibraryView: View {
                                         Label("Read", systemImage: "book.fill")
                                     }
                                     
+                                    Button(action: { editComic(comic) }) {
+                                        Label("Edit Metadata", systemImage: "pencil")
+                                    }
+                                    
                                     Divider()
                                     
                                     Button(role: .destructive, action: {
@@ -753,6 +799,10 @@ struct LibraryView: View {
                                 .contextMenu {
                                     Button(action: { openReader(for: comic) }) {
                                         Label("Read", systemImage: "book.fill")
+                                    }
+                                    
+                                    Button(action: { editComic(comic) }) {
+                                        Label("Edit Metadata", systemImage: "pencil")
                                     }
                                     
                                     Divider()
@@ -881,6 +931,43 @@ struct LibraryView: View {
         print("🎯 [LibraryView] Has bookmark: \(comic.bookmarkData != nil)")
         print("🎯 [LibraryView] Setting comicToRead (triggers fullScreenCover)")
         comicToRead = comic
+    }
+    
+    private func editComic(_ comic: Comic) {
+        print("[LibraryView] 📝 Opening editor for: \(comic.fileName)")
+        editingComicID = ComicID(id: comic.id)
+    }
+    
+    /// Creates a binding to a comic in the viewModel's array by ID.
+    /// This avoids timing issues with `.sheet(isPresented:)` and stays safe if the list reorders.
+    /// Note: The binding's setter only updates the array. Persistence is handled by saveChanges() in ComicDetailView.
+    private func bindingForComic(_ id: UUID) -> Binding<Comic>? {
+        guard viewModel.comics.contains(where: { $0.id == id }) else {
+            print("[LibraryView] ⚠️ Could not find comic with ID: \(id)")
+            return nil
+        }
+        
+        return Binding(
+            get: {
+                // Always get the latest value from the array
+                // This getter is called frequently by SwiftUI during view evaluation
+                // Force unwrap is safe due to the contains() guard in bindingForComic()
+                viewModel.comics.first(where: { $0.id == id })!
+            },
+            set: { updatedComic in
+                guard let idx = viewModel.comics.firstIndex(where: { $0.id == id }) else {
+                    print("[LibraryView] ⚠️ Comic disappeared during edit: \(id)")
+                    return
+                }
+                print("[LibraryView] 🔄 Binding setter called - updating array at index \(idx)")
+                print("[LibraryView]    Title: '\(updatedComic.title ?? "nil")'")
+                print("[LibraryView]    Publisher: '\(updatedComic.publisher ?? "nil")'")
+                // Only update the array here - persistence happens in saveChanges()
+                // @Published will automatically trigger objectWillChange
+                viewModel.comics[idx] = updatedComic
+                print("[LibraryView]    ✅ Array updated successfully")
+            }
+        )
     }
     
     private func handleFileImport(_ result: Result<[URL], Error>) {
