@@ -10,18 +10,31 @@ import SwiftUI
 @main
 @MainActor
 struct SCO_OSXCursorApp: App {
-    
+
     init() {
         // Initialize database on app startup
         _ = DatabaseManager.shared
         print("[App] ✅ App initialization complete")
     }
-    
+
+    @StateObject private var settingsViewModel = SettingsViewModel()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .preferredColorScheme(.dark)  // Force dark mode
+                .environmentObject(settingsViewModel)
+                .preferredColorScheme(settingsViewModel.settings.theme.colorScheme)
         }
-        .defaultSize(width: Layout.defaultWindowWidth, height: Layout.defaultWindowHeight)
+        .defaultSize(width: AppLayout.defaultWindowWidth, height: AppLayout.defaultWindowHeight)
+    }
+}
+
+extension AppSettings.Theme {
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .light: return .light
+        case .dark: return .dark
+        case .auto: return nil
+        }
     }
 }

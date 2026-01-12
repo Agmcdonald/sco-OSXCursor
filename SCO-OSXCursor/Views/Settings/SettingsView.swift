@@ -12,33 +12,31 @@ import UniformTypeIdentifiers
 struct SettingsView: View {
     @ObservedObject private var readerSettings = ReaderSettings.shared
     @StateObject private var viewModel = SettingsViewModel()
-    
+
     @State private var showingPathPicker = false
     @State private var showingResetConfirmation = false
-    
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.xl) {
-                // Reader Settings Section
-                settingsSection(title: "Reader", icon: "book.fill") {
+                // Appearance Settings Section
+                settingsSection(title: "Appearance", icon: "paintbrush.fill") {
                     VStack(alignment: .leading, spacing: Spacing.md) {
-                        Picker("Page Transition", selection: $readerSettings.pageTransition) {
-                            ForEach(
-                                PageTransition.allCases.filter { $0.isAvailableOnCurrentPlatform },
-                                id: \.self
-                            ) { transition in
-                                Label(transition.rawValue, systemImage: transition.icon)
-                                    .tag(transition)
+                        Picker("App Theme", selection: viewModel.theme) {
+                            ForEach(AppSettings.Theme.allCases, id: \.self) { theme in
+                                Text(theme.displayName).tag(theme)
                             }
                         }
-                        #if os(macOS)
-                        .pickerStyle(.menu)
-                        #else
-                        .pickerStyle(.menu)
-                        #endif
+                        .pickerStyle(.segmented)
+
+                        Text("Choose between Light, Dark, or follow your System settings.")
+                            .font(Typography.caption)
+                            .foregroundColor(TextColors.secondary)
                     }
                 }
-                
+
+                // Reader Settings Section
+
                 // Organization Settings Section
                 settingsSection(title: "Organization", icon: "folder.badge.gearshape") {
                     organizationSettings
@@ -49,7 +47,7 @@ struct SettingsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(BackgroundColors.primary)
         #if os(macOS)
-        .frame(minWidth: 600, minHeight: 600)
+            .frame(minWidth: 600, minHeight: 600)
         #endif
         .fileImporter(
             isPresented: $showingPathPicker,
@@ -64,12 +62,14 @@ struct SettingsView: View {
                 viewModel.resetToDefaults()
             }
         } message: {
-            Text("This will reset all organization settings to their default values. This action cannot be undone.")
+            Text(
+                "This will reset all organization settings to their default values. This action cannot be undone."
+            )
         }
     }
-    
+
     // MARK: - Organization Settings
-    
+
     private var organizationSettings: some View {
         VStack(alignment: .leading, spacing: Spacing.xl) {
             // Folder Structure Picker
@@ -77,11 +77,11 @@ struct SettingsView: View {
                 Text("Folder Structure")
                     .font(Typography.h3)
                     .foregroundColor(TextColors.primary)
-                
+
                 Text("Choose how comics are organized into folders")
                     .font(Typography.bodySmall)
                     .foregroundColor(TextColors.secondary)
-                
+
                 Picker("", selection: viewModel.folderStructure) {
                     ForEach(AppSettings.FolderStructure.allCases, id: \.self) { structure in
                         VStack(alignment: .leading, spacing: 4) {
@@ -95,36 +95,38 @@ struct SettingsView: View {
                     }
                 }
                 #if os(macOS)
-                .pickerStyle(.menu)
+                    .pickerStyle(.menu)
                 #else
-                .pickerStyle(.menu)
+                    .pickerStyle(.menu)
                 #endif
-                
+
                 // Example path
                 HStack(spacing: Spacing.sm) {
                     Image(systemName: "info.circle")
                         .font(.system(size: 12))
                         .foregroundColor(TextColors.tertiary)
-                    Text("Example: \(viewModel.examplePath(for: viewModel.settings.folderStructure))")
-                        .font(Typography.caption)
-                        .foregroundColor(TextColors.tertiary)
+                    Text(
+                        "Example: \(viewModel.examplePath(for: viewModel.settings.folderStructure))"
+                    )
+                    .font(Typography.caption)
+                    .foregroundColor(TextColors.tertiary)
                 }
                 .padding(.top, Spacing.xs)
             }
             .padding(Spacing.md)
             .background(BackgroundColors.elevated)
             .clipShape(RoundedRectangle(cornerRadius: 8))
-            
+
             // Naming Pattern Editor
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 Text("Naming Pattern")
                     .font(Typography.h3)
                     .foregroundColor(TextColors.primary)
-                
+
                 Text("Pattern used for naming comic files")
                     .font(Typography.bodySmall)
                     .foregroundColor(TextColors.secondary)
-                
+
                 TextField("Naming Pattern", text: viewModel.namingPattern)
                     .textFieldStyle(.plain)
                     .font(Typography.body)
@@ -134,20 +136,24 @@ struct SettingsView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .overlay(
                         RoundedRectangle(cornerRadius: 8)
-                            .stroke(viewModel.validateNamingPattern(viewModel.settings.namingPattern) ? BorderColors.subtle : AccentColors.error, lineWidth: 1)
+                            .stroke(
+                                viewModel.validateNamingPattern(viewModel.settings.namingPattern)
+                                    ? BorderColors.subtle : AccentColors.error, lineWidth: 1)
                     )
-                
+
                 // Available variables helper text
                 VStack(alignment: .leading, spacing: Spacing.xs) {
                     Text("Available variables:")
                         .font(Typography.caption)
                         .foregroundColor(TextColors.tertiary)
-                    Text("{publisher}, {series}, {issue}, {year}, {title}, {volume}, {writer}, {artist}")
-                        .font(Typography.caption)
-                        .foregroundColor(TextColors.tertiary)
+                    Text(
+                        "{publisher}, {series}, {issue}, {year}, {title}, {volume}, {writer}, {artist}"
+                    )
+                    .font(Typography.caption)
+                    .foregroundColor(TextColors.tertiary)
                 }
                 .padding(.horizontal, Spacing.sm)
-                
+
                 // Preview
                 HStack(spacing: Spacing.sm) {
                     Image(systemName: "eye")
@@ -163,24 +169,27 @@ struct SettingsView: View {
             .padding(Spacing.md)
             .background(BackgroundColors.elevated)
             .clipShape(RoundedRectangle(cornerRadius: 8))
-            
+
             // Root Library Path
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 Text("Root Library Path")
                     .font(Typography.h3)
                     .foregroundColor(TextColors.primary)
-                
+
                 Text("Base folder where comics will be organized")
                     .font(Typography.bodySmall)
                     .foregroundColor(TextColors.secondary)
-                
+
                 HStack(spacing: Spacing.md) {
                     Text(viewModel.settings.rootLibraryPath?.path ?? "Not set")
                         .font(Typography.body)
-                        .foregroundColor(viewModel.settings.rootLibraryPath != nil ? TextColors.primary : TextColors.tertiary)
+                        .foregroundColor(
+                            viewModel.settings.rootLibraryPath != nil
+                                ? TextColors.primary : TextColors.tertiary
+                        )
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    
+
                     Button(action: { showingPathPicker = true }) {
                         Text("Choose Folder")
                             .font(Typography.button)
@@ -191,7 +200,7 @@ struct SettingsView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
                     .buttonStyle(.plain)
-                    
+
                     if viewModel.settings.rootLibraryPath != nil {
                         Button(action: { viewModel.settings.rootLibraryPath = nil }) {
                             Image(systemName: "xmark.circle.fill")
@@ -204,7 +213,7 @@ struct SettingsView: View {
             .padding(Spacing.md)
             .background(BackgroundColors.elevated)
             .clipShape(RoundedRectangle(cornerRadius: 8))
-            
+
             // Auto-Organize Toggle
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 HStack {
@@ -212,14 +221,14 @@ struct SettingsView: View {
                         Text("Auto-Organize")
                             .font(Typography.h3)
                             .foregroundColor(TextColors.primary)
-                        
+
                         Text("Automatically organize comics into folders when imported")
                             .font(Typography.bodySmall)
                             .foregroundColor(TextColors.secondary)
                     }
-                    
+
                     Spacer()
-                    
+
                     Toggle("", isOn: viewModel.autoOrganize)
                         .labelsHidden()
                 }
@@ -227,32 +236,32 @@ struct SettingsView: View {
             .padding(Spacing.md)
             .background(BackgroundColors.elevated)
             .clipShape(RoundedRectangle(cornerRadius: 8))
-            
+
             // Confidence Threshold
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 HStack {
                     Text("Confidence Threshold")
                         .font(Typography.h3)
                         .foregroundColor(TextColors.primary)
-                    
+
                     Spacer()
-                    
+
                     Text("\(Int(viewModel.settings.confidenceThreshold * 100))%")
                         .font(Typography.body)
                         .foregroundColor(AccentColors.primary)
                 }
-                
+
                 Text("Minimum confidence required for automatic organization decisions")
                     .font(Typography.bodySmall)
                     .foregroundColor(TextColors.secondary)
-                
+
                 Slider(value: viewModel.confidenceThreshold, in: 0.0...1.0, step: 0.1)
                     .tint(AccentColors.primary)
             }
             .padding(Spacing.md)
             .background(BackgroundColors.elevated)
             .clipShape(RoundedRectangle(cornerRadius: 8))
-            
+
             // Enable Learning Toggle
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 HStack {
@@ -260,14 +269,14 @@ struct SettingsView: View {
                         Text("Adaptive Learning")
                             .font(Typography.h3)
                             .foregroundColor(TextColors.primary)
-                        
+
                         Text("Learn naming patterns from imported books to improve organization")
                             .font(Typography.bodySmall)
                             .foregroundColor(TextColors.secondary)
                     }
-                    
+
                     Spacer()
-                    
+
                     Toggle("", isOn: viewModel.enableLearning)
                         .labelsHidden()
                 }
@@ -275,12 +284,12 @@ struct SettingsView: View {
             .padding(Spacing.md)
             .background(BackgroundColors.elevated)
             .clipShape(RoundedRectangle(cornerRadius: 8))
-            
+
             // Learning Status
             if viewModel.enableLearning.wrappedValue {
                 learningStatusView
             }
-            
+
             // Reset to Defaults Button
             Button(action: { showingResetConfirmation = true }) {
                 HStack {
@@ -301,9 +310,9 @@ struct SettingsView: View {
             .buttonStyle(.plain)
         }
     }
-    
+
     // MARK: - Helper Views
-    
+
     private func settingsSection<Content: View>(
         title: String,
         icon: String,
@@ -314,44 +323,44 @@ struct SettingsView: View {
                 Image(systemName: icon)
                     .font(.system(size: 18))
                     .foregroundColor(AccentColors.primary)
-                
+
                 Text(title)
                     .font(Typography.h2)
                     .foregroundColor(TextColors.primary)
             }
-            
+
             content()
         }
         .padding(Spacing.lg)
         .background(BackgroundColors.secondary)
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
-    
+
     // MARK: - Learning Status View
-    
+
     private var learningStatusView: some View {
         let patternCount = OrganizationLearner.shared.getPatternCount()
-        
+
         return VStack(alignment: .leading, spacing: Spacing.sm) {
             HStack {
                 Text("Learning Status")
                     .font(Typography.h3)
                     .foregroundColor(TextColors.primary)
-                
+
                 Spacer()
-                
+
                 Text("\(patternCount) pattern\(patternCount == 1 ? "" : "s") learned")
                     .font(Typography.bodySmall)
                     .foregroundColor(AccentColors.primary)
             }
-            
+
             if patternCount > 0 {
                 let publishers = OrganizationLearner.shared.getPublishersWithPatterns()
                 VStack(alignment: .leading, spacing: Spacing.xs) {
                     Text("Publishers with learned patterns:")
                         .font(Typography.caption)
                         .foregroundColor(TextColors.secondary)
-                    
+
                     // Show first 5 publishers, or all if less than 5
                     let displayPublishers = publishers.prefix(5)
                     ForEach(Array(displayPublishers), id: \.self) { publisher in
@@ -364,7 +373,7 @@ struct SettingsView: View {
                                 .foregroundColor(TextColors.secondary)
                         }
                     }
-                    
+
                     if publishers.count > 5 {
                         Text("+ \(publishers.count - 5) more")
                             .font(Typography.caption)
@@ -378,7 +387,7 @@ struct SettingsView: View {
                     .foregroundColor(TextColors.tertiary)
                     .padding(.top, Spacing.xs)
             }
-            
+
             if patternCount > 0 {
                 Button(action: {
                     Task {
@@ -408,9 +417,9 @@ struct SettingsView: View {
         .background(BackgroundColors.elevated)
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
-    
+
     // MARK: - Actions
-    
+
     private func handlePathSelection(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
@@ -426,4 +435,3 @@ struct SettingsView: View {
 #Preview {
     SettingsView()
 }
-

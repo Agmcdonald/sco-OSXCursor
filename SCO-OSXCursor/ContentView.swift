@@ -9,8 +9,9 @@ import SwiftUI
 
 @MainActor
 struct ContentView: View {
+    @EnvironmentObject private var settingsViewModel: SettingsViewModel
     @State private var selectedTab: Tab = .library
-    
+
     enum Tab: String, CaseIterable {
         case dashboard = "Dashboard"
         case library = "Library"
@@ -19,7 +20,7 @@ struct ContentView: View {
         case knowledge = "Knowledge"
         case maintenance = "Maintenance"
         case settings = "Settings"
-        
+
         var icon: String {
             switch self {
             case .dashboard: return "chart.bar"
@@ -32,12 +33,13 @@ struct ContentView: View {
             }
         }
     }
-    
+
     var body: some View {
         NavigationSplitView {
             // Sidebar
             SidebarView(selectedTab: $selectedTab)
-                .frame(width: Layout.sidebarWidth)
+                .environmentObject(settingsViewModel)
+                .frame(width: AppLayout.sidebarWidth)
         } detail: {
             // Main content
             selectedView()
@@ -45,7 +47,7 @@ struct ContentView: View {
         }
         .navigationSplitViewStyle(.balanced)
     }
-    
+
     @ViewBuilder
     private func selectedView() -> some View {
         switch selectedTab {
@@ -85,52 +87,53 @@ struct ContentView: View {
 
 // MARK: - Sidebar View
 struct SidebarView: View {
+    @EnvironmentObject private var settingsViewModel: SettingsViewModel
     @Binding var selectedTab: ContentView.Tab
-    
+
     // Fallback text if logo not found
     private var fallbackText: some View {
         VStack(spacing: 12) {
             Text("Super Comic")
                 .font(Typography.h3)
                 .foregroundColor(TextColors.primary)
-            
+
             Text("Organizer")
                 .font(Typography.body)
                 .foregroundColor(TextColors.secondary)
         }
         .padding(.vertical, Spacing.xxl)
     }
-    
+
     var body: some View {
         VStack(spacing: 0) {
             // Top section: App logo
             #if os(macOS)
-            if let logo = NSImage(named: "logo_SCO") {
-                Image(nsImage: logo)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, Spacing.md)
-                    .padding(.horizontal, Spacing.md)
-            } else {
-                fallbackText
-            }
+                if let logo = NSImage(named: "logo_SCO") {
+                    Image(nsImage: logo)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Spacing.md)
+                        .padding(.horizontal, Spacing.md)
+                } else {
+                    fallbackText
+                }
             #else
-            if let logo = UIImage(named: "logo_SCO") {
-                Image(uiImage: logo)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, Spacing.xxl)
-                    .padding(.horizontal, Spacing.lg)
-            } else {
-                fallbackText
-            }
+                if let logo = UIImage(named: "logo_SCO") {
+                    Image(uiImage: logo)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Spacing.xxl)
+                        .padding(.horizontal, Spacing.lg)
+                } else {
+                    fallbackText
+                }
             #endif
-            
+
             Divider()
                 .background(BorderColors.subtle)
-            
+
             // Navigation items
             ScrollView {
                 VStack(spacing: 4) {
@@ -147,25 +150,43 @@ struct SidebarView: View {
                 }
                 .padding(.vertical, Spacing.md)
             }
-            
+
             Spacer()
-            
+
             // Bottom section: Theme toggle
             Divider()
                 .background(BorderColors.subtle)
-            
-            HStack {
-                Image(systemName: "moon.fill")
+
+            Button(action: {
+                // Cycle theme: Light -> Dark -> System
+                let current = settingsViewModel.settings.theme
+                let next: AppSettings.Theme
+                switch current {
+                case .light: next = .dark
+                case .dark: next = .auto
+                case .auto: next = .light
+                }
+                settingsViewModel.settings.theme = next
+            }) {
+                HStack {
+                    Image(
+                        systemName: settingsViewModel.settings.theme == .light
+                            ? "sun.max.fill"
+                            : (settingsViewModel.settings.theme == .dark
+                                ? "moon.fill" : "desktopcomputer")
+                    )
                     .font(.system(size: 14))
-                Text("Dark Mode")
-                    .font(Typography.bodySmall)
-                Spacer()
-                Text("On")
-                    .font(Typography.bodySmall)
-                    .foregroundColor(TextColors.tertiary)
+                    Text("Appearance")
+                        .font(Typography.bodySmall)
+                    Spacer()
+                    Text(settingsViewModel.settings.theme.displayName)
+                        .font(Typography.bodySmall)
+                        .foregroundColor(TextColors.tertiary)
+                }
+                .foregroundColor(TextColors.secondary)
+                .padding(Spacing.lg)
             }
-            .foregroundColor(TextColors.secondary)
-            .padding(Spacing.lg)
+            .buttonStyle(.plain)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(BackgroundColors.sidebar)
@@ -177,16 +198,16 @@ struct SidebarItem: View {
     let icon: String
     let title: String
     let isSelected: Bool
-    
+
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.system(size: 18))
                 .frame(width: 18, height: 18)
-            
+
             Text(title)
                 .font(Typography.navigation)
-            
+
             Spacer()
         }
         .padding(.horizontal, 16)
@@ -203,17 +224,17 @@ struct PlaceholderView: View {
     let title: String
     let subtitle: String
     let icon: String
-    
+
     var body: some View {
         VStack(spacing: Spacing.lg) {
             Image(systemName: icon)
                 .font(.system(size: 64))
                 .foregroundColor(TextColors.tertiary)
-            
+
             Text(title)
                 .font(Typography.h1)
                 .foregroundColor(TextColors.primary)
-            
+
             Text(subtitle)
                 .font(Typography.body)
                 .foregroundColor(TextColors.secondary)

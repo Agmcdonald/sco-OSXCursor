@@ -6,8 +6,8 @@
 //
 
 import Foundation
-import SwiftUI
 import GRDB
+import SwiftUI
 
 // MARK: - Comic Model
 struct Comic: Identifiable, Codable {
@@ -17,8 +17,8 @@ struct Comic: Identifiable, Codable {
     let id: UUID
     var filePath: URL
     var fileName: String
-    var bookmarkData: Data? // Security-scoped bookmark for persistent file access
-    
+    var bookmarkData: Data?  // Security-scoped bookmark for persistent file access
+
     // MARK: - Metadata
     var title: String?
     var publisher: String?
@@ -26,38 +26,38 @@ struct Comic: Identifiable, Codable {
     var issueNumber: String?
     var volume: Int?
     var year: Int?
-    
+
     // MARK: - Additional Metadata
     var writer: String?
     var artist: String?
     var coverArtist: String?
     var summary: String?
-    
+
     // MARK: - Cover & Visual
     var coverImageData: Data?
-    
+
     // MARK: - Status & Progress
     var status: Status
     var currentPage: Int
     var totalPages: Int
     var lastReadDate: Date?
-    
+
     // MARK: - Organization
     var tags: [String]
-    var rating: Int? // 1-5 stars
+    var rating: Int?  // 1-5 stars
     var isFavorite: Bool
-    
+
     // MARK: - Reader Preferences
-    var preferredTransition: String? // Per-book transition override (PageTransition.rawValue)
-    
+    var preferredTransition: String?  // Per-book transition override (PageTransition.rawValue)
+
     // MARK: - File Info
-    var fileSize: Int64 // in bytes
+    var fileSize: Int64  // in bytes
     var fileType: FileType
-    
+
     // MARK: - Timestamps
     var dateAdded: Date
     var dateModified: Date
-    
+
     // MARK: - Initializer
     init(
         id: UUID = UUID(),
@@ -124,7 +124,7 @@ extension Comic {
         case unread = "Unread"
         case reading = "Reading"
         case completed = "Completed"
-        
+
         var color: Color {
             switch self {
             case .unread: return SemanticColors.unread
@@ -132,7 +132,7 @@ extension Comic {
             case .completed: return SemanticColors.completed
             }
         }
-        
+
         var icon: String {
             switch self {
             case .unread: return "book.closed"
@@ -149,11 +149,11 @@ extension Comic {
         case cbz = "cbz"
         case cbr = "cbr"
         case pdf = "pdf"
-        
+
         var displayName: String {
             rawValue.uppercased()
         }
-        
+
         var icon: String {
             switch self {
             case .cbz, .cbr: return "doc.zipper"
@@ -172,7 +172,7 @@ extension Comic {
         }
         return fileName.replacingOccurrences(of: ".\(fileType.rawValue)", with: "")
     }
-    
+
     /// Full display title with issue number
     var displayTitle: String {
         var result = displayName
@@ -184,30 +184,30 @@ extension Comic {
         }
         return result
     }
-    
+
     /// Reading progress as percentage (0.0 - 1.0)
     var progress: Double {
         guard totalPages > 0 else { return 0.0 }
         // currentPage is 0-based, so add 1 for actual page number
         return Double(currentPage + 1) / Double(totalPages)
     }
-    
+
     /// Reading progress as percentage string
     var progressPercentage: String {
         let percentage = Int(progress * 100)
         return "\(percentage)%"
     }
-    
+
     /// Check if comic has been read
     var isRead: Bool {
         return status == .completed || (totalPages > 0 && currentPage >= totalPages)
     }
-    
+
     /// Check if comic is currently being read
     var isInProgress: Bool {
         return status == .reading || (currentPage > 0 && currentPage < totalPages)
     }
-    
+
     /// File size in human-readable format
     var fileSizeFormatted: String {
         let formatter = ByteCountFormatter()
@@ -215,12 +215,12 @@ extension Comic {
         formatter.countStyle = .file
         return formatter.string(fromByteCount: fileSize)
     }
-    
+
     /// Publisher badge color (using PublisherDetector)
     var publisherColor: Color {
         return PublisherDetector.color(for: publisher)
     }
-    
+
     /// Normalized publisher name
     var normalizedPublisher: String? {
         return PublisherDetector.normalize(publisher)
@@ -252,36 +252,56 @@ extension Comic {
             currentPage: 0,
             totalPages: 32,
             tags: ["Batman", "DC", "Superhero"],
-            fileSize: 45_000_000, // 45 MB
+            fileSize: 45_000_000,  // 45 MB
             fileType: .cbz
         )
     }
-    
+
     /// Generate multiple sample comics for testing
     static var samples: [Comic] {
         var comics: [Comic] = [
-            sample(title: "Absolute Batman", publisher: "DC Comics", issueNumber: "001", year: 2025, status: .unread),
-            sample(title: "Absolute Batman", publisher: "DC Comics", issueNumber: "002", year: 2025, status: .reading),
-            sample(title: "Absolute Batman", publisher: "DC Comics", issueNumber: "003", year: 2025, status: .completed),
-            sample(title: "Absolute Flash", publisher: "DC Comics", issueNumber: "001", year: 2025, status: .unread),
-            sample(title: "Absolute Superman", publisher: "DC Comics", issueNumber: "001", year: 2025, status: .unread),
-            sample(title: "Amazing Spider-Man", publisher: "Marvel", issueNumber: "001", year: 2025, status: .reading),
-            sample(title: "X-Men", publisher: "Marvel", issueNumber: "001", year: 2025, status: .completed),
-            sample(title: "The Walking Dead", publisher: "Image Comics", issueNumber: "001", year: 2003, status: .completed),
-            sample(title: "Saga", publisher: "Image Comics", issueNumber: "001", year: 2012, status: .unread),
-            sample(title: "Hellboy", publisher: "Dark Horse", issueNumber: "001", year: 1994, status: .reading),
+            sample(
+                title: "Absolute Batman", publisher: "DC Comics", issueNumber: "001", year: 2025,
+                status: .unread),
+            sample(
+                title: "Absolute Batman", publisher: "DC Comics", issueNumber: "002", year: 2025,
+                status: .reading),
+            sample(
+                title: "Absolute Batman", publisher: "DC Comics", issueNumber: "003", year: 2025,
+                status: .completed),
+            sample(
+                title: "Absolute Flash", publisher: "DC Comics", issueNumber: "001", year: 2025,
+                status: .unread),
+            sample(
+                title: "Absolute Superman", publisher: "DC Comics", issueNumber: "001", year: 2025,
+                status: .unread),
+            sample(
+                title: "Amazing Spider-Man", publisher: "Marvel", issueNumber: "001", year: 2025,
+                status: .reading),
+            sample(
+                title: "X-Men", publisher: "Marvel", issueNumber: "001", year: 2025,
+                status: .completed),
+            sample(
+                title: "The Walking Dead", publisher: "Image Comics", issueNumber: "001",
+                year: 2003, status: .completed),
+            sample(
+                title: "Saga", publisher: "Image Comics", issueNumber: "001", year: 2012,
+                status: .unread),
+            sample(
+                title: "Hellboy", publisher: "Dark Horse", issueNumber: "001", year: 1994,
+                status: .reading),
         ]
-        
+
         // Mark some as favorites
         comics[0].isFavorite = true  // Absolute Batman #001
         comics[5].isFavorite = true  // Amazing Spider-Man #001
         comics[8].isFavorite = true  // Saga #001
-        
+
         // Set some reading progress
-        comics[1].currentPage = 15    // Absolute Batman #002 - 47%
-        comics[5].currentPage = 20    // Amazing Spider-Man - 63%
-        comics[9].currentPage = 8     // Hellboy - 25%
-        
+        comics[1].currentPage = 15  // Absolute Batman #002 - 47%
+        comics[5].currentPage = 20  // Amazing Spider-Man - 63%
+        comics[9].currentPage = 8  // Hellboy - 25%
+
         return comics
     }
 }
@@ -303,7 +323,7 @@ extension Comic: Hashable {
 // MARK: - GRDB Conformance
 extension Comic: FetchableRecord, PersistableRecord {
     static let databaseTableName = "comics"
-    
+
     // Column names (using string literals to avoid circular reference with CodingKeys)
     enum Columns {
         static let id = Column("id")
@@ -334,7 +354,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         static let dateAdded = Column("date_added")
         static let dateModified = Column("date_modified")
     }
-    
+
     // Custom encoding for database
     func encode(to container: inout PersistenceContainer) {
         container[Columns.id] = id.uuidString
@@ -365,32 +385,33 @@ extension Comic: FetchableRecord, PersistableRecord {
         container[Columns.dateAdded] = dateAdded
         container[Columns.dateModified] = dateModified
     }
-    
+
     // Custom decoding from database
     init(row: Row) throws {
         // Required properties
         guard let idString: String = row["id"],
-              let id = UUID(uuidString: idString),
-              let filePathString: String = row["file_path"],
-              let fileName: String = row["file_name"],
-              let statusString: String = row["status"],
-              let status = Status(rawValue: statusString),
-              let fileTypeString: String = row["file_type"],
-              let fileType = FileType(rawValue: fileTypeString),
-              let currentPage: Int = row["current_page"],
-              let totalPages: Int = row["total_pages"],
-              let fileSize: Int64 = row["file_size"],
-              let dateAdded: Date = row["date_added"],
-              let dateModified: Date = row["date_modified"] else {
+            let id = UUID(uuidString: idString),
+            let filePathString: String = row["file_path"],
+            let fileName: String = row["file_name"],
+            let statusString: String = row["status"],
+            let status = Status(rawValue: statusString),
+            let fileTypeString: String = row["file_type"],
+            let fileType = FileType(rawValue: fileTypeString),
+            let currentPage: Int = row["current_page"],
+            let totalPages: Int = row["total_pages"],
+            let fileSize: Int64 = row["file_size"],
+            let dateAdded: Date = row["date_added"],
+            let dateModified: Date = row["date_modified"]
+        else {
             throw DatabaseError.fetchFailed
         }
-        
+
         // Decode tags from JSON
         var decodedTags: [String] = []
         if let tagsData: Data = row["tags"] {
             decodedTags = (try? JSONDecoder().decode([String].self, from: tagsData)) ?? []
         }
-        
+
         self.init(
             id: id,
             filePath: URL(fileURLWithPath: filePathString),
@@ -427,13 +448,27 @@ extension Comic: FetchableRecord, PersistableRecord {
 extension Comic {
     /// Memoized list of known bundled files (scanned once)
     private static let knownBundledFiles: [String] = {
-        let exts = ["cbz", "pdf"]
-        return exts.flatMap {
-            Bundle.main.urls(forResourcesWithExtension: $0, subdirectory: nil)?
+        let exts = ["cbz", "pdf", "cbr"]
+        return exts.flatMap { ext in
+            Bundle.main.urls(forResourcesWithExtension: ext, subdirectory: nil)?
                 .map { $0.lastPathComponent } ?? []
         }
     }()
-    
+
+    /// A URL that is guaranteed to work even if the bundle path changed (common on iOS)
+    var resolvedURL: URL {
+        if Comic.isBundled(self) {
+            // Re-locate in bundle by filename
+            if let bundleURL = Bundle.main.url(
+                forResource: (fileName as NSString).deletingPathExtension,
+                withExtension: (fileName as NSString).pathExtension)
+            {
+                return bundleURL
+            }
+        }
+        return filePath
+    }
+
     /// Check if a comic is a bundled sample resource
     static func isBundled(_ comic: Comic) -> Bool {
         let isInBundle = comic.filePath.path.contains(Bundle.main.bundlePath)
@@ -443,4 +478,3 @@ extension Comic {
         return isInBundle || matchesBundledFilename
     }
 }
-
