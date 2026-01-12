@@ -31,6 +31,13 @@ class CBZReader: ComicReaderProtocol {
             print("    [CBZReader] Skipping security access for bundled resource")
         }
 
+        if accessing {
+            defer {
+                print("    [CBZReader] Stopping security-scoped access...")
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
         // Note: We keep access open during reading. The ReaderViewModel will release it.
 
         // Verify file exists

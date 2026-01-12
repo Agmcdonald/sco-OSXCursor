@@ -8,6 +8,13 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+// Custom UTType for CBR
+extension UTType {
+    static var cbr: UTType {
+        UTType(exportedAs: "com.rarlab.rar-archive")
+    }
+}
+
 // Wrapper to make UUID work with .sheet(item:)
 private struct ComicID: Identifiable {
     let id: UUID
@@ -16,7 +23,7 @@ private struct ComicID: Identifiable {
 @MainActor
 struct LibraryView: View {
     @StateObject private var viewModel = LibraryViewModel(database: DatabaseManager.shared)
-    
+
     @State private var searchText = ""
     @State private var viewMode: ViewMode = .grid
     @State private var selectedComic: Comic?
@@ -34,11 +41,11 @@ struct LibraryView: View {
     @State private var isDropTargeted = false
     @State private var showingDeleteConfirmation = false
     @State private var editingComicID: ComicID?
-    
+
     enum ViewMode {
         case grid, list
     }
-    
+
     enum SortOption: String, CaseIterable {
         case title = "Title (A-Z)"
         case dateAdded = "Date Added"
@@ -46,7 +53,7 @@ struct LibraryView: View {
         case publisher = "Publisher"
         case year = "Publication Year"
         case rating = "Rating"
-        
+
         var icon: String {
             switch self {
             case .title: return "textformat"
@@ -58,51 +65,55 @@ struct LibraryView: View {
             }
         }
     }
-    
+
     var filteredAndSortedComics: [Comic] {
         var result = viewModel.comics
-        
+
         // Apply search filter - searches across all metadata fields
         if !searchText.isEmpty {
             result = result.filter { comic in
-                comic.displayTitle.localizedCaseInsensitiveContains(searchText) ||
-                comic.fileName.localizedCaseInsensitiveContains(searchText) ||
-                comic.title?.localizedCaseInsensitiveContains(searchText) == true ||
-                comic.publisher?.localizedCaseInsensitiveContains(searchText) == true ||
-                comic.series?.localizedCaseInsensitiveContains(searchText) == true ||
-                comic.writer?.localizedCaseInsensitiveContains(searchText) == true ||
-                comic.artist?.localizedCaseInsensitiveContains(searchText) == true ||
-                comic.coverArtist?.localizedCaseInsensitiveContains(searchText) == true ||
-                comic.summary?.localizedCaseInsensitiveContains(searchText) == true ||
-                comic.issueNumber?.localizedCaseInsensitiveContains(searchText) == true ||
-                comic.tags.contains(where: { $0.localizedCaseInsensitiveContains(searchText) })
+                comic.displayTitle.localizedCaseInsensitiveContains(searchText)
+                    || comic.fileName.localizedCaseInsensitiveContains(searchText)
+                    || comic.title?.localizedCaseInsensitiveContains(searchText) == true
+                    || comic.publisher?.localizedCaseInsensitiveContains(searchText) == true
+                    || comic.series?.localizedCaseInsensitiveContains(searchText) == true
+                    || comic.writer?.localizedCaseInsensitiveContains(searchText) == true
+                    || comic.artist?.localizedCaseInsensitiveContains(searchText) == true
+                    || comic.coverArtist?.localizedCaseInsensitiveContains(searchText) == true
+                    || comic.summary?.localizedCaseInsensitiveContains(searchText) == true
+                    || comic.issueNumber?.localizedCaseInsensitiveContains(searchText) == true
+                    || comic.tags.contains(where: {
+                        $0.localizedCaseInsensitiveContains(searchText)
+                    })
             }
         }
-        
+
         // Apply status filter
         if let status = filterStatus {
             result = result.filter { $0.status == status }
         }
-        
+
         // Apply publisher filter
         if let publisher = filterPublisher {
             result = result.filter { $0.publisher == publisher }
         }
-        
+
         // Apply series filter
         if let series = filterSeries {
             result = result.filter { $0.series == series }
         }
-        
+
         // Apply year filter
         if let year = filterYear {
             result = result.filter { $0.year == year }
         }
-        
+
         // Apply sorting
         switch sortOption {
         case .title:
-            result.sort { $0.displayTitle.localizedStandardCompare($1.displayTitle) == .orderedAscending }
+            result.sort {
+                $0.displayTitle.localizedStandardCompare($1.displayTitle) == .orderedAscending
+            }
         case .dateAdded:
             result.sort { $0.dateAdded > $1.dateAdded }
         case .dateModified:
@@ -114,34 +125,34 @@ struct LibraryView: View {
         case .rating:
             result.sort { ($0.rating ?? 0) > ($1.rating ?? 0) }
         }
-        
+
         return result
     }
-    
+
     var publishers: [String] {
         Array(Set(viewModel.comics.compactMap { $0.publisher })).sorted()
     }
-    
+
     var series: [String] {
         Array(Set(viewModel.comics.compactMap { $0.series })).sorted()
     }
-    
+
     var years: [Int] {
         Array(Set(viewModel.comics.compactMap { $0.year })).sorted(by: >)
     }
-    
+
     var hasActiveFilters: Bool {
         filterStatus != nil || filterPublisher != nil || filterSeries != nil || filterYear != nil
     }
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header
             headerView
-            
+
             Divider()
                 .background(BorderColors.subtle)
-            
+
             // Content
             if viewMode == .grid {
                 gridView
@@ -160,22 +171,24 @@ struct LibraryView: View {
             }
         )
         #if os(macOS)
-        .sheet(item: $comicToRead) { comic in
-            ComicReaderView(comic: comic)
+            .sheet(item: $comicToRead) { comic in
+                ComicReaderView(comic: comic)
                 .environmentObject(viewModel)
-                .frame(minWidth: 1400, idealWidth: 1600, maxWidth: .infinity,
-                       minHeight: 900, idealHeight: 1000, maxHeight: .infinity)
+                .frame(
+                    minWidth: 1400, idealWidth: 1600, maxWidth: .infinity,
+                    minHeight: 900, idealHeight: 1000, maxHeight: .infinity
+                )
                 .ignoresSafeArea()
-        }
+            }
         #else
-        .fullScreenCover(item: $comicToRead) { comic in
-            ComicReaderView(comic: comic)
+            .fullScreenCover(item: $comicToRead) { comic in
+                ComicReaderView(comic: comic)
                 .environmentObject(viewModel)
-        }
+            }
         #endif
         .fileImporter(
             isPresented: $showingFilePicker,
-            allowedContentTypes: [.zip, .pdf],
+            allowedContentTypes: [.zip, .pdf, .cbr, UTType(filenameExtension: "cbr")!],
             allowsMultipleSelection: true
         ) { result in
             handleFileImport(result)
@@ -186,7 +199,9 @@ struct LibraryView: View {
                 deleteSelectedComics()
             }
         } message: {
-            Text("Are you sure you want to delete \(selectedComics.count) comic\(selectedComics.count == 1 ? "" : "s")? This action cannot be undone.")
+            Text(
+                "Are you sure you want to delete \(selectedComics.count) comic\(selectedComics.count == 1 ? "" : "s")? This action cannot be undone."
+            )
         }
         .onAppear {
             // Ensure comics are loaded when view appears
@@ -197,15 +212,17 @@ struct LibraryView: View {
             }
         }
         .sheet(item: $editingComicID) { comicIDWrapper in
-            if let binding = bindingForComic(comicIDWrapper.id) {
-                ComicDetailView(comic: binding)
-                    .environmentObject(viewModel)
-                    .onAppear {
-                        viewModel.editingComicIDs.insert(comicIDWrapper.id)
-                    }
-                    .onDisappear {
-                        viewModel.editingComicIDs.remove(comicIDWrapper.id)
-                    }
+            if let comic = viewModel.comics.first(where: { $0.id == comicIDWrapper.id }) {
+                ComicDetailView(comic: comic) { updatedComic in
+                    viewModel.updateComic(updatedComic)
+                }
+                .environmentObject(viewModel)
+                .onAppear {
+                    viewModel.editingComicIDs.insert(comicIDWrapper.id)
+                }
+                .onDisappear {
+                    viewModel.editingComicIDs.remove(comicIDWrapper.id)
+                }
             } else {
                 // Fallback view if comic can't be found
                 VStack(spacing: Spacing.lg) {
@@ -225,13 +242,13 @@ struct LibraryView: View {
             }
         }
     }
-    
+
     // MARK: - Import Progress Overlay
     private var importProgressOverlay: some View {
         ZStack {
             Color.black.opacity(0.5)
                 .ignoresSafeArea()
-            
+
             VStack(spacing: Spacing.lg) {
                 ProgressView(value: viewModel.importProgress) {
                     Text("Importing Comics...")
@@ -241,7 +258,7 @@ struct LibraryView: View {
                 .progressViewStyle(.linear)
                 .tint(AccentColors.primary)
                 .frame(width: 300)
-                
+
                 Text("\(Int(viewModel.importProgress * 100))%")
                     .font(Typography.body)
                     .foregroundColor(TextColors.secondary)
@@ -252,19 +269,19 @@ struct LibraryView: View {
             .shadow(color: .black.opacity(0.3), radius: 20)
         }
     }
-    
+
     // MARK: - Toolbar Components
-    
+
     private var searchBar: some View {
         HStack(spacing: Spacing.sm) {
             Image(systemName: "magnifyingglass")
                 .foregroundColor(TextColors.tertiary)
-            
+
             TextField("Search comics, series, publisher...", text: $searchText)
                 .textFieldStyle(.plain)
                 .font(Typography.body)
                 .foregroundColor(TextColors.primary)
-            
+
             if !searchText.isEmpty {
                 Button(action: { searchText = "" }) {
                     Image(systemName: "xmark.circle.fill")
@@ -277,7 +294,7 @@ struct LibraryView: View {
         .background(BackgroundColors.elevated)
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
-    
+
     private var sortMenu: some View {
         Menu {
             ForEach(SortOption.allCases, id: \.self) { option in
@@ -307,7 +324,7 @@ struct LibraryView: View {
         .buttonStyle(.plain)
         .frame(minWidth: 180)
     }
-    
+
     private var filtersButton: some View {
         Button(action: { showingFilters.toggle() }) {
             HStack(spacing: Spacing.xs) {
@@ -323,12 +340,14 @@ struct LibraryView: View {
             .foregroundColor(showingFilters ? AccentColors.primary : TextColors.secondary)
             .padding(.horizontal, Spacing.md)
             .padding(.vertical, Spacing.sm)
-            .background(showingFilters ? AccentColors.primary.opacity(0.12) : BackgroundColors.elevated)
+            .background(
+                showingFilters ? AccentColors.primary.opacity(0.12) : BackgroundColors.elevated
+            )
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
     }
-    
+
     private var selectButton: some View {
         Button(action: { isSelectionMode = true }) {
             HStack(spacing: Spacing.xs) {
@@ -344,42 +363,52 @@ struct LibraryView: View {
         }
         .buttonStyle(.plain)
     }
-    
+
     private var viewModeToggle: some View {
         HStack(spacing: Spacing.sm) {
             Button(action: { viewMode = .grid }) {
                 Image(systemName: "square.grid.2x2")
                     .font(.system(size: 16))
-                    .foregroundColor(viewMode == .grid ? AccentColors.primary : TextColors.secondary)
+                    .foregroundColor(
+                        viewMode == .grid ? AccentColors.primary : TextColors.secondary
+                    )
                     .frame(width: 32, height: 32)
-                    .background(viewMode == .grid ? AccentColors.primary.opacity(0.12) : Color.clear)
+                    .background(
+                        viewMode == .grid ? AccentColors.primary.opacity(0.12) : Color.clear
+                    )
                     .clipShape(RoundedRectangle(cornerRadius: 6))
             }
             .buttonStyle(.plain)
-            
+
             Button(action: { viewMode = .list }) {
                 Image(systemName: "list.bullet")
                     .font(.system(size: 16))
-                    .foregroundColor(viewMode == .list ? AccentColors.primary : TextColors.secondary)
+                    .foregroundColor(
+                        viewMode == .list ? AccentColors.primary : TextColors.secondary
+                    )
                     .frame(width: 32, height: 32)
-                    .background(viewMode == .list ? AccentColors.primary.opacity(0.12) : Color.clear)
+                    .background(
+                        viewMode == .list ? AccentColors.primary.opacity(0.12) : Color.clear
+                    )
                     .clipShape(RoundedRectangle(cornerRadius: 6))
             }
             .buttonStyle(.plain)
         }
     }
-    
+
     private var moreMenu: some View {
         Menu {
             // Sort section
             Section("Sort By") {
                 ForEach(SortOption.allCases, id: \.self) { option in
                     Button(action: { sortOption = option }) {
-                        Label(option.rawValue, systemImage: sortOption == option ? "checkmark" : option.icon)
+                        Label(
+                            option.rawValue,
+                            systemImage: sortOption == option ? "checkmark" : option.icon)
                     }
                 }
             }
-            
+
             // Actions section
             Section {
                 Button(action: { showingFilters.toggle() }) {
@@ -388,7 +417,7 @@ struct LibraryView: View {
                         Text("•").foregroundColor(AccentColors.primary)
                     }
                 }
-                
+
                 if !isSelectionMode {
                     Button(action: { isSelectionMode = true }) {
                         Label("Select Comics", systemImage: "checkmark.circle")
@@ -405,7 +434,7 @@ struct LibraryView: View {
         }
         .buttonStyle(.plain)
     }
-    
+
     // MARK: - Header View
     private var headerView: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
@@ -414,21 +443,21 @@ struct LibraryView: View {
                     Text("Library")
                         .font(Typography.h1)
                         .foregroundColor(TextColors.primary)
-                    
+
                     Text("Browse your collection of \(filteredAndSortedComics.count) comics")
                         .font(Typography.body)
                         .foregroundColor(TextColors.secondary)
                 }
-                
+
                 Spacer()
-                
+
                 // Selection mode controls
                 if isSelectionMode {
                     HStack(spacing: Spacing.md) {
                         Text("\(selectedComics.count) selected")
                             .font(Typography.body)
                             .foregroundColor(TextColors.secondary)
-                        
+
                         // Delete button
                         Button(action: {
                             if !selectedComics.isEmpty {
@@ -443,12 +472,15 @@ struct LibraryView: View {
                             .foregroundColor(selectedComics.isEmpty ? TextColors.tertiary : .red)
                             .padding(.horizontal, Spacing.md)
                             .padding(.vertical, Spacing.sm)
-                            .background(selectedComics.isEmpty ? BackgroundColors.elevated : Color.red.opacity(0.1))
+                            .background(
+                                selectedComics.isEmpty
+                                    ? BackgroundColors.elevated : Color.red.opacity(0.1)
+                            )
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
                         .buttonStyle(.plain)
                         .disabled(selectedComics.isEmpty)
-                        
+
                         Button("Cancel") {
                             isSelectionMode = false
                             selectedComics.removeAll()
@@ -475,33 +507,33 @@ struct LibraryView: View {
                     .buttonStyle(.plain)
                 }
             }
-            
+
             // Search and toolbar
             HStack(spacing: Spacing.md) {
                 // Search bar
                 searchBar
                     .frame(maxWidth: .infinity)
-                
+
                 #if os(macOS)
-                // macOS: Show all controls (plenty of space)
-                sortMenu
-                filtersButton
-                if !isSelectionMode {
-                    selectButton
-                }
-                viewModeToggle
+                    // macOS: Show all controls (plenty of space)
+                    sortMenu
+                    filtersButton
+                    if !isSelectionMode {
+                        selectButton
+                    }
+                    viewModeToggle
                 #else
-                // iPad/iOS: Compact "More" menu
-                moreMenu
-                viewModeToggle
+                    // iPad/iOS: Compact "More" menu
+                    moreMenu
+                    viewModeToggle
                 #endif
             }
-            
+
             // Active filter badges (always visible when filters applied)
             if hasActiveFilters && !showingFilters {
                 activeFilterBadges
             }
-            
+
             // Filter panel (shown when filters button is clicked)
             if showingFilters {
                 filterView
@@ -509,7 +541,7 @@ struct LibraryView: View {
         }
         .padding(Spacing.xl)
     }
-    
+
     // MARK: - Active Filter Badges
     private var activeFilterBadges: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -521,7 +553,7 @@ struct LibraryView: View {
                         onRemove: { filterStatus = nil }
                     )
                 }
-                
+
                 if let publisher = filterPublisher {
                     FilterBadge(
                         title: "Publisher: \(publisher)",
@@ -529,7 +561,7 @@ struct LibraryView: View {
                         onRemove: { filterPublisher = nil }
                     )
                 }
-                
+
                 if let series = filterSeries {
                     FilterBadge(
                         title: "Series: \(series)",
@@ -537,7 +569,7 @@ struct LibraryView: View {
                         onRemove: { filterSeries = nil }
                     )
                 }
-                
+
                 if let year = filterYear {
                     FilterBadge(
                         title: "Year: \(String(year))",
@@ -545,7 +577,7 @@ struct LibraryView: View {
                         onRemove: { filterYear = nil }
                     )
                 }
-                
+
                 // Clear all button
                 Button(action: {
                     filterStatus = nil
@@ -571,27 +603,27 @@ struct LibraryView: View {
             .padding(.vertical, Spacing.sm)
         }
     }
-    
+
     // MARK: - Filter View
     private var filterView: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             Text("Filters")
                 .font(Typography.h3)
                 .foregroundColor(TextColors.primary)
-            
+
             // Status filter
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 Text("Status")
                     .font(Typography.bodySmall)
                     .foregroundColor(TextColors.secondary)
-                
+
                 HStack(spacing: Spacing.sm) {
                     FilterChip(
                         title: "All",
                         isSelected: filterStatus == nil,
                         action: { filterStatus = nil }
                     )
-                    
+
                     ForEach(Comic.Status.allCases, id: \.self) { status in
                         FilterChip(
                             title: status.rawValue,
@@ -603,13 +635,13 @@ struct LibraryView: View {
                     }
                 }
             }
-            
+
             // Publisher filter
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 Text("Publisher")
                     .font(Typography.bodySmall)
                     .foregroundColor(TextColors.secondary)
-                
+
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: Spacing.sm) {
                         FilterChip(
@@ -617,7 +649,7 @@ struct LibraryView: View {
                             isSelected: filterPublisher == nil,
                             action: { filterPublisher = nil }
                         )
-                        
+
                         ForEach(publishers, id: \.self) { publisher in
                             FilterChip(
                                 title: publisher,
@@ -628,14 +660,14 @@ struct LibraryView: View {
                     }
                 }
             }
-            
+
             // Series filter
             if !series.isEmpty {
                 VStack(alignment: .leading, spacing: Spacing.sm) {
                     Text("Series")
                         .font(Typography.bodySmall)
                         .foregroundColor(TextColors.secondary)
-                    
+
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: Spacing.sm) {
                             FilterChip(
@@ -643,7 +675,7 @@ struct LibraryView: View {
                                 isSelected: filterSeries == nil,
                                 action: { filterSeries = nil }
                             )
-                            
+
                             ForEach(series, id: \.self) { seriesName in
                                 FilterChip(
                                     title: seriesName,
@@ -655,14 +687,14 @@ struct LibraryView: View {
                     }
                 }
             }
-            
+
             // Year filter
             if !years.isEmpty {
                 VStack(alignment: .leading, spacing: Spacing.sm) {
                     Text("Year")
                         .font(Typography.bodySmall)
                         .foregroundColor(TextColors.secondary)
-                    
+
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: Spacing.sm) {
                             FilterChip(
@@ -670,7 +702,7 @@ struct LibraryView: View {
                                 isSelected: filterYear == nil,
                                 action: { filterYear = nil }
                             )
-                            
+
                             ForEach(years, id: \.self) { year in
                                 FilterChip(
                                     title: String(year),
@@ -682,7 +714,7 @@ struct LibraryView: View {
                     }
                 }
             }
-            
+
             // Clear all filters
             if hasActiveFilters {
                 Button(action: {
@@ -705,7 +737,7 @@ struct LibraryView: View {
         .background(BackgroundColors.secondary)
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
-    
+
     // MARK: - Grid View
     private var gridView: some View {
         ScrollView {
@@ -732,20 +764,23 @@ struct LibraryView: View {
                                     Button(action: { openReader(for: comic) }) {
                                         Label("Read", systemImage: "book.fill")
                                     }
-                                    
+
                                     Button(action: { editComic(comic) }) {
                                         Label("Edit Metadata", systemImage: "pencil")
                                     }
-                                    
+
                                     Divider()
-                                    
-                                    Button(role: .destructive, action: {
-                                        viewModel.deleteComics([comic])
-                                    }) {
+
+                                    Button(
+                                        role: .destructive,
+                                        action: {
+                                            viewModel.deleteComics([comic])
+                                        }
+                                    ) {
                                         Label("Delete", systemImage: "trash")
                                     }
                                 }
-                            
+
                             // Selection checkbox
                             if isSelectionMode {
                                 SelectionCheckbox(isSelected: selectedComics.contains(comic.id))
@@ -765,14 +800,16 @@ struct LibraryView: View {
             Group {
                 if isDropTargeted {
                     RoundedRectangle(cornerRadius: 16)
-                        .stroke(AccentColors.primary, style: StrokeStyle(lineWidth: 3, dash: [10, 5]))
+                        .stroke(
+                            AccentColors.primary, style: StrokeStyle(lineWidth: 3, dash: [10, 5])
+                        )
                         .background(AccentColors.primary.opacity(0.1))
                         .padding(Spacing.xl)
                 }
             }
         )
     }
-    
+
     // MARK: - List View
     private var listView: some View {
         ScrollView {
@@ -787,7 +824,7 @@ struct LibraryView: View {
                                 SelectionCheckbox(isSelected: selectedComics.contains(comic.id))
                                     .padding(.trailing, Spacing.md)
                             }
-                            
+
                             ComicRowView(comic: comic)
                                 .onTapGesture {
                                     if isSelectionMode {
@@ -800,16 +837,19 @@ struct LibraryView: View {
                                     Button(action: { openReader(for: comic) }) {
                                         Label("Read", systemImage: "book.fill")
                                     }
-                                    
+
                                     Button(action: { editComic(comic) }) {
                                         Label("Edit Metadata", systemImage: "pencil")
                                     }
-                                    
+
                                     Divider()
-                                    
-                                    Button(role: .destructive, action: {
-                                        viewModel.deleteComics([comic])
-                                    }) {
+
+                                    Button(
+                                        role: .destructive,
+                                        action: {
+                                            viewModel.deleteComics([comic])
+                                        }
+                                    ) {
                                         Label("Delete", systemImage: "trash")
                                     }
                                 }
@@ -827,37 +867,39 @@ struct LibraryView: View {
             Group {
                 if isDropTargeted {
                     RoundedRectangle(cornerRadius: 16)
-                        .stroke(AccentColors.primary, style: StrokeStyle(lineWidth: 3, dash: [10, 5]))
+                        .stroke(
+                            AccentColors.primary, style: StrokeStyle(lineWidth: 3, dash: [10, 5])
+                        )
                         .background(AccentColors.primary.opacity(0.1))
                         .padding(Spacing.xl)
                 }
             }
         )
     }
-    
+
     // MARK: - Empty State View
     private var emptyStateView: some View {
         VStack(spacing: Spacing.lg) {
             Image(systemName: viewModel.comics.isEmpty ? "tray" : "books.vertical")
                 .font(.system(size: 64))
                 .foregroundColor(TextColors.tertiary)
-            
+
             Text(viewModel.comics.isEmpty ? "No Comics Yet" : "No Comics Found")
                 .font(Typography.h2)
                 .foregroundColor(TextColors.primary)
-            
+
             if viewModel.comics.isEmpty {
                 // First time user
                 Text("Add comics to get started")
                     .font(Typography.body)
                     .foregroundColor(TextColors.secondary)
-                
+
                 Text("Drag and drop CBZ or PDF files here, or click Add Comics")
                     .font(Typography.bodySmall)
                     .foregroundColor(TextColors.tertiary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 40)
-                
+
                 Button(action: { showingFilePicker = true }) {
                     HStack(spacing: Spacing.sm) {
                         Image(systemName: "plus")
@@ -876,7 +918,7 @@ struct LibraryView: View {
                 Text("Try adjusting your filters or search terms")
                     .font(Typography.body)
                     .foregroundColor(TextColors.secondary)
-                
+
                 if filterStatus != nil || filterPublisher != nil || !searchText.isEmpty {
                     Button(action: {
                         filterStatus = nil
@@ -898,7 +940,7 @@ struct LibraryView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(Spacing.xl)
     }
-    
+
     // MARK: - Helper Methods
     private func toggleSelection(for id: Comic.ID) {
         if selectedComics.contains(id) {
@@ -907,24 +949,24 @@ struct LibraryView: View {
             selectedComics.insert(id)
         }
     }
-    
+
     private func deleteSelectedComics() {
         // Get the comic objects to delete
         let comicsToDelete = viewModel.comics.filter { selectedComics.contains($0.id) }
-        
+
         print("\n🗑️ [LibraryView] Deleting \(comicsToDelete.count) comics:")
         for comic in comicsToDelete {
             print("   - \(comic.fileName)")
         }
-        
+
         // Delete them
         viewModel.deleteComics(comicsToDelete)
-        
+
         // Reset selection mode
         selectedComics.removeAll()
         isSelectionMode = false
     }
-    
+
     private func openReader(for comic: Comic) {
         print("\n🎯 [LibraryView] User tapped comic: \(comic.fileName)")
         print("🎯 [LibraryView] File type: \(comic.fileType.rawValue)")
@@ -932,12 +974,12 @@ struct LibraryView: View {
         print("🎯 [LibraryView] Setting comicToRead (triggers fullScreenCover)")
         comicToRead = comic
     }
-    
+
     private func editComic(_ comic: Comic) {
         print("[LibraryView] 📝 Opening editor for: \(comic.fileName)")
         editingComicID = ComicID(id: comic.id)
     }
-    
+
     /// Creates a binding to a comic in the viewModel's array by ID.
     /// This avoids timing issues with `.sheet(isPresented:)` and stays safe if the list reorders.
     /// Note: The binding's setter only updates the array. Persistence is handled by saveChanges() in ComicDetailView.
@@ -946,7 +988,7 @@ struct LibraryView: View {
             print("[LibraryView] ⚠️ Could not find comic with ID: \(id)")
             return nil
         }
-        
+
         return Binding(
             get: {
                 // Always get the latest value from the array
@@ -969,7 +1011,7 @@ struct LibraryView: View {
             }
         )
     }
-    
+
     private func handleFileImport(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
@@ -982,73 +1024,81 @@ struct LibraryView: View {
             print("File import failed: \(error.localizedDescription)")
         }
     }
-    
+
     private func handleDrop(providers: [NSItemProvider]) -> Bool {
         #if os(macOS)
-        // macOS drag & drop handling
-        let group = DispatchGroup()
-        var urls: [URL] = []
-        
-        for provider in providers {
-            group.enter()
-            provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) { (urlData, error) in
-                defer { group.leave() }
-                
-                if let error = error {
-                    print("Error loading item: \(error)")
-                    return
-                }
-                
-                if let urlData = urlData as? Data,
-                   let urlString = String(data: urlData, encoding: .utf8),
-                   let url = URL(string: urlString) {
-                    
-                    let fileExtension = url.pathExtension.lowercased()
-                    if fileExtension == "cbz" || fileExtension == "pdf" || fileExtension == "zip" {
-                        // Get bookmark data for persistent access
-                        urls.append(url)
+            // macOS drag & drop handling
+            let group = DispatchGroup()
+            var urls: [URL] = []
+
+            for provider in providers {
+                group.enter()
+                provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) {
+                    (urlData, error) in
+                    defer { group.leave() }
+
+                    if let error = error {
+                        print("Error loading item: \(error)")
+                        return
+                    }
+
+                    if let urlData = urlData as? Data,
+                        let urlString = String(data: urlData, encoding: .utf8),
+                        let url = URL(string: urlString)
+                    {
+
+                        let fileExtension = url.pathExtension.lowercased()
+                        if fileExtension == "cbz" || fileExtension == "pdf"
+                            || fileExtension == "zip"
+                        {
+                            // Get bookmark data for persistent access
+                            urls.append(url)
+                        }
                     }
                 }
             }
-        }
-        
-        // Wait for all loads to complete, then import
-        group.notify(queue: .main) {
-            if !urls.isEmpty {
-                print("Importing \(urls.count) dropped files")
-                Task {
+
+            // Wait for all loads to complete, then import
+            group.notify(queue: .main) {
+                if !urls.isEmpty {
+                    print("Importing \(urls.count) dropped files")
+                    Task {
+                        await viewModel.importComics(from: urls)
+                    }
+                }
+            }
+
+            return true
+        #else
+            // iOS drag & drop - simpler
+            Task {
+                var urls: [URL] = []
+
+                for provider in providers {
+                    if provider.hasItemConformingToTypeIdentifier("public.file-url") {
+                        do {
+                            if let url = try await provider.loadItem(
+                                forTypeIdentifier: "public.file-url", options: nil) as? URL
+                            {
+                                let fileExtension = url.pathExtension.lowercased()
+                                if fileExtension == "cbz" || fileExtension == "pdf"
+                                    || fileExtension == "zip"
+                                {
+                                    urls.append(url)
+                                }
+                            }
+                        } catch {
+                            print("Failed to load dropped item: \(error)")
+                        }
+                    }
+                }
+
+                if !urls.isEmpty {
                     await viewModel.importComics(from: urls)
                 }
             }
-        }
-        
-        return true
-        #else
-        // iOS drag & drop - simpler
-        Task {
-            var urls: [URL] = []
-            
-            for provider in providers {
-                if provider.hasItemConformingToTypeIdentifier("public.file-url") {
-                    do {
-                        if let url = try await provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) as? URL {
-                            let fileExtension = url.pathExtension.lowercased()
-                            if fileExtension == "cbz" || fileExtension == "pdf" || fileExtension == "zip" {
-                                urls.append(url)
-                            }
-                        }
-                    } catch {
-                        print("Failed to load dropped item: \(error)")
-                    }
-                }
-            }
-            
-            if !urls.isEmpty {
-                await viewModel.importComics(from: urls)
-            }
-        }
-        
-        return true
+
+            return true
         #endif
     }
 }
@@ -1057,57 +1107,57 @@ struct LibraryView: View {
 struct ComicRowView: View {
     let comic: Comic
     @State private var isHovered = false
-    
+
     var body: some View {
         HStack(spacing: Spacing.lg) {
             // Cover image
             ZStack {
                 if let coverData = comic.coverImageData {
                     #if os(macOS)
-                    if let nsImage = NSImage(data: coverData) {
-                        Image(nsImage: nsImage)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: 60, height: 90)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                    } else {
-                        placeholderThumbnail
-                    }
+                        if let nsImage = NSImage(data: coverData) {
+                            Image(nsImage: nsImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 60, height: 90)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        } else {
+                            placeholderThumbnail
+                        }
                     #else
-                    if let uiImage = UIImage(data: coverData) {
-                        Image(uiImage: uiImage)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: 60, height: 90)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                    } else {
-                        placeholderThumbnail
-                    }
+                        if let uiImage = UIImage(data: coverData) {
+                            Image(uiImage: uiImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 60, height: 90)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        } else {
+                            placeholderThumbnail
+                        }
                     #endif
                 } else {
                     placeholderThumbnail
                 }
             }
-            
+
             // Comic info
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text(comic.displayTitle)
                     .font(Typography.h3)
                     .foregroundColor(TextColors.primary)
                     .lineLimit(1)
-                
+
                 if let publisher = comic.publisher {
                     HStack(spacing: Spacing.xs) {
                         Circle()
                             .fill(comic.publisherColor)
                             .frame(width: 8, height: 8)
-                        
+
                         Text(publisher)
                             .font(Typography.bodySmall)
                             .foregroundColor(TextColors.secondary)
                     }
                 }
-                
+
                 HStack(spacing: Spacing.md) {
                     // Status badge
                     HStack(spacing: Spacing.xs) {
@@ -1117,23 +1167,23 @@ struct ComicRowView: View {
                             .font(Typography.label)
                     }
                     .foregroundColor(comic.status.color)
-                    
+
                     // Progress
                     if comic.totalPages > 0 {
                         Text("\(comic.currentPage)/\(comic.totalPages) pages")
                             .font(Typography.label)
                             .foregroundColor(TextColors.tertiary)
                     }
-                    
+
                     // File size
                     Text(comic.fileSizeFormatted)
                         .font(Typography.label)
                         .foregroundColor(TextColors.tertiary)
                 }
             }
-            
+
             Spacer()
-            
+
             // Actions
             Image(systemName: "chevron.right")
                 .font(.system(size: 14))
@@ -1151,7 +1201,7 @@ struct ComicRowView: View {
             isHovered = hovering
         }
     }
-    
+
     // MARK: - Placeholder Thumbnail
     private var placeholderThumbnail: some View {
         ZStack {
@@ -1163,7 +1213,7 @@ struct ComicRowView: View {
                         endPoint: .bottomTrailing
                     )
                 )
-            
+
             Image(systemName: comic.fileType.icon)
                 .font(.system(size: 24))
                 .foregroundColor(TextColors.tertiary)
@@ -1176,17 +1226,17 @@ struct ComicRowView: View {
 // MARK: - Selection Checkbox
 struct SelectionCheckbox: View {
     let isSelected: Bool
-    
+
     var body: some View {
         ZStack {
             Circle()
                 .fill(isSelected ? AccentColors.primary : BackgroundColors.elevated)
                 .frame(width: 28, height: 28)
-            
+
             Circle()
                 .stroke(isSelected ? AccentColors.primary : BorderColors.regular, lineWidth: 2)
                 .frame(width: 28, height: 28)
-            
+
             if isSelected {
                 Image(systemName: "checkmark")
                     .font(.system(size: 14, weight: .bold))
@@ -1203,7 +1253,7 @@ struct FilterChip: View {
     var color: Color? = nil
     let isSelected: Bool
     let action: () -> Void
-    
+
     var body: some View {
         Button(action: action) {
             HStack(spacing: Spacing.xs) {
@@ -1211,7 +1261,7 @@ struct FilterChip: View {
                     Image(systemName: icon)
                         .font(.system(size: 10))
                 }
-                
+
                 Text(title)
                     .font(Typography.bodySmall)
             }
@@ -1219,14 +1269,15 @@ struct FilterChip: View {
             .padding(.horizontal, Spacing.md)
             .padding(.vertical, Spacing.sm)
             .background(
-                isSelected ?
-                (color ?? AccentColors.primary).opacity(0.12) :
-                BackgroundColors.elevated
+                isSelected
+                    ? (color ?? AccentColors.primary).opacity(0.12) : BackgroundColors.elevated
             )
             .clipShape(Capsule())
             .overlay(
                 Capsule()
-                    .stroke(isSelected ? (color ?? AccentColors.primary) : BorderColors.subtle, lineWidth: 1)
+                    .stroke(
+                        isSelected ? (color ?? AccentColors.primary) : BorderColors.subtle,
+                        lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -1238,17 +1289,17 @@ struct FilterBadge: View {
     let title: String
     var icon: String? = nil
     let onRemove: () -> Void
-    
+
     var body: some View {
         HStack(spacing: Spacing.xs) {
             if let icon = icon {
                 Image(systemName: icon)
                     .font(.system(size: 12))
             }
-            
+
             Text(title)
                 .font(Typography.caption)
-            
+
             Button(action: onRemove) {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 14))
@@ -1271,4 +1322,3 @@ struct FilterBadge: View {
 #Preview {
     LibraryView()
 }
-
