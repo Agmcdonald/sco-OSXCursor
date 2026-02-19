@@ -14,6 +14,9 @@ final class LibraryViewModel: ObservableObject {
     // ✅ Track which comics are currently being edited
     @Published var editingComicIDs: Set<UUID> = []
 
+    // ✅ Track the comic currently being read to present in full screen
+    @Published var readingComic: Comic?
+
     // Import tracking
     @Published var isImporting: Bool = false
     @Published var importProgress: Double = 0.0

@@ -39,7 +39,6 @@ struct LibraryView: View {
     @State private var showingFilters = false
     @State private var isSelectionMode = false
     @State private var selectedComics: Set<Comic.ID> = []
-    @State private var comicToRead: Comic?
     @State private var showingFilePicker = false
     @State private var importedFileURLs: [URL] = []
     @State private var isDropTargeted = false
@@ -174,22 +173,6 @@ struct LibraryView: View {
                 }
             }
         )
-        #if os(macOS)
-            .sheet(item: $comicToRead) { comic in
-                ComicReaderView(comic: comic)
-                .environmentObject(viewModel)
-                .frame(
-                    minWidth: 1400, idealWidth: 1600, maxWidth: .infinity,
-                    minHeight: 900, idealHeight: 1000, maxHeight: .infinity
-                )
-                .ignoresSafeArea()
-            }
-        #else
-            .fullScreenCover(item: $comicToRead) { comic in
-                ComicReaderView(comic: comic)
-                .environmentObject(viewModel)
-            }
-        #endif
         .fileImporter(
             isPresented: $showingFilePicker,
             allowedContentTypes: [.zip, .pdf, .cbr, UTType(filenameExtension: "cbr")!],
@@ -975,8 +958,8 @@ struct LibraryView: View {
         print("\n🎯 [LibraryView] User tapped comic: \(comic.fileName)")
         print("🎯 [LibraryView] File type: \(comic.fileType.rawValue)")
         print("🎯 [LibraryView] Has bookmark: \(comic.bookmarkData != nil)")
-        print("🎯 [LibraryView] Setting comicToRead (triggers fullScreenCover)")
-        comicToRead = comic
+        print("🎯 [LibraryView] Setting viewModel.readingComic (triggers full screen reader)")
+        viewModel.readingComic = comic
     }
 
     private func editComic(_ comic: Comic) {

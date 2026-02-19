@@ -22,14 +22,14 @@ struct ReaderControlsOverlay: View {
     @Binding var isFullScreen: Bool  // Fullscreen mode
     @Binding var isSpreadMode: Bool  // Two-page spread mode
     let onUserInteraction: () -> Void  // Called when user interacts
-    
+
     var body: some View {
         ZStack {
             // Scrim is visual only - does NOT block gestures
             Color.black.opacity(controlsVisible ? 0.15 : 0.0)
                 .ignoresSafeArea()
                 .allowsHitTesting(false)  // Critical: lets swipes pass through
-            
+
             // CONTROLS
             VStack(spacing: 0) {
                 // Top bar - hit-testable
@@ -38,7 +38,7 @@ struct ReaderControlsOverlay: View {
                         .transition(.move(edge: .top).combined(with: .opacity))
                         .contentShape(Rectangle())
                 }
-                
+
                 Spacer(minLength: 0)
                     .contentShape(Rectangle())
                     .onTapGesture {
@@ -48,7 +48,7 @@ struct ReaderControlsOverlay: View {
                         }
                         onUserInteraction()
                     }
-                
+
                 // Bottom bar - hit-testable
                 if controlsVisible {
                     bottomBar
@@ -59,7 +59,7 @@ struct ReaderControlsOverlay: View {
             .zIndex(10)
         }
     }
-    
+
     // MARK: - Top Bar
     private var topBar: some View {
         HStack(spacing: Spacing.lg) {
@@ -77,11 +77,11 @@ struct ReaderControlsOverlay: View {
             }
             .buttonStyle(.plain)
             #if os(macOS)
-            .help("Close Reader (Esc)")
+                .help("Close Reader (Esc)")
             #endif
-            
+
             Spacer()
-            
+
             // Book title with loading indicator
             HStack(spacing: Spacing.sm) {
                 Text(comicTitle)
@@ -89,14 +89,14 @@ struct ReaderControlsOverlay: View {
                     .foregroundColor(.white)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                
+
                 // Loading badge (only for PDFs during background loading)
                 if isBackgroundLoading {
                     HStack(spacing: 6) {
                         ProgressView()
                             .scaleEffect(0.7)
                             .tint(.white)
-                        
+
                         Text("Loading pages...")
                             .font(Typography.caption)
                             .foregroundColor(.white.opacity(0.9))
@@ -112,9 +112,9 @@ struct ReaderControlsOverlay: View {
             .background(Color.black.opacity(0.5))
             .clipShape(Capsule())
             .frame(maxWidth: 600)
-            
+
             Spacer()
-            
+
             // Thumbnail grid button
             Button(action: {
                 withAnimation(.easeInOut(duration: 0.3)) {
@@ -131,9 +131,9 @@ struct ReaderControlsOverlay: View {
             }
             .buttonStyle(.plain)
             #if os(macOS)
-            .help("Show All Pages")
+                .help("Show All Pages")
             #endif
-            
+
             // Spread mode toggle button
             Button(action: {
                 withAnimation(.easeInOut(duration: 0.3)) {
@@ -150,34 +150,44 @@ struct ReaderControlsOverlay: View {
             }
             .buttonStyle(.plain)
             #if os(macOS)
-            .help(isSpreadMode ? "Switch to Single Page" : "Switch to Two-Page Spread")
+                .help(isSpreadMode ? "Switch to Single Page" : "Switch to Two-Page Spread")
             #endif
-            
-            // Fullscreen toggle button (iOS only - macOS uses sheets which can't enter native fullscreen)
-            #if os(iOS)
+
+            // Fullscreen toggle button
             Button(action: {
                 withAnimation(.easeInOut(duration: 0.3)) {
                     isFullScreen.toggle()
                 }
+                #if os(macOS)
+                    if let window = NSApplication.shared.windows.first(where: { $0.isKeyWindow }) {
+                        window.toggleFullScreen(nil)
+                    }
+                #endif
                 onUserInteraction()
             }) {
-                Image(systemName: isFullScreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(width: 44, height: 44)
-                    .background(Color.black.opacity(0.5))
-                    .clipShape(Circle())
+                Image(
+                    systemName: isFullScreen
+                        ? "arrow.down.right.and.arrow.up.left"
+                        : "arrow.up.left.and.arrow.down.right"
+                )
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundColor(.white)
+                .frame(width: 44, height: 44)
+                .background(Color.black.opacity(0.5))
+                .clipShape(Circle())
             }
             .buttonStyle(.plain)
+            #if os(macOS)
+                .help(isFullScreen ? "Exit Full Screen" : "Enter Full Screen")
             #endif
-            
+
             // Menu button
             Button(action: {
                 #if os(iOS)
-                withAnimation {
-                    showingMenu.toggle()
-                    controlsVisible = false
-                }
+                    withAnimation {
+                        showingMenu.toggle()
+                        controlsVisible = false
+                    }
                 #endif
                 onUserInteraction()
             }) {
@@ -200,7 +210,7 @@ struct ReaderControlsOverlay: View {
             .ignoresSafeArea(edges: .top)
         )
     }
-    
+
     // MARK: - Bottom Bar
     private var bottomBar: some View {
         VStack(spacing: Spacing.sm) {
@@ -216,9 +226,9 @@ struct ReaderControlsOverlay: View {
                 .buttonStyle(.plain)
                 .disabled(currentPage == 0)
                 #if os(macOS)
-                .help("Previous Page (←)")
+                    .help("Previous Page (←)")
                 #endif
-                
+
                 // Slider
                 if totalPages > 1 {
                     Slider(
@@ -231,25 +241,27 @@ struct ReaderControlsOverlay: View {
                     )
                     .tint(AccentColors.primary)
                 }
-                
+
                 // Next button
                 Button(action: nextPage) {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(currentPage < totalPages - 1 ? .white : .white.opacity(0.3))
+                        .foregroundColor(
+                            currentPage < totalPages - 1 ? .white : .white.opacity(0.3)
+                        )
                         .frame(width: 40, height: 40)
                 }
                 .buttonStyle(.plain)
                 .disabled(currentPage >= totalPages - 1)
                 #if os(macOS)
-                .help("Next Page (→)")
+                    .help("Next Page (→)")
                 #endif
             }
             .padding(.horizontal, Spacing.xl)
-            
+
             // Inline thumbnail strip
             inlineThumbnailStrip
-            
+
             // Page counter below thumbnails
             Text("Page \(currentPage + 1) of \(totalPages)")
                 .font(Typography.caption)
@@ -265,7 +277,7 @@ struct ReaderControlsOverlay: View {
             .ignoresSafeArea(edges: .bottom)
         )
     }
-    
+
     // MARK: - Inline Thumbnail Strip
     private var inlineThumbnailStrip: some View {
         ScrollViewReader { proxy in
@@ -299,7 +311,7 @@ struct ReaderControlsOverlay: View {
             }
         }
     }
-    
+
     // MARK: - Actions
     private func previousPage() {
         guard currentPage > 0 else { return }
@@ -314,7 +326,7 @@ struct ReaderControlsOverlay: View {
         }
         onUserInteraction()
     }
-    
+
     private func nextPage() {
         guard currentPage < totalPages - 1 else { return }
         withAnimation(.easeInOut(duration: 0.3)) {
@@ -336,7 +348,7 @@ struct MenuNavItem: View {
     let title: String
     var color: Color = TextColors.primary
     let action: () -> Void
-    
+
     var body: some View {
         Button(action: action) {
             HStack(spacing: Spacing.md) {
@@ -344,13 +356,13 @@ struct MenuNavItem: View {
                     .font(.system(size: 20))
                     .foregroundColor(color)
                     .frame(width: 24)
-                
+
                 Text(title)
                     .font(Typography.body)
                     .foregroundColor(color)
-                
+
                 Spacer()
-                
+
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12))
                     .foregroundColor(TextColors.tertiary)
@@ -369,24 +381,24 @@ struct InlineThumbnail: View {
     let page: ComicPage
     let pageNumber: Int
     let isCurrentPage: Bool
-    
+
     var body: some View {
         VStack(spacing: 4) {
             // Thumbnail image
             ZStack {
                 if let image = page.image {
                     #if os(macOS)
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 50, height: 70)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        Image(nsImage: image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 50, height: 70)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
                     #else
-                    Image(uiImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 50, height: 70)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        Image(uiImage: image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 50, height: 70)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
                     #endif
                 } else {
                     // Placeholder
@@ -394,7 +406,7 @@ struct InlineThumbnail: View {
                         .fill(Color.white.opacity(0.1))
                         .frame(width: 50, height: 70)
                 }
-                
+
                 // Current page border
                 if isCurrentPage {
                     RoundedRectangle(cornerRadius: 6)
@@ -402,7 +414,7 @@ struct InlineThumbnail: View {
                         .frame(width: 50, height: 70)
                 }
             }
-            
+
             // Page number (only for current page)
             if isCurrentPage {
                 Text("\(pageNumber)")
@@ -426,16 +438,18 @@ struct InlineThumbnail: View {
         @State private var isBackgroundLoading = true
         @State private var isFullScreen = false
         @State private var isSpreadMode = false
-        
+
         var body: some View {
             ZStack {
                 Color.blue.ignoresSafeArea()
-                
+
                 ReaderControlsOverlay(
                     currentPage: $currentPage,
                     totalPages: 32,
                     comicTitle: "Amazing Spider-Man #015 (2025)",
-                    pages: (1...32).map { ComicPage(pageNumber: $0, imageData: Data(), fileName: "page\($0).jpg") },
+                    pages: (1...32).map {
+                        ComicPage(pageNumber: $0, imageData: Data(), fileName: "page\($0).jpg")
+                    },
                     onClose: { print("Close tapped") },
                     controlsVisible: $controlsVisible,
                     showingMenu: $showingMenu,
@@ -448,7 +462,6 @@ struct InlineThumbnail: View {
             }
         }
     }
-    
+
     return PreviewWrapper()
 }
-

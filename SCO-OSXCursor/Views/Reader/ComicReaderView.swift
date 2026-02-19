@@ -113,7 +113,10 @@ struct ComicReaderView: View {
                 if controlsVisible {
                     VStack {
                         HStack {
-                            Button(action: { dismiss() }) {
+                            Button(action: {
+                                libraryViewModel.readingComic = nil
+                                dismiss()
+                            }) {
                                 Image(systemName: "xmark")
                                     .font(.system(size: 20, weight: .semibold))
                                     .foregroundColor(.white)
@@ -245,6 +248,7 @@ struct ComicReaderView: View {
                 comicTitle: comic.displayTitle,
                 pages: viewModel.allPages,
                 onClose: {
+                    libraryViewModel.readingComic = nil
                     dismiss()
                 },
                 controlsVisible: $controlsVisible,
@@ -321,16 +325,19 @@ struct ComicReaderView: View {
                             color: AccentColors.error
                         ) {
                             showingMenu = false
+                            libraryViewModel.readingComic = nil
                             dismiss()
                         }
 
                         MenuNavItem(icon: "books.vertical", title: "Library") {
                             showingMenu = false
+                            libraryViewModel.readingComic = nil
                             dismiss()
                         }
 
                         MenuNavItem(icon: "folder.badge.gearshape", title: "Organize") {
                             showingMenu = false
+                            libraryViewModel.readingComic = nil
                             dismiss()
                         }
 
@@ -348,6 +355,7 @@ struct ComicReaderView: View {
 
                         MenuNavItem(icon: "gear", title: "App Settings") {
                             showingMenu = false
+                            libraryViewModel.readingComic = nil
                             dismiss()
                         }
 
@@ -411,7 +419,10 @@ struct ComicReaderView: View {
                         .padding(.horizontal, Spacing.xl)
                 }
 
-                Button(action: { dismiss() }) {
+                Button(action: {
+                    libraryViewModel.readingComic = nil
+                    dismiss()
+                }) {
                     Text("Close")
                         .font(Typography.button)
                         .foregroundColor(.white)
@@ -426,7 +437,10 @@ struct ComicReaderView: View {
             // Always show close button in top-left (especially for iPad)
             VStack {
                 HStack {
-                    Button(action: { dismiss() }) {
+                    Button(action: {
+                        libraryViewModel.readingComic = nil
+                        dismiss()
+                    }) {
                         Image(systemName: "xmark")
                             .font(.system(size: 20, weight: .semibold))
                             .foregroundColor(.white)
@@ -623,8 +637,9 @@ struct ComicReaderView: View {
                 }
             }
 
-            monitor.onEscape = { [dismiss] in
+            monitor.onEscape = { [self, dismiss] in
                 Task { @MainActor in
+                    libraryViewModel.readingComic = nil
                     dismiss()
                 }
             }

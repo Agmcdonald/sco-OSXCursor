@@ -54,6 +54,14 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .navigationSplitViewStyle(.balanced)
+        .overlay {
+            if let comic = libraryViewModel.readingComic {
+                ComicReaderView(comic: comic)
+                    .environmentObject(libraryViewModel)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .zIndex(100)
+            }
+        }
     }
 
     @ViewBuilder
