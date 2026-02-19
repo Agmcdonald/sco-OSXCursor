@@ -445,6 +445,31 @@ struct LibraryView: View {
                             .font(Typography.body)
                             .foregroundColor(TextColors.secondary)
 
+                        // Mark as Read button
+                        Button(action: {
+                            if !selectedComics.isEmpty {
+                                markAsReadSelectedComics()
+                            }
+                        }) {
+                            HStack(spacing: Spacing.xs) {
+                                Image(systemName: "checkmark.circle")
+                                Text("Mark as Read")
+                                    .font(Typography.bodySmall)
+                            }
+                            .foregroundColor(
+                                selectedComics.isEmpty ? TextColors.tertiary : AccentColors.primary
+                            )
+                            .padding(.horizontal, Spacing.md)
+                            .padding(.vertical, Spacing.sm)
+                            .background(
+                                selectedComics.isEmpty
+                                    ? BackgroundColors.elevated : AccentColors.primary.opacity(0.1)
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(selectedComics.isEmpty)
+
                         // Delete button
                         Button(action: {
                             if !selectedComics.isEmpty {
@@ -756,6 +781,10 @@ struct LibraryView: View {
                                         Label("Edit Metadata", systemImage: "pencil")
                                     }
 
+                                    Button(action: { viewModel.markAsRead([comic]) }) {
+                                        Label("Mark as Read", systemImage: "checkmark.circle")
+                                    }
+
                                     Divider()
 
                                     Button(
@@ -827,6 +856,10 @@ struct LibraryView: View {
 
                                     Button(action: { editComic(comic) }) {
                                         Label("Edit Metadata", systemImage: "pencil")
+                                    }
+
+                                    Button(action: { viewModel.markAsRead([comic]) }) {
+                                        Label("Mark as Read", systemImage: "checkmark.circle")
                                     }
 
                                     Divider()
@@ -935,6 +968,15 @@ struct LibraryView: View {
         } else {
             selectedComics.insert(id)
         }
+    }
+
+    private func markAsReadSelectedComics() {
+        let comicsToMark = viewModel.comics.filter { selectedComics.contains($0.id) }
+        viewModel.markAsRead(comicsToMark)
+
+        // Reset selection mode
+        selectedComics.removeAll()
+        isSelectionMode = false
     }
 
     private func deleteSelectedComics() {

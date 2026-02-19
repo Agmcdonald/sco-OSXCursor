@@ -359,6 +359,20 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Mark as Read
+
+    func markAsRead(_ comicsToMark: [Comic]) {
+        print("[LibraryViewModel] 📖 Marking \(comicsToMark.count) comics as read")
+        for comic in comicsToMark {
+            var updatedComic = comic
+            updatedComic.status = .completed
+            if updatedComic.totalPages > 0 {
+                updatedComic.currentPage = updatedComic.totalPages - 1
+            }
+            updateComic(updatedComic)
+        }
+    }
+
     // MARK: - Delete Comics
 
     func deleteComics(_ comics: [Comic]) {
