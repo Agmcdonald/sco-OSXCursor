@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		1A3F2CAD2EBCD7F400257033 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 1A3F2CAC2EBCD7F400257033 /* GRDB */; };
+		1A7CB0012F41FA0000CB0001 /* Unrar in Frameworks */ = {isa = PBXBuildFile; productRef = 1A7CB0002F41FA0000CB0001 /* Unrar */; };
 		1ABFF6492EBC640E00485435 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 1ABFF6482EBC640E00485435 /* ZIPFoundation */; };
 /* End PBXBuildFile section */
 
@@ -34,9 +35,26 @@
 		1ABFF6272EBC3B6800485435 /* SCO-OSXCursorUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "SCO-OSXCursorUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		1AE61DAD2F41F4E5005E3895 /* Exceptions for "SCO-OSXCursor" folder in "SCO-OSXCursor" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				.agent/skills/design_guardian/SKILL.md,
+				.agent/skills/doc_keeper/SKILL.md,
+				.agent/skills/grdb_architect/SKILL.md,
+				.agent/skills/mvvm_generator/SKILL.md,
+				.agent/skills/nano_banana_studio/SKILL.md,
+			);
+			target = 1ABFF60F2EBC3B6600485435 /* SCO-OSXCursor */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		1ABFF6122EBC3B6600485435 /* SCO-OSXCursor */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				1AE61DAD2F41F4E5005E3895 /* Exceptions for "SCO-OSXCursor" folder in "SCO-OSXCursor" target */,
+			);
 			path = "SCO-OSXCursor";
 			sourceTree = "<group>";
 		};
@@ -59,6 +77,7 @@
 			files = (
 				1ABFF6492EBC640E00485435 /* ZIPFoundation in Frameworks */,
 				1A3F2CAD2EBCD7F400257033 /* GRDB in Frameworks */,
+				1A7CB0012F41FA0000CB0001 /* Unrar in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -121,6 +140,7 @@
 			packageProductDependencies = (
 				1ABFF6482EBC640E00485435 /* ZIPFoundation */,
 				1A3F2CAC2EBCD7F400257033 /* GRDB */,
+				1A7CB0002F41FA0000CB0001 /* Unrar */,
 			);
 			productName = "SCO-OSXCursor";
 			productReference = 1ABFF6102EBC3B6600485435 /* SCO-OSXCursor.app */;
@@ -207,6 +227,7 @@
 			packageReferences = (
 				1ABFF6472EBC640E00485435 /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
 				1A3F2CAB2EBCD7F400257033 /* XCRemoteSwiftPackageReference "GRDB" */,
+				1A7CB0022F41FA0000CB0001 /* XCRemoteSwiftPackageReference "Unrar" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 1ABFF6112EBC3B6600485435 /* Products */;
@@ -658,6 +679,14 @@
 				minimumVersion = 7.0.0;
 			};
 		};
+		1A7CB0022F41FA0000CB0001 /* XCRemoteSwiftPackageReference "Unrar" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/mtgto/Unrar.swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.5.0;
+			};
+		};
 		1ABFF6472EBC640E00485435 /* XCRemoteSwiftPackageReference "ZIPFoundation" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/weichsel/ZIPFoundation";
@@ -673,6 +702,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 1A3F2CAB2EBCD7F400257033 /* XCRemoteSwiftPackageReference "GRDB" */;
 			productName = GRDB;
+		};
+		1A7CB0002F41FA0000CB0001 /* Unrar */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1A7CB0022F41FA0000CB0001 /* XCRemoteSwiftPackageReference "Unrar" */;
+			productName = Unrar;
 		};
 		1ABFF6482EBC640E00485435 /* ZIPFoundation */ = {
 			isa = XCSwiftPackageProductDependency;

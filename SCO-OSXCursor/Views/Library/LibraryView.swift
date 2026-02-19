@@ -22,7 +22,11 @@ private struct ComicID: Identifiable {
 
 @MainActor
 struct LibraryView: View {
-    @StateObject private var viewModel = LibraryViewModel(database: DatabaseManager.shared)
+    @ObservedObject var viewModel: LibraryViewModel
+
+    init(viewModel: LibraryViewModel) {
+        self.viewModel = viewModel
+    }
 
     @State private var searchText = ""
     @State private var viewMode: ViewMode = .grid
@@ -1320,5 +1324,5 @@ struct FilterBadge: View {
 }
 
 #Preview {
-    LibraryView()
+    LibraryView(viewModel: LibraryViewModel(database: DatabaseManager.shared))
 }

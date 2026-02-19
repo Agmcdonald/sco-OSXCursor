@@ -191,10 +191,22 @@ final class LibraryViewModel: ObservableObject {
                 let filenameMetadata = MetadataParser.parseFromFilename(fileName)
 
                 // Get reader for file type
-                let reader: ComicReaderProtocol = fileType == .pdf ? PDFReader() : CBZReader()
+                let reader: ComicReaderProtocol
+                switch fileType {
+                case .pdf: reader = PDFReader()
+                case .cbr: reader = CBRReader()
+                default: reader = CBZReader()
+                }
 
-                // Get page count
-                let pageCount = try await reader.getPageCount(from: url)
+                // Get page count — non-fatal, CBR (RAR) files will fail with ZIPFoundation
+                var pageCount = 0
+                do {
+                    pageCount = try await reader.getPageCount(from: url)
+                } catch {
+                    print(
+                        "[LibraryViewModel] ⚠️ Could not read page count (CBR?): \(error.localizedDescription)"
+                    )
+                }
 
                 // Extract cover image
                 let coverData = try? await reader.extractCover(from: url)
@@ -205,7 +217,7 @@ final class LibraryViewModel: ObservableObject {
                     ?? 0
 
                 // Create extracted comic from filename metadata
-                let extractedComic = Comic(
+                var extractedComic = Comic(
                     id: finalID,
                     filePath: url,
                     fileName: fileName,
@@ -228,17 +240,54 @@ final class LibraryViewModel: ObservableObject {
                     fileType: fileType
                 )
 
+                // Rename file on disk if the clean name is different (skip bundled comics)
+                let isBundledFile = url.path.contains(Bundle.main.bundlePath)
+                let newFileName = extractedComic.cleanFileName
+                if !isBundledFile && newFileName != fileName {
+                    let newURL = url.deletingLastPathComponent().appendingPathComponent(newFileName)
+                    do {
+                        // Avoid overwriting an existing file with the same clean name
+                        if !FileManager.default.fileExists(atPath: newURL.path) {
+                            try FileManager.default.moveItem(at: url, to: newURL)
+                            extractedComic.filePath = newURL
+                            extractedComic.fileName = newFileName
+                            // Create new bookmark for the renamed file
+                            #if os(macOS)
+                                extractedComic.bookmarkData = try? newURL.bookmarkData(
+                                    options: [
+                                        .withSecurityScope, .securityScopeAllowOnlyReadAccess,
+                                    ],
+                                    includingResourceValuesForKeys: nil,
+                                    relativeTo: nil
+                                )
+                            #endif
+                            print("[LibraryViewModel] 📝 Renamed: \(fileName) → \(newFileName)")
+                        } else {
+                            print(
+                                "[LibraryViewModel] ⚠️ Skipped rename (target exists): \(newFileName)"
+                            )
+                        }
+                    } catch {
+                        print(
+                            "[LibraryViewModel] ⚠️ Rename failed (continuing with original): \(error.localizedDescription)"
+                        )
+                    }
+                }
+
                 // Merge with existing comic if present
                 let finalComic = Comic.merged(existing: existingComic, extracted: extractedComic)
 
                 // Save to database
                 try await database.saveComic(finalComic)
 
+                // Auto-populate Knowledge Base with Series/Publisher
+                checkAndAutoPopulateKnowledge(comic: finalComic)
+
                 // Add to new comics list
                 newComics.append(finalComic)
                 imported += 1
 
-                print("[LibraryViewModel] ✅ Imported: \(fileName)")
+                print("[LibraryViewModel] ✅ Imported: \(extractedComic.fileName)")
 
             } catch {
                 print("[LibraryViewModel] ❌ Failed to import \(url.lastPathComponent): \(error)")
@@ -323,5 +372,166 @@ final class LibraryViewModel: ObservableObject {
                 // await database.deleteComic(comic)
             }
         }
+    }
+
+    // MARK: - Knowledge Base Integration
+
+    private func checkAndAutoPopulateKnowledge(comic: Comic) {
+        Task {
+            // Auto-add Series
+            if let series = comic.series, !series.isEmpty {
+                let entry = KnowledgeEntry(type: .series, name: series)
+                try? await database.saveKnowledgeEntry(entry)
+            }
+
+            // Auto-add Publisher
+            if let publisher = comic.publisher, !publisher.isEmpty {
+                // Optional: Add to knowledge base
+                let entry = KnowledgeEntry(type: .publisher, name: publisher)
+                try? await database.saveKnowledgeEntry(entry)
+            }
+        }
+    }
+
+    // MARK: - Staged Comic Import (Organize Workflow)
+
+    /// Import a comic from the Organize staging area directly.
+    /// Uses the StagedComic's metadata instead of re-parsing from filename,
+    /// and uses the originalURL for security-scoped access.
+    func importStagedComic(
+        series: String, issueNumber: String?, volume: Int?, year: Int?,
+        publisher: String?, originalURL: URL, fileURL: URL
+    ) async {
+        await MainActor.run {
+            isImporting = true
+            importProgress = 0.0
+        }
+
+        do {
+            // Use the ORIGINAL url for security scope (it has the open-panel grant)
+            let accessing = originalURL.startAccessingSecurityScopedResource()
+            defer {
+                if accessing { originalURL.stopAccessingSecurityScopedResource() }
+            }
+
+            let fileName = fileURL.lastPathComponent
+            let fileExtension = fileURL.pathExtension.lowercased()
+
+            guard let fileType = Comic.FileType(rawValue: fileExtension) else {
+                print("[LibraryViewModel] ⚠️ Unsupported file type from Organize: \(fileName)")
+                await MainActor.run { isImporting = false }
+                return
+            }
+
+            // Create bookmark for persistent access on the final file
+            #if os(macOS)
+                let bookmarkData = try? fileURL.bookmarkData(
+                    options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess],
+                    includingResourceValuesForKeys: nil,
+                    relativeTo: nil
+                )
+            #else
+                let bookmarkData = try? fileURL.bookmarkData(
+                    options: [],
+                    includingResourceValuesForKeys: nil,
+                    relativeTo: nil
+                )
+            #endif
+
+            // Generate stable ID from the ORIGINAL path (consistent identity)
+            let stablePath = originalURL.standardizedFileURL.path
+            let pathData = stablePath.data(using: .utf8) ?? Data()
+            let pathHash = pathData.withUnsafeBytes { bytes in
+                var hash: UInt64 = 5381
+                let buffer = UnsafeRawBufferPointer(bytes)
+                for byte in buffer {
+                    hash = ((hash << 5) &+ hash) &+ UInt64(byte)
+                }
+                return hash
+            }
+            let hashBytes = withUnsafeBytes(of: pathHash) { Data($0) }
+            let uuidBytes = Data((0..<16).map { hashBytes[$0 % hashBytes.count] })
+            let comicID = UUID(uuid: uuidBytes.withUnsafeBytes { $0.load(as: uuid_t.self) })
+
+            // Check if comic already exists
+            let existingComic = try? await database.fetchComic(id: comicID)
+            let finalID = existingComic?.id ?? comicID
+
+            // Get reader for file type
+            let reader: ComicReaderProtocol
+            switch fileType {
+            case .pdf: reader = PDFReader()
+            case .cbr: reader = CBRReader()
+            default: reader = CBZReader()
+            }
+
+            // Get page count — non-fatal, as CBR (RAR) files will fail with ZIPFoundation
+            var pageCount = 0
+            do {
+                pageCount = try await reader.getPageCount(from: fileURL)
+            } catch {
+                print(
+                    "[LibraryViewModel] ⚠️ Could not read page count (CBR?): \(error.localizedDescription)"
+                )
+            }
+
+            // Extract cover image — also non-fatal
+            let coverData = try? await reader.extractCover(from: fileURL)
+
+            // Get file size
+            let fileSize =
+                (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? Int64)
+                ?? 0
+
+            // Build Comic directly from the staged metadata
+            let newComic = Comic(
+                id: finalID,
+                filePath: fileURL,
+                fileName: fileName,
+                bookmarkData: bookmarkData,
+                publisher: publisher,
+                series: series.isEmpty ? nil : series,
+                issueNumber: issueNumber,
+                volume: volume,
+                year: year,
+                coverImageData: coverData,
+                status: .unread,
+                currentPage: 0,
+                totalPages: pageCount,
+                fileSize: fileSize,
+                fileType: fileType
+            )
+
+            // Merge with existing comic if present
+            let finalComic = Comic.merged(existing: existingComic, extracted: newComic)
+
+            // Save to database
+            try await database.saveComic(finalComic)
+
+            // Auto-populate Knowledge Base
+            checkAndAutoPopulateKnowledge(comic: finalComic)
+
+            // Update comics array
+            await MainActor.run {
+                if let index = comics.firstIndex(where: { $0.id == finalComic.id }) {
+                    comics[index] = finalComic
+                } else {
+                    comics.append(finalComic)
+                }
+            }
+
+            print("[LibraryViewModel] ✅ Imported from Organize: \(fileName)")
+        } catch {
+            print(
+                "[LibraryViewModel] ❌ Failed to import from Organize \(fileURL.lastPathComponent): \(error)"
+            )
+        }
+
+        await MainActor.run {
+            isImporting = false
+            importProgress = 0.0
+        }
+
+        syncProgressFromTracker()
     }
 }

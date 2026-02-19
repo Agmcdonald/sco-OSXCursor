@@ -10,7 +10,15 @@ import SwiftUI
 @MainActor
 struct ContentView: View {
     @EnvironmentObject private var settingsViewModel: SettingsViewModel
+    @StateObject private var libraryViewModel: LibraryViewModel
+    @StateObject private var organizeViewModel: OrganizeViewModel
     @State private var selectedTab: Tab = .library
+
+    init() {
+        let libVM = LibraryViewModel(database: DatabaseManager.shared)
+        _libraryViewModel = StateObject(wrappedValue: libVM)
+        _organizeViewModel = StateObject(wrappedValue: OrganizeViewModel(libraryViewModel: libVM))
+    }
 
     enum Tab: String, CaseIterable {
         case dashboard = "Dashboard"
@@ -58,9 +66,9 @@ struct ContentView: View {
                 icon: "chart.bar"
             )
         case .library:
-            LibraryView()
+            LibraryView(viewModel: libraryViewModel)
         case .organize:
-            OrganizeView()
+            OrganizeView(viewModel: organizeViewModel)
         case .learning:
             PlaceholderView(
                 title: "Learning",
@@ -68,11 +76,7 @@ struct ContentView: View {
                 icon: "brain.head.profile"
             )
         case .knowledge:
-            PlaceholderView(
-                title: "Knowledge",
-                subtitle: "Publisher mappings and metadata will appear here",
-                icon: "book.closed"
-            )
+            KnowledgeView()
         case .maintenance:
             PlaceholderView(
                 title: "Maintenance",

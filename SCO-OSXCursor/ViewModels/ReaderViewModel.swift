@@ -41,6 +41,7 @@ class ReaderViewModel: ObservableObject {
 
     private let cbzReader = CBZReader()
     private let pdfReader = PDFReader()
+    private let cbrReader = CBRReader()
     private var resolvedURL: URL?
     private var currentComic: Comic?  // Keep reference for lazy loading
     private var isLazyLoaded = false  // Track if current comic uses lazy loading
@@ -241,9 +242,8 @@ class ReaderViewModel: ObservableObject {
                 reader = pdfReader
                 print("[ATTEMPT #\(currentAttempt)] Using PDFReader")
             case .cbr:
-                print("[ATTEMPT #\(currentAttempt)] ❌ CBR format not supported")
-                // CBR not yet supported
-                throw ComicReaderError.invalidFormat
+                reader = cbrReader
+                print("[ATTEMPT #\(currentAttempt)] Using CBRReader")
             }
 
             // Quick load: Just get page count first
@@ -444,8 +444,15 @@ class ReaderViewModel: ObservableObject {
 
                 // Load this page
                 do {
-                    let reader: ComicReaderProtocol =
-                        fileType == .pdf ? await self.pdfReader : await self.cbzReader
+                    let reader: ComicReaderProtocol
+                    switch fileType {
+                    case .pdf:
+                        reader = await self.pdfReader
+                    case .cbr:
+                        reader = await self.cbrReader
+                    default:
+                        reader = await self.cbzReader
+                    }
                     let page = try await reader.loadPage(at: pageIndex, from: fileURL)
 
                     // Update on main actor
@@ -507,7 +514,15 @@ class ReaderViewModel: ObservableObject {
         print("[ReaderViewModel] Loading page \(pageIndex + 1) in background...")
 
         do {
-            let reader: ComicReaderProtocol = comic.fileType == .pdf ? pdfReader : cbzReader
+            let reader: ComicReaderProtocol
+            switch comic.fileType {
+            case .pdf:
+                reader = pdfReader
+            case .cbr:
+                reader = cbrReader
+            default:
+                reader = cbzReader
+            }
             let page = try await reader.loadPage(at: pageIndex, from: fileURL)
             loadedPages[pageIndex] = page
             print("[ReaderViewModel] ✅ Page \(pageIndex + 1) loaded successfully")

@@ -21,6 +21,7 @@ struct ComicDetailView: View {
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var libraryViewModel: LibraryViewModel
+    @StateObject private var knowledgeViewModel = KnowledgeViewModel()
 
     @State private var editedComic: Comic
     @State private var originalTitle: String?
@@ -172,7 +173,7 @@ struct ComicDetailView: View {
                     .font(Typography.h1)
                     .foregroundColor(TextColors.primary)
 
-                Text(editedComic.fileName)
+                Text(editedComic.cleanFileName)
                     .font(Typography.bodySmall)
                     .foregroundColor(TextColors.tertiary)
 
@@ -198,11 +199,11 @@ struct ComicDetailView: View {
         VStack(alignment: .leading, spacing: Spacing.xl) {
             // Core Metadata Section
             metadataSection(title: "Core Information", icon: "info.circle") {
-                metadataField(label: "Title", text: $editedComic.title, field: .title)
+                metadataField(label: "Series", text: $editedComic.series, field: .series)
                 metadataField(
                     label: "Publisher", text: $editedComic.publisher, field: .publisher,
                     isPublisher: true)
-                metadataField(label: "Series", text: $editedComic.series, field: .series)
+                metadataField(label: "Storyline Title", text: $editedComic.title, field: .title)
                 metadataField(label: "Issue Number", text: $editedComic.issueNumber, field: .issue)
 
                 HStack {

@@ -11,18 +11,14 @@ import SwiftUI
     import AppKit
 #endif
 
-// MARK: - Notification Names
-extension Notification.Name {
-    static let scoToggleZoom = Notification.Name("scoToggleZoom")
-    static let scoToggleControls = Notification.Name("scoToggleControls")
-}
-
 // MARK: - Keyboard Monitor (macOS)
 #if os(macOS)
     class KeyboardMonitor {
         private var monitor: Any?
         var onLeftArrow: (() -> Void)?
         var onRightArrow: (() -> Void)?
+        var onUpArrow: (() -> Void)?
+        var onDownArrow: (() -> Void)?
         var onEscape: (() -> Void)?
         var onSpace: (() -> Void)?
 
@@ -33,16 +29,22 @@ extension Notification.Name {
                 switch event.keyCode {
                 case 123:  // Left arrow
                     self.onLeftArrow?()
-                    return nil  // Consume the event
+                    return nil
                 case 124:  // Right arrow
                     self.onRightArrow?()
-                    return nil  // Consume the event
+                    return nil
+                case 126:  // Up arrow
+                    self.onUpArrow?()
+                    return nil
+                case 125:  // Down arrow
+                    self.onDownArrow?()
+                    return nil
                 case 53:  // Escape
                     self.onEscape?()
-                    return nil  // Consume the event
+                    return nil
                 case 49:  // Space bar
                     self.onSpace?()
-                    return nil  // Consume the event
+                    return nil
                 default:
                     return event  // Pass through other keys
                 }
@@ -184,6 +186,23 @@ struct ComicReaderView: View {
         .onReceive(NotificationCenter.default.publisher(for: .scoToggleControls)) { _ in
             handleTapToToggleControls()
         }
+        #if os(macOS)
+            .onContinuousHover { phase in
+                switch phase {
+                case .active(_):
+                    // Mouse is moving or present - ensure controls show and timer resets
+                    if !controlsVisible {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            controlsVisible = true
+                        }
+                    }
+                    resetAutoHideTimer()
+                case .ended:
+                    // Mouse left the view - let timer finish or hide early if desired
+                    break
+                }
+            }
+        #endif
     }
 
     // MARK: - Reader View
@@ -427,20 +446,31 @@ struct ComicReaderView: View {
 
     // MARK: - Helper Methods
 
+    /// Show controls and ensure timer is running
+    private func showControls() {
+        if !controlsVisible {
+            withAnimation(.easeInOut(duration: 0.3)) {
+                controlsVisible = true
+            }
+        }
+        resetAutoHideTimer()
+    }
+
     /// Reset the auto-hide timer - hides controls after 3 seconds of inactivity
     private func resetAutoHideTimer() {
         autoHideTimer?.invalidate()
 
-        // Don't restart timer if controls are already hidden
-        if !controlsVisible {
-            return
-        }
-
         // Start new timer - auto-hide after 3 seconds on both iOS and macOS
         autoHideTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [self] _ in
             Task { @MainActor in
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    controlsVisible = false
+                // Only hide if we aren't hovering or menus aren't open
+                if !showingMenu && !showingThumbnails && !showingReaderSettings {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        controlsVisible = false
+                    }
+                } else {
+                    // If a menu is open, just reset the timer to check again later
+                    resetAutoHideTimer()
                 }
             }
         }
@@ -556,6 +586,8 @@ struct ComicReaderView: View {
                             viewModel.currentPage -= 1
                         }
                     }
+                    // NOTE: Specifically NOT calling resetAutoHideTimer() or showControls()
+                    // as arrows represent "passive" reading navigation.
                 }
             }
 
@@ -571,6 +603,22 @@ struct ComicReaderView: View {
                         } else {
                             viewModel.currentPage += 1
                         }
+                    }
+                    // NOTE: Specifically NOT calling resetAutoHideTimer() or showControls()
+                    // as arrows represent "passive" reading navigation.
+                }
+            }
+
+            monitor.onUpArrow = { [self] in
+                Task { @MainActor in
+                    showControls()
+                }
+            }
+
+            monitor.onDownArrow = { [self] in
+                Task { @MainActor in
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        controlsVisible = false
                     }
                 }
             }

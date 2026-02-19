@@ -165,24 +165,72 @@ extension Comic {
 
 // MARK: - Computed Properties
 extension Comic {
-    /// Display name for the comic (uses title if available, otherwise filename)
+    /// Display name for the comic (uses title → series → cleaned filename)
     var displayName: String {
         if let title = title, !title.isEmpty {
             return title
         }
+        if let series = series, !series.isEmpty {
+            return series
+        }
         return fileName.replacingOccurrences(of: ".\(fileType.rawValue)", with: "")
     }
 
-    /// Full display title with issue number
+    /// Full display title with issue number and year
     var displayTitle: String {
         var result = displayName
         if let issueNumber = issueNumber, !issueNumber.isEmpty {
-            result += " #\(issueNumber)"
+            // Only add '#' prefix if issue number starts with a digit
+            if issueNumber.prefix(1).allSatisfy(\.isNumber) {
+                result += " #\(issueNumber)"
+            } else {
+                result += " \(issueNumber)"
+            }
         }
         if let year = year {
             result += " (\(String(year)))"
         }
         return result
+    }
+
+    /// Clean filename built from parsed metadata (for display and renaming).
+    /// Format: "Series Name #001 (2025).cbz"
+    var cleanFileName: String {
+        var parts: [String] = []
+
+        // Series name (or title, or original filename without extension)
+        let baseName: String
+        if let series = series, !series.isEmpty {
+            baseName = series
+        } else if let title = title, !title.isEmpty {
+            baseName = title
+        } else {
+            // Just return original filename as-is
+            return fileName
+        }
+        parts.append(baseName)
+
+        // Volume
+        if let volume = volume {
+            parts.append("V\(volume)")
+        }
+
+        // Issue number
+        if let issueNumber = issueNumber, !issueNumber.isEmpty {
+            // Only add '#' prefix if issue number starts with a digit
+            if issueNumber.prefix(1).allSatisfy(\.isNumber) {
+                parts.append("#\(issueNumber)")
+            } else {
+                parts.append(issueNumber)
+            }
+        }
+
+        // Year
+        if let year = year {
+            parts.append("(\(year))")
+        }
+
+        return parts.joined(separator: " ") + ".\(fileType.rawValue)"
     }
 
     /// Reading progress as percentage (0.0 - 1.0)

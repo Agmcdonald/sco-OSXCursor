@@ -45,11 +45,12 @@ struct ComicMetadata: Codable {
     // Core Info
     var title: String?
     var series: String?
-    var number: String?           // Issue number (can be string like "1A" or "Annual 1")
+    var number: String?  // Issue number (can be string like "1A" or "Annual 1")
+    var ofTotal: String?  // Mini-series total (e.g., "04" from "(of 04)")
     var volume: Int?
     var summary: String?
     var notes: String?
-    
+
     // Publishing Info
     var publisher: String?
     var imprint: String?
@@ -58,12 +59,12 @@ struct ComicMetadata: Codable {
     var languageISO: String?
     var format: String?
     var ageRating: String?
-    
+
     // Dates
     var year: Int?
     var month: Int?
     var day: Int?
-    
+
     // Credits
     var writer: String?
     var penciller: String?
@@ -72,7 +73,7 @@ struct ComicMetadata: Codable {
     var letterer: String?
     var coverArtist: String?
     var editor: String?
-    
+
     // Content
     var pageCount: Int?
     var characters: String?
@@ -80,12 +81,12 @@ struct ComicMetadata: Codable {
     var locations: String?
     var storyArc: String?
     var seriesGroup: String?
-    
+
     // Additional
     var blackAndWhite: Bool?
-    var manga: String?           // Manga reading direction
+    var manga: String?  // Manga reading direction
     var scanInformation: String?
-    
+
     // CodingKeys for XML parsing
     enum CodingKeys: String, CodingKey {
         case title = "Title"
@@ -121,7 +122,7 @@ struct ComicMetadata: Codable {
         case manga = "Manga"
         case scanInformation = "ScanInformation"
     }
-    
+
     // Computed Properties
     var displayTitle: String? {
         if let title = title, !title.isEmpty {
@@ -136,7 +137,7 @@ struct ComicMetadata: Codable {
         }
         return nil
     }
-    
+
     var publicationDate: Date? {
         guard let year = year else { return nil }
         var components = DateComponents()
@@ -145,7 +146,7 @@ struct ComicMetadata: Codable {
         components.day = day ?? 1
         return Calendar.current.date(from: components)
     }
-    
+
     // Combine all credits into single string
     var allCredits: String? {
         var credits: [String] = []
@@ -167,9 +168,8 @@ struct ComicMetadata: Codable {
 
 // MARK: - Metadata Source
 enum MetadataSource {
-    case comicInfo      // ComicInfo.xml from CBZ
+    case comicInfo  // ComicInfo.xml from CBZ
     case pdfProperties  // PDF document properties
-    case filename       // Parsed from filename
-    case manual         // User-entered
+    case filename  // Parsed from filename
+    case manual  // User-entered
 }
-
