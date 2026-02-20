@@ -1,0 +1,179 @@
+import SwiftUI
+
+struct DashboardView: View {
+    @ObservedObject var libraryViewModel: LibraryViewModel
+    @State private var selectedTab: DashboardTab = .overview
+
+    enum DashboardTab: String, CaseIterable {
+        case overview = "Overview"
+        case insights = "Insights"
+        case reading = "Reading"
+        case health = "Health"
+        case activity = "Activity"
+
+        var icon: String {
+            switch self {
+            case .overview: return "square.grid.2x2"
+            case .insights: return "chart.xyaxis.line"
+            case .reading: return "book.open"
+            case .health: return "bolt.fill"
+            case .activity: return "pulse"
+            }
+        }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Spacing.xl) {
+                // Header
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text("Dashboard")
+                        .font(Typography.h1)
+                        .foregroundColor(TextColors.primary)
+                    Text("Overview of your comic collection and organization progress")
+                        .font(Typography.body)
+                        .foregroundColor(TextColors.secondary)
+                }
+                .padding(.top, Spacing.xl)
+                .padding(.horizontal, Spacing.xl)
+
+                // Top Metrics Row
+                HStack(spacing: Spacing.md) {
+                    MetricCard(
+                        title: "Files in Queue",
+                        value: "0"  // Placeholder until OrganizeViewModel is integrated
+                    )
+                    MetricCard(
+                        title: "Comics in Library",
+                        value: "\(libraryViewModel.comics.count)"
+                    )
+                    MetricCard(
+                        title: "Needs Review",
+                        value: "0"  // Placeholder
+                    )
+                    MetricCard(
+                        title: "Errors",
+                        value: "0",  // Placeholder
+                        valueColor: AccentColors.error
+                    )
+                }
+                .padding(.horizontal, Spacing.xl)
+
+                // Tab Selector
+                DashboardTabSelector(selectedTab: $selectedTab)
+                    .padding(.horizontal, Spacing.xl)
+
+                // Tab Content
+                Group {
+                    switch selectedTab {
+                    case .overview:
+                        DashboardOverviewView(libraryViewModel: libraryViewModel)
+                    case .insights:
+                        DashboardInsightsView(libraryViewModel: libraryViewModel)
+                    case .reading:
+                        DashboardReadingView(libraryViewModel: libraryViewModel)
+                    case .health:
+                        DashboardHealthView(libraryViewModel: libraryViewModel)
+                    case .activity:
+                        DashboardActivityView(libraryViewModel: libraryViewModel)
+                    }
+                }
+                .padding(.horizontal, Spacing.xl)
+                .padding(.bottom, Spacing.xxl)
+            }
+        }
+        .background(BackgroundColors.primary)
+    }
+}
+
+// MARK: - Reusable Components
+
+struct MetricCard: View {
+    let title: String
+    let value: String
+    var valueColor: Color = TextColors.primary
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text(title)
+                .font(Typography.caption)
+                .foregroundColor(TextColors.secondary)
+
+            Text(value)
+                .font(.system(size: 32, weight: .bold))
+                .foregroundColor(valueColor)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.lg)
+        .background(BackgroundColors.elevated)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+    }
+}
+
+struct DashboardTabSelector: View {
+    @Binding var selectedTab: DashboardView.DashboardTab
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(DashboardView.DashboardTab.allCases, id: \.self) { tab in
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        selectedTab = tab
+                    }
+                }) {
+                    HStack(spacing: Spacing.xs) {
+                        Image(systemName: tab.icon)
+                        Text(tab.rawValue)
+                    }
+                    .font(Typography.button)
+                    .padding(.vertical, Spacing.sm)
+                    .frame(maxWidth: .infinity)
+                    .background(selectedTab == tab ? BackgroundColors.elevated : Color.clear)
+                    .foregroundColor(selectedTab == tab ? TextColors.primary : TextColors.secondary)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(Spacing.xs)
+        .background(BackgroundColors.secondary)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+struct DashboardSectionCard<Content: View>: View {
+    var title: String?
+    var subtitle: String?
+    let content: Content
+
+    init(title: String? = nil, subtitle: String? = nil, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.subtitle = subtitle
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            if let title = title {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(Typography.h2)
+                        .foregroundColor(TextColors.primary)
+                    if let subtitle = subtitle {
+                        Text(subtitle)
+                            .font(Typography.bodySmall)
+                            .foregroundColor(TextColors.secondary)
+                    }
+                }
+            }
+
+            content
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(BackgroundColors.elevated)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+    }
+}

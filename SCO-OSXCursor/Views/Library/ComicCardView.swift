@@ -11,12 +11,12 @@ import SwiftUI
 struct ComicCardView: View {
     let comic: Comic
     @State private var isHovered = false
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             // Cover image
             coverView
-            
+
             // Comic info
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 // Title
@@ -25,7 +25,7 @@ struct ComicCardView: View {
                     .foregroundColor(TextColors.primary)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                
+
                 // Issue number and year
                 if comic.issueNumber != nil || comic.year != nil {
                     HStack(spacing: Spacing.xs) {
@@ -34,7 +34,7 @@ struct ComicCardView: View {
                                 .font(Typography.caption)
                                 .foregroundColor(TextColors.secondary)
                         }
-                        
+
                         if let year = comic.year {
                             Text("(\(String(year)))")
                                 .font(Typography.caption)
@@ -42,14 +42,14 @@ struct ComicCardView: View {
                         }
                     }
                 }
-                
+
                 // Publisher badge
                 if let publisher = comic.publisher {
                     HStack(spacing: Spacing.xs) {
                         Circle()
                             .fill(comic.publisherColor)
                             .frame(width: 6, height: 6)
-                        
+
                         Text(publisher)
                             .font(Typography.label)
                             .foregroundColor(TextColors.secondary)
@@ -59,21 +59,21 @@ struct ComicCardView: View {
                     .background(BackgroundColors.elevated)
                     .clipShape(Capsule())
                 }
-                
+
                 // Progress indicator
                 if comic.isInProgress {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(comic.progressPercentage)
                             .font(Typography.label)
                             .foregroundColor(TextColors.tertiary)
-                        
+
                         GeometryReader { geometry in
                             ZStack(alignment: .leading) {
                                 // Background
                                 RoundedRectangle(cornerRadius: 2)
                                     .fill(BackgroundColors.elevated)
                                     .frame(height: 4)
-                                
+
                                 // Progress
                                 RoundedRectangle(cornerRadius: 2)
                                     .fill(comic.status.color)
@@ -90,7 +90,9 @@ struct ComicCardView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(isHovered ? AccentColors.primary : BorderColors.subtle, lineWidth: isHovered ? 2 : 1)
+                .stroke(
+                    isHovered ? AccentColors.primary : BorderColors.subtle,
+                    lineWidth: isHovered ? 2 : 1)
         )
         .scaleEffect(isHovered ? 1.02 : 1.0)
         .animation(.easeInOut(duration: 0.2), value: isHovered)
@@ -98,7 +100,7 @@ struct ComicCardView: View {
             isHovered = hovering
         }
     }
-    
+
     // MARK: - Cover View
     private var coverView: some View {
         // Force portrait aspect ratio container
@@ -107,33 +109,33 @@ struct ComicCardView: View {
                 // Cover image or placeholder
                 if let coverData = comic.coverImageData {
                     #if os(macOS)
-                    if let nsImage = NSImage(data: coverData) {
-                        Image(nsImage: nsImage)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: geometry.size.width, height: geometry.size.height)
-                    } else {
-                        placeholderCover
-                    }
+                        if let nsImage = NSImage(data: coverData) {
+                            Image(nsImage: nsImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: geometry.size.width, height: geometry.size.height)
+                        } else {
+                            placeholderCover
+                        }
                     #else
-                    if let uiImage = UIImage(data: coverData) {
-                        Image(uiImage: uiImage)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: geometry.size.width, height: geometry.size.height)
-                    } else {
-                        placeholderCover
-                    }
+                        if let uiImage = UIImage(data: coverData) {
+                            Image(uiImage: uiImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: geometry.size.width, height: geometry.size.height)
+                        } else {
+                            placeholderCover
+                        }
                     #endif
                 } else {
                     placeholderCover
                 }
-                
+
                 // Status badge overlay
                 VStack {
                     HStack {
                         Spacer()
-                        
+
                         // Status indicator
                         Circle()
                             .fill(comic.status.color)
@@ -144,31 +146,50 @@ struct ComicCardView: View {
                             )
                             .padding(Spacing.sm)
                     }
-                    
+
                     Spacer()
-                    
-                    // Favorite indicator
-                    if comic.isFavorite {
-                        HStack {
-                            Image(systemName: "star.fill")
-                                .font(.system(size: 12))
-                                .foregroundColor(AccentColors.warning)
-                                .padding(Spacing.xs)
-                                .background(BackgroundColors.elevated.opacity(0.9))
-                                .clipShape(Circle())
-                                .padding(Spacing.sm)
-                            
+
+                    // Bottom-left badges (reading list + favourite)
+                    HStack(alignment: .bottom) {
+                        VStack(alignment: .leading, spacing: Spacing.xs) {
                             Spacer()
+                            // Reading list badge
+                            if comic.isOnReadingList {
+                                Image("ReadingListIcon")
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 28, height: 28)
+                                    .padding(4)
+                                    .background(.ultraThinMaterial)
+                                    .clipShape(Circle())
+                                    .padding(Spacing.sm)
+                            }
                         }
-                    }
-                }
-            }
-            .clipped() // Clip content to geometry bounds
+
+                        Spacer()
+
+                        // Favourite indicator (keeps its original position)
+                        VStack(alignment: .trailing) {
+                            Spacer()
+                            if comic.isFavorite {
+                                Image(systemName: "star.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(AccentColors.warning)
+                                    .padding(Spacing.xs)
+                                    .background(BackgroundColors.elevated.opacity(0.9))
+                                    .clipShape(Circle())
+                                    .padding(Spacing.sm)
+                            }
+                        }
+                    }  // HStack bottom badges
+                }  // VStack overlay
+            }  // ZStack
+            .clipped()  // Clip content to geometry bounds
         }
-        .aspectRatio(2/3, contentMode: .fit) // Standard comic book portrait aspect ratio
+        .aspectRatio(2 / 3, contentMode: .fit)  // Standard comic book portrait aspect ratio
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
-    
+
     // MARK: - Placeholder Cover
     private var placeholderCover: some View {
         ZStack {
@@ -181,13 +202,13 @@ struct ComicCardView: View {
                         endPoint: .bottomTrailing
                     )
                 )
-            
+
             // Icon
             VStack(spacing: Spacing.sm) {
                 Image(systemName: "book.closed")
                     .font(.system(size: 40))
                     .foregroundColor(TextColors.tertiary)
-                
+
                 Text(comic.fileType.rawValue.uppercased())
                     .font(Typography.tiny)
                     .foregroundColor(TextColors.tertiary)
@@ -205,9 +226,11 @@ struct ComicCardView: View {
 
 #Preview("Grid") {
     ScrollView {
-        LazyVGrid(columns: [
-            GridItem(.adaptive(minimum: 160, maximum: 200), spacing: Spacing.xl)
-        ], spacing: Spacing.xxl) {
+        LazyVGrid(
+            columns: [
+                GridItem(.adaptive(minimum: 160, maximum: 200), spacing: Spacing.xl)
+            ], spacing: Spacing.xxl
+        ) {
             ForEach(Comic.samples) { comic in
                 ComicCardView(comic: comic)
             }
@@ -216,4 +239,3 @@ struct ComicCardView: View {
     }
     .background(BackgroundColors.primary)
 }
-

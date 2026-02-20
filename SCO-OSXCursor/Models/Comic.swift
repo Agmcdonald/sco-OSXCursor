@@ -46,6 +46,7 @@ struct Comic: Identifiable, Codable {
     var tags: [String]
     var rating: Int?  // 1-5 stars
     var isFavorite: Bool
+    var isOnReadingList: Bool
 
     // MARK: - Reader Preferences
     var preferredTransition: String?  // Per-book transition override (PageTransition.rawValue)
@@ -82,6 +83,7 @@ struct Comic: Identifiable, Codable {
         tags: [String] = [],
         rating: Int? = nil,
         isFavorite: Bool = false,
+        isOnReadingList: Bool = false,
         preferredTransition: String? = nil,
         fileSize: Int64 = 0,
         fileType: FileType = .cbz,
@@ -110,6 +112,7 @@ struct Comic: Identifiable, Codable {
         self.tags = tags
         self.rating = rating
         self.isFavorite = isFavorite
+        self.isOnReadingList = isOnReadingList
         self.preferredTransition = preferredTransition
         self.fileSize = fileSize
         self.fileType = fileType

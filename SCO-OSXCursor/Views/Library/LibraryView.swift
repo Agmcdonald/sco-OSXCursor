@@ -470,6 +470,59 @@ struct LibraryView: View {
                         .buttonStyle(.plain)
                         .disabled(selectedComics.isEmpty)
 
+                        // Add to Reading List button
+                        Button(action: {
+                            if !selectedComics.isEmpty {
+                                addSelectedToReadingList()
+                            }
+                        }) {
+                            HStack(spacing: Spacing.xs) {
+                                Image("ReadingListIcon")
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 14, height: 14)
+                                Text("Add to List")
+                                    .font(Typography.bodySmall)
+                            }
+                            .foregroundColor(
+                                selectedComics.isEmpty ? TextColors.tertiary : AccentColors.primary
+                            )
+                            .padding(.horizontal, Spacing.md)
+                            .padding(.vertical, Spacing.sm)
+                            .background(
+                                selectedComics.isEmpty
+                                    ? BackgroundColors.elevated : AccentColors.primary.opacity(0.1)
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(selectedComics.isEmpty)
+
+                        // Regenerate Cover button
+                        Button(action: {
+                            if !selectedComics.isEmpty {
+                                regenerateCoversForSelected()
+                            }
+                        }) {
+                            HStack(spacing: Spacing.xs) {
+                                Image(systemName: "arrow.clockwise.circle")
+                                Text("Regenerate Cover")
+                                    .font(Typography.bodySmall)
+                            }
+                            .foregroundColor(
+                                selectedComics.isEmpty ? TextColors.tertiary : TextColors.primary
+                            )
+                            .padding(.horizontal, Spacing.md)
+                            .padding(.vertical, Spacing.sm)
+                            .background(
+                                selectedComics.isEmpty
+                                    ? BackgroundColors.elevated : BackgroundColors.elevated
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(selectedComics.isEmpty)
+
                         // Delete button
                         Button(action: {
                             if !selectedComics.isEmpty {
@@ -785,6 +838,22 @@ struct LibraryView: View {
                                         Label("Mark as Read", systemImage: "checkmark.circle")
                                     }
 
+                                    Button(action: { viewModel.toggleReadingList(comic) }) {
+                                        Label(
+                                            comic.isOnReadingList
+                                                ? "Remove from Reading List"
+                                                : "Add to Reading List",
+                                            systemImage: comic.isOnReadingList
+                                                ? "bookmark.slash" : "bookmark"
+                                        )
+                                    }
+
+                                    Button(action: { viewModel.regenerateCovers(for: [comic]) }) {
+                                        Label(
+                                            "Regenerate Cover",
+                                            systemImage: "arrow.clockwise.circle")
+                                    }
+
                                     Divider()
 
                                     Button(
@@ -860,6 +929,22 @@ struct LibraryView: View {
 
                                     Button(action: { viewModel.markAsRead([comic]) }) {
                                         Label("Mark as Read", systemImage: "checkmark.circle")
+                                    }
+
+                                    Button(action: { viewModel.toggleReadingList(comic) }) {
+                                        Label(
+                                            comic.isOnReadingList
+                                                ? "Remove from Reading List"
+                                                : "Add to Reading List",
+                                            systemImage: comic.isOnReadingList
+                                                ? "bookmark.slash" : "bookmark"
+                                        )
+                                    }
+
+                                    Button(action: { viewModel.regenerateCovers(for: [comic]) }) {
+                                        Label(
+                                            "Regenerate Cover",
+                                            systemImage: "arrow.clockwise.circle")
                                     }
 
                                     Divider()
@@ -973,8 +1058,24 @@ struct LibraryView: View {
     private func markAsReadSelectedComics() {
         let comicsToMark = viewModel.comics.filter { selectedComics.contains($0.id) }
         viewModel.markAsRead(comicsToMark)
+        selectedComics.removeAll()
+        isSelectionMode = false
+    }
 
-        // Reset selection mode
+    private func addSelectedToReadingList() {
+        let comics = viewModel.comics.filter { selectedComics.contains($0.id) }
+        for comic in comics {
+            if !comic.isOnReadingList {
+                viewModel.toggleReadingList(comic)
+            }
+        }
+        selectedComics.removeAll()
+        isSelectionMode = false
+    }
+
+    private func regenerateCoversForSelected() {
+        let comics = viewModel.comics.filter { selectedComics.contains($0.id) }
+        viewModel.regenerateCovers(for: comics)
         selectedComics.removeAll()
         isSelectionMode = false
     }

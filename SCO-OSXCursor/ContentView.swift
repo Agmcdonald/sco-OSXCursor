@@ -68,11 +68,7 @@ struct ContentView: View {
     private func selectedView() -> some View {
         switch selectedTab {
         case .dashboard:
-            PlaceholderView(
-                title: "Dashboard",
-                subtitle: "Overview and statistics will appear here",
-                icon: "chart.bar"
-            )
+            DashboardView(libraryViewModel: libraryViewModel)
         case .library:
             LibraryView(viewModel: libraryViewModel)
         case .organize:

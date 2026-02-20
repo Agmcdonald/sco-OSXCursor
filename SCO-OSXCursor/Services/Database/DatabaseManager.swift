@@ -119,6 +119,23 @@ final class DatabaseManager {
             print("[DatabaseManager] ✅ Migration v3_knowledge_schema complete")
         }
 
+        migrator.registerMigration("v4_reading_list") { db in
+            print("[DatabaseManager] 🔄 Running migration: v4_reading_list")
+            if try db.tableExists("comics") {
+                do {
+                    try db.alter(table: "comics") { t in
+                        t.add(column: "is_on_reading_list", .boolean).notNull().defaults(to: false)
+                    }
+                    print("[DatabaseManager] ✅ Added is_on_reading_list column")
+                } catch {
+                    print(
+                        "[DatabaseManager] ℹ️ is_on_reading_list column may already exist: \(error.localizedDescription)"
+                    )
+                }
+            }
+            print("[DatabaseManager] ✅ Migration v4_reading_list complete")
+        }
+
         return migrator
     }
 
@@ -411,6 +428,45 @@ extension DatabaseManager {
 }
 
 // End of DatabaseManager
+
+// MARK: - Activity Log CRUD
+
+extension DatabaseManager {
+    /// Insert a new activity event (fire-and-forget friendly)
+    func logActivity(_ event: ActivityEvent) async {
+        guard let dbQueue = dbQueue else { return }
+        do {
+            try await dbQueue.write { db in
+                try event.insert(db)
+            }
+        } catch {
+            print("[DatabaseManager] ⚠️ Failed to log activity: \(error)")
+        }
+    }
+
+    /// Fetch the most recent N activity events, newest first
+    func fetchRecentActivity(limit: Int = 50) async throws -> [ActivityEvent] {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+
+        return try await dbQueue.read { db in
+            try ActivityEvent
+                .order(ActivityEvent.Columns.timestamp.desc)
+                .limit(limit)
+                .fetchAll(db)
+        }
+    }
+
+    /// Delete all activity events older than a given date
+    func pruneActivity(olderThan date: Date) async throws {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+
+        try await dbQueue.write { db in
+            try ActivityEvent
+                .filter(ActivityEvent.Columns.timestamp < date)
+                .deleteAll(db)
+        }
+    }
+}
 
 // MARK: - Database Errors
 enum DatabaseError: LocalizedError {

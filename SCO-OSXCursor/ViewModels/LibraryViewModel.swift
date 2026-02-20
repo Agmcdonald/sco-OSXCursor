@@ -59,10 +59,124 @@ final class LibraryViewModel: ObservableObject {
     // (Optional) Keep ONLY for non-editor callers
     func updateComic(_ comic: Comic) {
         guard let index = comics.firstIndex(where: { $0.id == comic.id }) else { return }
+        let old = comics[index]
         comics[index] = comic
         Task {
             try? await persistComic(comic)
+            // Log changed fields
+            if old.title != comic.title {
+                await logActivity(.titleChanged, comic: comic, old: old.title, new: comic.title)
+            }
+            if old.series != comic.series {
+                await logActivity(.seriesChanged, comic: comic, old: old.series, new: comic.series)
+            }
+            if old.issueNumber != comic.issueNumber {
+                await logActivity(
+                    .issueChanged, comic: comic, old: old.issueNumber, new: comic.issueNumber)
+            }
+            if old.publisher != comic.publisher {
+                await logActivity(
+                    .publisherChanged, comic: comic, old: old.publisher, new: comic.publisher)
+            }
+            if old.writer != comic.writer {
+                await logActivity(.writerChanged, comic: comic, old: old.writer, new: comic.writer)
+            }
+            if old.artist != comic.artist {
+                await logActivity(.artistChanged, comic: comic, old: old.artist, new: comic.artist)
+            }
+            if old.year != comic.year {
+                await logActivity(
+                    .yearChanged, comic: comic, old: old.year.map { String($0) },
+                    new: comic.year.map { String($0) })
+            }
+            if old.status != comic.status {
+                await logActivity(
+                    .statusChanged, comic: comic, old: old.status.rawValue,
+                    new: comic.status.rawValue)
+            }
+            if old.rating != comic.rating {
+                await logActivity(
+                    .ratingChanged, comic: comic, old: old.rating.map { String($0) },
+                    new: comic.rating.map { String($0) })
+            }
+            if old.isFavorite != comic.isFavorite {
+                await logActivity(
+                    .favoriteToggled, comic: comic, old: String(old.isFavorite),
+                    new: String(comic.isFavorite))
+            }
+            if old.fileName != comic.fileName {
+                await logActivity(.renamed, comic: comic, old: old.fileName, new: comic.fileName)
+            }
         }
+    }
+
+    // MARK: - Activity Logging
+
+    func logActivity(
+        _ action: ActivityEvent.ActionType, comic: Comic? = nil, old: String? = nil,
+        new: String? = nil
+    ) async {
+        let event = ActivityEvent(
+            comicId: comic?.id.uuidString,
+            action: action,
+            oldValue: old,
+            newValue: new ?? comic?.displayName
+        )
+        await database.logActivity(event)
+    }
+
+    // MARK: - Reading List
+
+    func toggleReadingList(_ comic: Comic) {
+        var updated = comic
+        updated.isOnReadingList = !comic.isOnReadingList
+        updateComic(updated)
+    }
+
+    // MARK: - Cover Regeneration
+
+    func regenerateCovers(for comics: [Comic]) {
+        Task { @MainActor in
+            for comic in comics {
+                await regenerateCoverSingle(comic)
+            }
+        }
+    }
+
+    private func regenerateCoverSingle(_ comic: Comic) async {
+        // Resolve file URL (honour security-scoped bookmark if present)
+        var fileURL = comic.filePath
+        var didStartAccess = false
+        if let bookmarkData = comic.bookmarkData {
+            var isStale = false
+            if let resolved = try? URL(
+                resolvingBookmarkData: bookmarkData,
+                options: .withSecurityScope,
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            ) {
+                fileURL = resolved
+                didStartAccess = resolved.startAccessingSecurityScopedResource()
+            }
+        }
+        defer { if didStartAccess { fileURL.stopAccessingSecurityScopedResource() } }
+
+        let reader: ComicReaderProtocol
+        switch comic.fileType {
+        case .pdf: reader = PDFReader()
+        case .cbr: reader = CBRReader()
+        default: reader = CBZReader()
+        }
+
+        guard let coverData = try? await reader.extractCover(from: fileURL) else {
+            print("[LibraryViewModel] ⚠️ Cover regeneration failed for \(comic.fileName)")
+            return
+        }
+
+        var updated = comic
+        updated.coverImageData = coverData
+        updateComic(updated)
+        print("[LibraryViewModel] ✅ Cover regenerated for \(comic.fileName)")
     }
 
     // ✅ Background read + single publish
@@ -286,6 +400,9 @@ final class LibraryViewModel: ObservableObject {
                 // Auto-populate Knowledge Base with Series/Publisher
                 checkAndAutoPopulateKnowledge(comic: finalComic)
 
+                // Log import activity
+                await logActivity(.imported, comic: finalComic, new: finalComic.fileName)
+
                 // Add to new comics list
                 newComics.append(finalComic)
                 imported += 1
@@ -381,6 +498,8 @@ final class LibraryViewModel: ObservableObject {
         print("[LibraryViewModel] ⚠️ deleteComics(_:) needs implementation")
 
         for comic in comics {
+            // Log deletion before removing
+            Task { await logActivity(.deleted, comic: comic, old: comic.fileName) }
             if let index = self.comics.firstIndex(where: { $0.id == comic.id }) {
                 self.comics.remove(at: index)
             }
