@@ -156,13 +156,15 @@ struct OrganizeInspectorView: View {
     }
 
     private func update() {
-        viewModel.updateMetadata(
-            id: comic.id,
-            series: series,
-            issue: issueNumber,
-            year: year,
-            publisher: publisher,
-            volume: volume
-        )
+        Task { @MainActor in
+            viewModel.updateMetadata(
+                id: comic.id,
+                series: series,
+                issue: issueNumber,
+                year: year,
+                publisher: publisher,
+                volume: volume
+            )
+        }
     }
 }

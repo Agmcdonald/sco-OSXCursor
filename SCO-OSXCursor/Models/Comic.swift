@@ -31,6 +31,9 @@ struct Comic: Identifiable, Codable {
     var writer: String?
     var artist: String?
     var coverArtist: String?
+    var colorist: String?
+    var inker: String?
+    var editor: String?
     var summary: String?
 
     // MARK: - Cover & Visual
@@ -74,6 +77,9 @@ struct Comic: Identifiable, Codable {
         writer: String? = nil,
         artist: String? = nil,
         coverArtist: String? = nil,
+        colorist: String? = nil,
+        inker: String? = nil,
+        editor: String? = nil,
         summary: String? = nil,
         coverImageData: Data? = nil,
         status: Status = .unread,
@@ -103,6 +109,9 @@ struct Comic: Identifiable, Codable {
         self.writer = writer
         self.artist = artist
         self.coverArtist = coverArtist
+        self.colorist = colorist
+        self.inker = inker
+        self.editor = editor
         self.summary = summary
         self.coverImageData = coverImageData
         self.status = status
@@ -390,6 +399,9 @@ extension Comic: FetchableRecord, PersistableRecord {
         static let writer = Column("writer")
         static let artist = Column("artist")
         static let coverArtist = Column("cover_artist")
+        static let colorist = Column("colorist")
+        static let inker = Column("inker")
+        static let editor = Column("editor")
         static let summary = Column("summary")
         static let coverImageData = Column("cover_image_data")
         static let status = Column("status")
@@ -421,6 +433,9 @@ extension Comic: FetchableRecord, PersistableRecord {
         container[Columns.writer] = writer
         container[Columns.artist] = artist
         container[Columns.coverArtist] = coverArtist
+        container[Columns.colorist] = colorist
+        container[Columns.inker] = inker
+        container[Columns.editor] = editor
         container[Columns.summary] = summary
         container[Columns.coverImageData] = coverImageData
         container[Columns.status] = status.rawValue
@@ -477,6 +492,9 @@ extension Comic: FetchableRecord, PersistableRecord {
             writer: row["writer"],
             artist: row["artist"],
             coverArtist: row["cover_artist"],
+            colorist: row["colorist"],
+            inker: row["inker"],
+            editor: row["editor"],
             summary: row["summary"],
             coverImageData: row["cover_image_data"],
             status: status,

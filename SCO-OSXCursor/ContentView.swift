@@ -59,9 +59,23 @@ struct ContentView: View {
                 ComicReaderView(comic: comic)
                     .environmentObject(libraryViewModel)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .transition(.opacity)
                     .zIndex(100)
             }
         }
+        .animation(.easeInOut(duration: 0.25), value: libraryViewModel.readingComic == nil)
+        #if os(macOS)
+            .onChange(of: libraryViewModel.readingComic) { _, newComic in
+                if newComic == nil {
+                    // Reader was dismissed — bring the main window back into focus
+                    DispatchQueue.main.async {
+                        NSApp.activate(ignoringOtherApps: true)
+                        NSApp.windows.first { $0.isKeyWindow || $0.canBecomeKey }?
+                        .makeKeyAndOrderFront(nil)
+                    }
+                }
+            }
+        #endif
     }
 
     @ViewBuilder
@@ -146,14 +160,16 @@ struct SidebarView: View {
             ScrollView {
                 VStack(spacing: 4) {
                     ForEach(ContentView.Tab.allCases, id: \.self) { tab in
-                        SidebarItem(
-                            icon: tab.icon,
-                            title: tab.rawValue,
-                            isSelected: selectedTab == tab
-                        )
-                        .onTapGesture {
+                        Button {
                             selectedTab = tab
+                        } label: {
+                            SidebarItem(
+                                icon: tab.icon,
+                                title: tab.rawValue,
+                                isSelected: selectedTab == tab
+                            )
                         }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.vertical, Spacing.md)
@@ -220,8 +236,10 @@ struct SidebarItem: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(isSelected ? AccentColors.primary.opacity(0.12) : Color.clear)
         .foregroundColor(isSelected ? AccentColors.primary : TextColors.secondary)
+        .contentShape(Rectangle())
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .padding(.horizontal, 8)
     }

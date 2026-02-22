@@ -116,12 +116,11 @@ struct KnowledgeView: View {
             }
 
             Picker("Type", selection: $viewModel.selectedType) {
-                Text("Series").tag("series")
-                Text("Publishers").tag("publisher")
-                Text("Writers").tag("writer")
-                Text("Artists").tag("artist")
+                ForEach(KnowledgeEntry.EntryType.allCases, id: \.rawValue) { type in
+                    Text(type.pluralName).tag(type.rawValue)
+                }
             }
-            .pickerStyle(.segmented)
+            .pickerStyle(.menu)
             .frame(maxWidth: 400)
         }
         .padding(Spacing.xl)

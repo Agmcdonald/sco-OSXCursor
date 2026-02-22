@@ -15,6 +15,12 @@ class CBRReader: ComicReaderProtocol {
 
     // MARK: - Load Comic
     func loadComic(from url: URL) async throws -> ComicBook {
+        return try await Task.detached {
+            try self._loadComic(from: url)
+        }.value
+    }
+
+    private func _loadComic(from url: URL) throws -> ComicBook {
         let startTime = Date().timeIntervalSince1970
         print("    [CBRReader] loadComic() ENTRY at \(startTime)")
         print("    [CBRReader] URL: \(url.path)")
@@ -139,6 +145,12 @@ class CBRReader: ComicReaderProtocol {
 
     // MARK: - Extract Cover
     func extractCover(from url: URL) async throws -> Data {
+        return try await Task.detached {
+            try self._extractCover(from: url)
+        }.value
+    }
+
+    private func _extractCover(from url: URL) throws -> Data {
         let accessing = url.startAccessingSecurityScopedResource()
         defer {
             if accessing {
@@ -177,6 +189,12 @@ class CBRReader: ComicReaderProtocol {
 
     // MARK: - Get Page Count
     func getPageCount(from url: URL) async throws -> Int {
+        return try await Task.detached {
+            try self._getPageCount(from: url)
+        }.value
+    }
+
+    private func _getPageCount(from url: URL) throws -> Int {
         let accessing = url.startAccessingSecurityScopedResource()
         defer {
             if accessing {
@@ -200,6 +218,12 @@ class CBRReader: ComicReaderProtocol {
 
     // MARK: - Load Single Page
     func loadPage(at index: Int, from url: URL) async throws -> ComicPage {
+        return try await Task.detached {
+            try self._loadPage(at: index, from: url)
+        }.value
+    }
+
+    private func _loadPage(at index: Int, from url: URL) throws -> ComicPage {
         let accessing = url.startAccessingSecurityScopedResource()
         defer {
             if accessing {

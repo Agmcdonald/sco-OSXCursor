@@ -31,7 +31,8 @@ struct LibraryView: View {
     @State private var searchText = ""
     @State private var viewMode: ViewMode = .grid
     @State private var selectedComic: Comic?
-    @State private var sortOption: SortOption = .dateAdded
+    @State private var hasLoaded = false
+    @AppStorage("librarySortOption") private var sortOption: SortOption = .dateAdded
     @State private var filterStatus: Comic.Status? = nil
     @State private var filterPublisher: String? = nil
     @State private var filterSeries: String? = nil
@@ -46,7 +47,7 @@ struct LibraryView: View {
     @State private var editingComicID: ComicID?
 
     enum ViewMode {
-        case grid, list
+        case grid, list, publisher
     }
 
     enum SortOption: String, CaseIterable {
@@ -132,6 +133,60 @@ struct LibraryView: View {
         return result
     }
 
+    // MARK: - Publisher Hierarchy
+
+    struct SeriesGroup: Identifiable {
+        let id: String  // "Publisher::Series"
+        let series: String
+        let comics: [Comic]
+        var yearRange: String {
+            let years = comics.compactMap { $0.year }.sorted()
+            guard !years.isEmpty else { return "" }
+            if years.first == years.last { return String(years.first!) }
+            return "\(years.first!)-\(years.last!)"
+        }
+    }
+
+    struct PublisherGroup: Identifiable {
+        let id: String  // publisher name
+        let publisher: String
+        let seriesGroups: [SeriesGroup]
+        var totalComics: Int { seriesGroups.reduce(0) { $0 + $1.comics.count } }
+        var yearRange: String {
+            let years = seriesGroups.flatMap { $0.comics }.compactMap { $0.year }.sorted()
+            guard !years.isEmpty else { return "" }
+            if years.first == years.last { return String(years.first!) }
+            return "\(years.first!)-\(years.last!)"
+        }
+    }
+
+    var publisherGroups: [PublisherGroup] {
+        let comics = filteredAndSortedComics
+        let grouped = Dictionary(grouping: comics) { $0.publisher ?? "Unknown Publisher" }
+        return
+            grouped
+            .map { (pub, pubComics) -> PublisherGroup in
+                let seriesGrouped = Dictionary(grouping: pubComics) {
+                    $0.series ?? "Unknown Series"
+                }
+                let seriesGroups =
+                    seriesGrouped
+                    .map { (ser, serComics) -> SeriesGroup in
+                        SeriesGroup(
+                            id: "\(pub)::\(ser)",
+                            series: ser,
+                            comics: serComics.sorted {
+                                ($0.issueNumber ?? "").localizedStandardCompare(
+                                    $1.issueNumber ?? "") == .orderedAscending
+                            }
+                        )
+                    }
+                    .sorted { $0.series.localizedStandardCompare($1.series) == .orderedAscending }
+                return PublisherGroup(id: pub, publisher: pub, seriesGroups: seriesGroups)
+            }
+            .sorted { $0.publisher.localizedStandardCompare($1.publisher) == .orderedAscending }
+    }
+
     var publishers: [String] {
         Array(Set(viewModel.comics.compactMap { $0.publisher })).sorted()
     }
@@ -148,6 +203,10 @@ struct LibraryView: View {
         filterStatus != nil || filterPublisher != nil || filterSeries != nil || filterYear != nil
     }
 
+    // Publisher/Series expand state
+    @State private var expandedPublishers: Set<String> = []
+    @State private var expandedSeries: Set<String> = []
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header
@@ -159,8 +218,10 @@ struct LibraryView: View {
             // Content
             if viewMode == .grid {
                 gridView
-            } else {
+            } else if viewMode == .list {
                 listView
+            } else {
+                publisherView
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -191,7 +252,10 @@ struct LibraryView: View {
             )
         }
         .onAppear {
-            // Ensure comics are loaded when view appears
+            // Only load once per view lifecycle — prevents re-fetch flash when
+            // returning from the reader overlay or switching tabs.
+            guard !hasLoaded else { return }
+            hasLoaded = true
             if viewModel.comics.isEmpty {
                 Task {
                     await viewModel.loadComics()
@@ -280,6 +344,7 @@ struct LibraryView: View {
         .padding(Spacing.md)
         .background(BackgroundColors.elevated)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .help("Search comics, series, and publishers")
     }
 
     private var sortMenu: some View {
@@ -310,6 +375,7 @@ struct LibraryView: View {
         }
         .buttonStyle(.plain)
         .frame(minWidth: 180)
+        .help("Sort your library")
     }
 
     private var filtersButton: some View {
@@ -333,6 +399,7 @@ struct LibraryView: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
+        .help("Filter your library")
     }
 
     private var selectButton: some View {
@@ -349,6 +416,7 @@ struct LibraryView: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
+        .help("Select multiple comics for bulk editing or deletion")
     }
 
     private var viewModeToggle: some View {
@@ -366,6 +434,7 @@ struct LibraryView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 6))
             }
             .buttonStyle(.plain)
+            .help("Grid View")
 
             Button(action: { viewMode = .list }) {
                 Image(systemName: "list.bullet")
@@ -380,6 +449,22 @@ struct LibraryView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 6))
             }
             .buttonStyle(.plain)
+            .help("List View")
+
+            Button(action: { viewMode = .publisher }) {
+                Image(systemName: "building.2")
+                    .font(.system(size: 16))
+                    .foregroundColor(
+                        viewMode == .publisher ? AccentColors.primary : TextColors.secondary
+                    )
+                    .frame(width: 32, height: 32)
+                    .background(
+                        viewMode == .publisher ? AccentColors.primary.opacity(0.12) : Color.clear
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+            .buttonStyle(.plain)
+            .help("Publisher View")
         }
     }
 
@@ -431,9 +516,18 @@ struct LibraryView: View {
                         .font(Typography.h1)
                         .foregroundColor(TextColors.primary)
 
-                    Text("Browse your collection of \(filteredAndSortedComics.count) comics")
+                    if viewMode == .publisher {
+                        let pg = publisherGroups
+                        Text(
+                            "\(pg.count) publisher\(pg.count == 1 ? "" : "s") • \(filteredAndSortedComics.count) comics"
+                        )
                         .font(Typography.body)
                         .foregroundColor(TextColors.secondary)
+                    } else {
+                        Text("Browse your collection of \(filteredAndSortedComics.count) comics")
+                            .font(Typography.body)
+                            .foregroundColor(TextColors.secondary)
+                    }
                 }
 
                 Spacer()
@@ -980,6 +1074,258 @@ struct LibraryView: View {
                 }
             }
         )
+    }
+
+    // MARK: - Publisher View
+
+    private var publisherView: some View {
+        ScrollView {
+            if filteredAndSortedComics.isEmpty {
+                emptyStateView
+            } else {
+                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: []) {
+                    ForEach(publisherGroups) { publisher in
+                        publisherSection(publisher)
+                    }
+                }
+                .padding(Spacing.xl)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func publisherSection(_ group: PublisherGroup) -> some View {
+        let isExpanded = expandedPublishers.contains(group.id)
+        // Publisher header row
+        Button {
+            withAnimation(.easeInOut(duration: 0.22)) {
+                if isExpanded {
+                    expandedPublishers.remove(group.id)
+                } else {
+                    expandedPublishers.insert(group.id)
+                }
+            }
+        } label: {
+            HStack(spacing: Spacing.md) {
+                // Chevron
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(TextColors.tertiary)
+                    .frame(width: 16, height: 16)
+
+                // Publisher colour dot + banner image
+                Circle()
+                    .fill(publisherColor(for: group.publisher))
+                    .frame(width: 10, height: 10)
+
+                PublisherBannerView(publisherName: group.publisher)
+
+                // Name + subtitle
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(group.publisher)
+                        .font(Typography.h3)
+                        .foregroundColor(TextColors.primary)
+                    HStack(spacing: Spacing.xs) {
+                        Text("\(group.seriesGroups.count) series")
+                            .font(Typography.caption)
+                            .foregroundColor(TextColors.secondary)
+                        if !group.yearRange.isEmpty {
+                            Text("•")
+                                .font(Typography.caption)
+                                .foregroundColor(TextColors.tertiary)
+                            Text(group.yearRange)
+                                .font(Typography.caption)
+                                .foregroundColor(TextColors.secondary)
+                        }
+                    }
+                }
+
+                Spacer()
+
+                // Issue count badge
+                Text("\(group.totalComics) \(group.totalComics == 1 ? "issue" : "issues")")
+                    .font(Typography.caption)
+                    .foregroundColor(TextColors.secondary)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, 4)
+                    .background(BackgroundColors.elevated)
+                    .clipShape(Capsule())
+            }
+            .padding(.vertical, Spacing.md)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+
+        Divider().background(BorderColors.subtle)
+
+        // Series rows (shown when publisher expanded)
+        if isExpanded {
+            ForEach(group.seriesGroups) { seriesGroup in
+                seriesSection(seriesGroup, publisherID: group.id)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func seriesSection(_ group: SeriesGroup, publisherID: String) -> some View {
+        let isExpanded = expandedSeries.contains(group.id)
+        // Series row
+        Button {
+            withAnimation(.easeInOut(duration: 0.22)) {
+                if isExpanded {
+                    expandedSeries.remove(group.id)
+                } else {
+                    expandedSeries.insert(group.id)
+                }
+            }
+        } label: {
+            HStack(spacing: Spacing.md) {
+                // Indent spacer
+                Color.clear.frame(width: 16)
+
+                // Chevron
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(TextColors.tertiary)
+                    .frame(width: 14, height: 14)
+
+                // Thumbnail of first cover
+                if let coverData = group.comics.first?.coverImageData {
+                    #if os(macOS)
+                        if let nsImg = NSImage(data: coverData) {
+                            Image(nsImage: nsImg)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 32, height: 48)
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
+                    #else
+                        if let uiImg = UIImage(data: coverData) {
+                            Image(uiImage: uiImg)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 32, height: 48)
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
+                    #endif
+                } else {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(BackgroundColors.elevated)
+                        .frame(width: 32, height: 48)
+                        .overlay(
+                            Image(systemName: "book.closed")
+                                .font(.system(size: 14))
+                                .foregroundColor(TextColors.tertiary)
+                        )
+                }
+
+                // Title + subtitle
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(group.series)
+                        .font(Typography.body)
+                        .foregroundColor(TextColors.primary)
+                    HStack(spacing: Spacing.xs) {
+                        Text(
+                            "\(group.comics.count) \(group.comics.count == 1 ? "issue" : "issues")"
+                        )
+                        .font(Typography.caption)
+                        .foregroundColor(TextColors.secondary)
+                        if !group.yearRange.isEmpty {
+                            Text("•")
+                                .font(Typography.caption)
+                                .foregroundColor(TextColors.tertiary)
+                            Text(group.yearRange)
+                                .font(Typography.caption)
+                                .foregroundColor(TextColors.secondary)
+                        }
+                    }
+                }
+
+                Spacer()
+
+                Text("\(group.comics.count) \(group.comics.count == 1 ? "issue" : "issues")")
+                    .font(Typography.caption)
+                    .foregroundColor(TextColors.secondary)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, 4)
+                    .background(BackgroundColors.secondary)
+                    .clipShape(Capsule())
+            }
+            .padding(.vertical, Spacing.sm)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.leading, Spacing.xl)
+
+        Divider().background(BorderColors.subtle).padding(.leading, Spacing.xxl)
+
+        // Inline cover grid (shown when series expanded)
+        if isExpanded {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 130, maximum: 170), spacing: Spacing.lg)],
+                spacing: Spacing.lg
+            ) {
+                ForEach(group.comics) { comic in
+                    ZStack(alignment: .topLeading) {
+                        ComicCardView(comic: comic)
+                            .onTapGesture {
+                                if isSelectionMode {
+                                    toggleSelection(for: comic.id)
+                                } else {
+                                    openReader(for: comic)
+                                }
+                            }
+                            .contextMenu {
+                                Button(action: { openReader(for: comic) }) {
+                                    Label("Read", systemImage: "book.fill")
+                                }
+                                Button(action: { editComic(comic) }) {
+                                    Label("Edit Metadata", systemImage: "pencil")
+                                }
+                                Button(action: { viewModel.markAsRead([comic]) }) {
+                                    Label("Mark as Read", systemImage: "checkmark.circle")
+                                }
+                                Button(action: { viewModel.toggleReadingList(comic) }) {
+                                    Label(
+                                        comic.isOnReadingList
+                                            ? "Remove from Reading List" : "Add to Reading List",
+                                        systemImage: comic.isOnReadingList
+                                            ? "bookmark.slash" : "bookmark"
+                                    )
+                                }
+                                Divider()
+                                Button(
+                                    role: .destructive, action: { viewModel.deleteComics([comic]) }
+                                ) {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+
+                        if isSelectionMode {
+                            SelectionCheckbox(isSelected: selectedComics.contains(comic.id))
+                                .padding(Spacing.sm)
+                        }
+                    }
+                }
+            }
+            .padding(.leading, Spacing.xxl)
+            .padding(.vertical, Spacing.md)
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        }
+    }
+
+    /// Returns the publisher accent color (same logic as Comic.publisherColor but by name string)
+    private func publisherColor(for publisher: String) -> Color {
+        let colors: [Color] = [
+            Color(red: 0.0, green: 0.478, blue: 1.0),  // DC blue
+            Color(red: 0.9, green: 0.1, blue: 0.1),  // Marvel red
+            Color(red: 0.2, green: 0.7, blue: 0.3),  // Image green
+            Color(red: 0.9, green: 0.6, blue: 0.1),  // Amber
+            Color(red: 0.6, green: 0.2, blue: 0.8),  // Purple
+            Color(red: 0.1, green: 0.7, blue: 0.8),  // Teal
+        ]
+        let hash = abs(publisher.hashValue)
+        return colors[hash % colors.count]
     }
 
     // MARK: - Empty State View

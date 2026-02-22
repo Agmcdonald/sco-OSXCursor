@@ -15,6 +15,10 @@ struct SettingsView: View {
 
     @State private var showingPathPicker = false
     @State private var showingResetConfirmation = false
+    @State private var showingBrandingSheet = false
+
+    // Publishers from the library (deduped) for the branding tool
+    @State private var libraryPublishers: [String] = []
 
     var body: some View {
         ScrollView {
@@ -35,6 +39,40 @@ struct SettingsView: View {
                     }
                 }
 
+                // Publisher Branding Section
+                settingsSection(title: "Publisher Branding", icon: "building.2") {
+                    VStack(alignment: .leading, spacing: Spacing.md) {
+                        Text(
+                            "Assign custom 230 x 100 banner images to each publisher. These appear in Publisher View."
+                        )
+                        .font(Typography.bodySmall)
+                        .foregroundColor(TextColors.secondary)
+
+                        Button {
+                            Task {
+                                // Fetch deduped publishers before opening sheet
+                                let comics =
+                                    (try? await DatabaseManager.shared.fetchAllComics()) ?? []
+                                libraryPublishers = Array(Set(comics.compactMap { $0.publisher }))
+                                    .sorted()
+                                showingBrandingSheet = true
+                            }
+                        } label: {
+                            HStack(spacing: Spacing.sm) {
+                                Image(systemName: "photo.badge.plus")
+                                Text("Manage Publisher Banners")
+                                    .font(Typography.button)
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, Spacing.sm)
+                            .background(AccentColors.primary)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
                 // Reader Settings Section
 
                 // Organization Settings Section
@@ -49,6 +87,9 @@ struct SettingsView: View {
         #if os(macOS)
             .frame(minWidth: 600, minHeight: 600)
         #endif
+        .sheet(isPresented: $showingBrandingSheet) {
+            BatchPublisherBrandingView(libraryPublishers: libraryPublishers)
+        }
         .fileImporter(
             isPresented: $showingPathPicker,
             allowedContentTypes: [.folder],

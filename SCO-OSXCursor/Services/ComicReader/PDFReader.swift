@@ -13,6 +13,12 @@ class PDFReader: ComicReaderProtocol {
     
     // MARK: - Load Comic (with Lazy Loading)
     func loadComic(from url: URL) async throws -> ComicBook {
+        return try await Task.detached {
+            try self._loadComic(from: url)
+        }.value
+    }
+
+    private func _loadComic(from url: URL) throws -> ComicBook {
         let startTime = Date().timeIntervalSince1970
         print("    [PDFReader] loadComic() ENTRY at \(startTime)")
         print("    [PDFReader] URL: \(url.path)")
@@ -116,6 +122,12 @@ class PDFReader: ComicReaderProtocol {
     
     // MARK: - Load Single Page (for Lazy Loading)
     func loadPage(at index: Int, from url: URL) async throws -> ComicPage {
+        return try await Task.detached {
+            try self._loadPage(at: index, from: url)
+        }.value
+    }
+
+    private func _loadPage(at index: Int, from url: URL) throws -> ComicPage {
         print("    [PDFReader] loadPage() - Loading page \(index + 1)")
         
         // Load PDF document
@@ -142,6 +154,12 @@ class PDFReader: ComicReaderProtocol {
     
     // MARK: - Extract Cover
     func extractCover(from url: URL) async throws -> Data {
+        return try await Task.detached {
+            try self._extractCover(from: url)
+        }.value
+    }
+
+    private func _extractCover(from url: URL) throws -> Data {
         let accessing = url.startAccessingSecurityScopedResource()
         defer {
             if accessing {
@@ -170,6 +188,12 @@ class PDFReader: ComicReaderProtocol {
     
     // MARK: - Get Page Count
     func getPageCount(from url: URL) async throws -> Int {
+        return try await Task.detached {
+            try self._getPageCount(from: url)
+        }.value
+    }
+
+    private func _getPageCount(from url: URL) throws -> Int {
         let accessing = url.startAccessingSecurityScopedResource()
         defer {
             if accessing {

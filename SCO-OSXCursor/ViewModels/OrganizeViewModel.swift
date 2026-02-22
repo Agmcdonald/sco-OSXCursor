@@ -125,8 +125,14 @@ final class OrganizeViewModel: ObservableObject {
             let newURL = originalURL.deletingLastPathComponent().appendingPathComponent(newFileName)
 
             // Security-scoped access for rename (balanced start/stop)
-            let accessing = originalURL.startAccessingSecurityScopedResource()
-            defer { if accessing { originalURL.stopAccessingSecurityScopedResource() } }
+            let accessingSource = originalURL.startAccessingSecurityScopedResource()
+            let destFolderURL = newURL.deletingLastPathComponent()
+            let accessingDest = destFolderURL.startAccessingSecurityScopedResource()
+
+            defer {
+                if accessingSource { originalURL.stopAccessingSecurityScopedResource() }
+                if accessingDest { destFolderURL.stopAccessingSecurityScopedResource() }
+            }
 
             do {
                 if !FileManager.default.fileExists(atPath: newURL.path) {

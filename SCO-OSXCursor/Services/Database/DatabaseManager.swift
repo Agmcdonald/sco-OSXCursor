@@ -136,6 +136,49 @@ final class DatabaseManager {
             print("[DatabaseManager] ✅ Migration v4_reading_list complete")
         }
 
+        // Version 5: Expand Creator Metadata
+        migrator.registerMigration("v5_expand_creators") { db in
+            print("[DatabaseManager] 🔄 Running migration: v5_expand_creators")
+            if try db.tableExists("comics") {
+                do {
+                    try db.alter(table: "comics") { t in
+                        t.add(column: "colorist", .text)
+                        t.add(column: "inker", .text)
+                        t.add(column: "editor", .text)
+                    }
+                    print("[DatabaseManager] ✅ Added colorist, inker, and editor columns")
+                } catch {
+                    print(
+                        "[DatabaseManager] ℹ️ creator columns may already exist: \(error.localizedDescription)"
+                    )
+                }
+            }
+            print("[DatabaseManager] ✅ Migration v5_expand_creators complete")
+        }
+
+        // Version 6: Publisher banner images
+        migrator.registerMigration("v6_publisher_banners") { db in
+            print("[DatabaseManager] 🔄 Running migration: v6_publisher_banners")
+            if try db.tableExists("publisher_mappings") {
+                do {
+                    try db.alter(table: "publisher_mappings") { t in
+                        t.add(column: "image_data", .blob)
+                    }
+                    print("[DatabaseManager] ✅ Added image_data column to publisher_mappings")
+                } catch {
+                    print("[DatabaseManager] ℹ️ image_data column may already exist: \(error)")
+                }
+            } else {
+                // publisher_mappings may not exist on all devices; create it now
+                try db.create(table: "publisher_banners", ifNotExists: true) { t in
+                    t.column("publisher_name", .text).primaryKey()
+                    t.column("image_data", .blob)
+                }
+                print("[DatabaseManager] ✅ Created publisher_banners fallback table")
+            }
+            print("[DatabaseManager] ✅ Migration v6_publisher_banners complete")
+        }
+
         return migrator
     }
 
@@ -158,6 +201,9 @@ final class DatabaseManager {
             t.column("writer", .text)
             t.column("artist", .text)
             t.column("cover_artist", .text)
+            t.column("colorist", .text)
+            t.column("inker", .text)
+            t.column("editor", .text)
             t.column("summary", .text)
 
             // Cover & Visual
@@ -424,6 +470,139 @@ extension DatabaseManager {
                 .fetchAll(db)
             return entries.map { $0.name }
         }
+    }
+}
+
+// End of DatabaseManager
+
+// MARK: - Publisher Banner CRUD
+
+extension DatabaseManager {
+    /// Upsert a banner image for a named publisher.
+    func savePublisherBanner(name: String, data: Data) async throws {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+        try await dbQueue.write { db in
+            // Try publisher_mappings first; fall back to stand-alone table
+            if try db.tableExists("publisher_mappings") {
+                if try db.tableHasColumn("publisher_mappings", named: "image_data") {
+                    let existing = try Row.fetchOne(
+                        db,
+                        sql:
+                            "SELECT publisher_name FROM publisher_mappings WHERE publisher_name = ?",
+                        arguments: [name])
+                    if existing != nil {
+                        try db.execute(
+                            sql:
+                                "UPDATE publisher_mappings SET image_data = ? WHERE publisher_name = ?",
+                            arguments: [data, name])
+                    } else {
+                        let id = UUID().uuidString
+                        let insertSQL =
+                            "INSERT INTO publisher_mappings"
+                            + " (id, publisher_name, aliases, keywords, folder_name, times_used,"
+                            + "  confidence, user_confirmed, image_data)"
+                            + " VALUES (?, ?, '[]', '[]', ?, 0, 0.5, 0, ?)"
+                        try db.execute(sql: insertSQL, arguments: [id, name, name, data])
+                    }
+                    return
+                }
+            }
+            // Fallback table
+            try db.execute(
+                sql:
+                    "INSERT OR REPLACE INTO publisher_banners (publisher_name, image_data) VALUES (?, ?)",
+                arguments: [name, data])
+        }
+    }
+
+    /// Load the banner image for a named publisher, returns nil if none set.
+    func loadPublisherBanner(name: String) async throws -> Data? {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+        return try await dbQueue.read { db in
+            if try db.tableExists("publisher_mappings"),
+                try db.tableHasColumn("publisher_mappings", named: "image_data")
+            {
+                let row = try Row.fetchOne(
+                    db,
+                    sql: "SELECT image_data FROM publisher_mappings WHERE publisher_name = ?",
+                    arguments: [name])
+                return row?["image_data"] as Data?
+            }
+            let row = try Row.fetchOne(
+                db,
+                sql: "SELECT image_data FROM publisher_banners WHERE publisher_name = ?",
+                arguments: [name])
+            return row?["image_data"] as Data?
+        }
+    }
+
+    /// Remove the banner image for a single publisher.
+    func clearPublisherBanner(name: String) async throws {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+        try await dbQueue.write { db in
+            if try db.tableExists("publisher_mappings"),
+                try db.tableHasColumn("publisher_mappings", named: "image_data")
+            {
+                try db.execute(
+                    sql: "UPDATE publisher_mappings SET image_data = NULL WHERE publisher_name = ?",
+                    arguments: [name])
+                return
+            }
+            try db.execute(
+                sql: "UPDATE publisher_banners SET image_data = NULL WHERE publisher_name = ?",
+                arguments: [name])
+        }
+    }
+
+    /// Remove all publisher banner images.
+    func clearAllPublisherBanners() async throws {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+        try await dbQueue.write { db in
+            if try db.tableExists("publisher_mappings"),
+                try db.tableHasColumn("publisher_mappings", named: "image_data")
+            {
+                try db.execute(sql: "UPDATE publisher_mappings SET image_data = NULL")
+                return
+            }
+            try db.execute(sql: "DELETE FROM publisher_banners")
+        }
+    }
+
+    /// Fetch all (publisherName, imageData?) rows from the banner store.
+    func fetchAllPublisherBanners() async throws -> [(name: String, imageData: Data?)] {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+        return try await dbQueue.read { db in
+            if try db.tableExists("publisher_mappings"),
+                try db.tableHasColumn("publisher_mappings", named: "image_data")
+            {
+                let rows = try Row.fetchAll(
+                    db,
+                    sql:
+                        "SELECT publisher_name, image_data FROM publisher_mappings ORDER BY publisher_name"
+                )
+                return rows.map {
+                    (name: $0["publisher_name"] as String, imageData: $0["image_data"] as Data?)
+                }
+            }
+            let rows = try Row.fetchAll(
+                db,
+                sql:
+                    "SELECT publisher_name, image_data FROM publisher_banners ORDER BY publisher_name"
+            )
+            return rows.map {
+                (name: $0["publisher_name"] as String, imageData: $0["image_data"] as Data?)
+            }
+        }
+    }
+}
+
+// MARK: - Database Helpers
+
+extension Database {
+    /// Returns true if `table` contains a column named `name`.
+    func tableHasColumn(_ table: String, named name: String) throws -> Bool {
+        let columns = try self.columns(in: table)
+        return columns.contains { $0.name == name }
     }
 }
 

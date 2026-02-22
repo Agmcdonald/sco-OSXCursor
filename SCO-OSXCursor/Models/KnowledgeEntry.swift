@@ -31,10 +31,30 @@ extension KnowledgeEntry {
         case series = "series"
         case publisher = "publisher"
         case writer = "writer"
-        case artist = "artist"  // Covers both penciller and inker if needed, or just artist
+        case artist = "artist"
+        case coverArtist = "cover_artist"
+        case colorist = "colorist"
+        case inker = "inker"
+        case editor = "editor"
 
         var displayName: String {
-            rawValue.capitalized
+            switch self {
+            case .coverArtist: return "Cover Artist"
+            default: return rawValue.capitalized
+            }
+        }
+
+        var pluralName: String {
+            switch self {
+            case .series: return "Series"
+            case .publisher: return "Publishers"
+            case .writer: return "Writers"
+            case .artist: return "Artists"
+            case .coverArtist: return "Cover Artists"
+            case .colorist: return "Colorists"
+            case .inker: return "Inkers"
+            case .editor: return "Editors"
+            }
         }
     }
 }

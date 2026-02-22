@@ -33,6 +33,9 @@ struct ComicDetailView: View {
     @State private var originalWriter: String?
     @State private var originalArtist: String?
     @State private var originalCoverArtist: String?
+    @State private var originalColorist: String?
+    @State private var originalInker: String?
+    @State private var originalEditor: String?
     @State private var originalSummary: String?
     @State private var showingSaveConfirmation = false
     @State private var hasInitialized = false
@@ -40,7 +43,8 @@ struct ComicDetailView: View {
 
     // Track focus to force commit changes before saving
     enum Field: Hashable {
-        case title, publisher, series, issue, volume, year, writer, artist, coverArtist, summary
+        case title, publisher, series, issue, volume, year, writer, artist, coverArtist, colorist,
+            inker, editor, summary
     }
 
     @FocusState private var focusedField: Field?
@@ -59,6 +63,9 @@ struct ComicDetailView: View {
         self._originalWriter = State(initialValue: comic.writer)
         self._originalArtist = State(initialValue: comic.artist)
         self._originalCoverArtist = State(initialValue: comic.coverArtist)
+        self._originalColorist = State(initialValue: comic.colorist)
+        self._originalInker = State(initialValue: comic.inker)
+        self._originalEditor = State(initialValue: comic.editor)
         self._originalSummary = State(initialValue: comic.summary)
     }
 
@@ -70,6 +77,9 @@ struct ComicDetailView: View {
             || editedComic.volume != originalVolume || editedComic.year != originalYear
             || editedComic.writer != originalWriter || editedComic.artist != originalArtist
             || editedComic.coverArtist != originalCoverArtist
+            || editedComic.colorist != originalColorist
+            || editedComic.inker != originalInker
+            || editedComic.editor != originalEditor
             || editedComic.summary != originalSummary
     }
 
@@ -199,10 +209,12 @@ struct ComicDetailView: View {
         VStack(alignment: .leading, spacing: Spacing.xl) {
             // Core Metadata Section
             metadataSection(title: "Core Information", icon: "info.circle") {
-                metadataField(label: "Series", text: $editedComic.series, field: .series)
+                metadataField(
+                    label: "Series", text: $editedComic.series, field: .series,
+                    knowledgeType: .series)
                 metadataField(
                     label: "Publisher", text: $editedComic.publisher, field: .publisher,
-                    isPublisher: true)
+                    isPublisher: true, knowledgeType: .publisher)
                 metadataField(label: "Storyline Title", text: $editedComic.title, field: .title)
                 metadataField(label: "Issue Number", text: $editedComic.issueNumber, field: .issue)
 
@@ -229,10 +241,23 @@ struct ComicDetailView: View {
 
             // Credits Section
             metadataSection(title: "Credits", icon: "person.2.fill") {
-                metadataField(label: "Writer", text: $editedComic.writer, field: .writer)
-                metadataField(label: "Artist", text: $editedComic.artist, field: .artist)
                 metadataField(
-                    label: "Cover Artist", text: $editedComic.coverArtist, field: .coverArtist)
+                    label: "Writer", text: $editedComic.writer, field: .writer,
+                    knowledgeType: .writer)
+                metadataField(
+                    label: "Artist", text: $editedComic.artist, field: .artist,
+                    knowledgeType: .artist)
+                metadataField(
+                    label: "Cover Artist", text: $editedComic.coverArtist, field: .coverArtist,
+                    knowledgeType: .coverArtist)
+                metadataField(
+                    label: "Colorist", text: $editedComic.colorist, field: .colorist,
+                    knowledgeType: .colorist)
+                metadataField(
+                    label: "Inker", text: $editedComic.inker, field: .inker, knowledgeType: .inker)
+                metadataField(
+                    label: "Editor", text: $editedComic.editor, field: .editor,
+                    knowledgeType: .editor)
             }
 
             // Summary Section
@@ -292,7 +317,8 @@ struct ComicDetailView: View {
     // MARK: - Metadata Field
 
     private func metadataField(
-        label: String, text: Binding<String?>, field: Field, isPublisher: Bool = false
+        label: String, text: Binding<String?>, field: Field, isPublisher: Bool = false,
+        knowledgeType: KnowledgeEntry.EntryType? = nil
     )
         -> some View
     {
@@ -301,28 +327,47 @@ struct ComicDetailView: View {
                 .font(Typography.bodySmall)
                 .foregroundColor(TextColors.secondary)
 
-            TextField(
-                label,
-                text: Binding(
-                    get: { text.wrappedValue ?? "" },
-                    set: { text.wrappedValue = $0.isEmpty ? nil : $0 }
+            if let knowledgeType = knowledgeType {
+                AutocompleteTextField(
+                    title: label,
+                    text: Binding(
+                        get: { text.wrappedValue ?? "" },
+                        set: { text.wrappedValue = $0.isEmpty ? nil : $0 }
+                    ),
+                    fetchSuggestions: { query in
+                        await knowledgeViewModel.getSuggestions(
+                            for: knowledgeType.rawValue, query: query)
+                    }
                 )
-            )
-            .focused($focusedField, equals: field)
-            .textFieldStyle(.plain)
-            .font(Typography.body)
-            .foregroundColor(TextColors.primary)
-            .padding(Spacing.md)
-            .background(BackgroundColors.secondary)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(BorderColors.subtle, lineWidth: 1)
-            )
-            .autocorrectionDisabled()
-            #if os(iOS)
-                .autocapitalization(.words)
-            #endif
+                .focused($focusedField, equals: field)
+                .autocorrectionDisabled()
+                #if os(iOS)
+                    .autocapitalization(.words)
+                #endif
+            } else {
+                TextField(
+                    label,
+                    text: Binding(
+                        get: { text.wrappedValue ?? "" },
+                        set: { text.wrappedValue = $0.isEmpty ? nil : $0 }
+                    )
+                )
+                .focused($focusedField, equals: field)
+                .textFieldStyle(.plain)
+                .font(Typography.body)
+                .foregroundColor(TextColors.primary)
+                .padding(Spacing.md)
+                .background(BackgroundColors.secondary)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(BorderColors.subtle, lineWidth: 1)
+                )
+                .autocorrectionDisabled()
+                #if os(iOS)
+                    .autocapitalization(.words)
+                #endif
+            }
 
             // Show publisher color indicator if publisher field
             if isPublisher, let publisher = text.wrappedValue, !publisher.isEmpty {
@@ -407,6 +452,33 @@ struct ComicDetailView: View {
         // Check if publisher or series was corrected
         let publisherChanged = editedComic.publisher != originalPublisher
         let seriesChanged = editedComic.series != originalSeries
+
+        // Handle Auto-Add to Knowledge Base
+        let fieldsToCheck: [(String?, KnowledgeEntry.EntryType)] = [
+            (editedComic.series, .series),
+            (editedComic.publisher, .publisher),
+            (editedComic.writer, .writer),
+            (editedComic.artist, .artist),
+            (editedComic.coverArtist, .coverArtist),
+            (editedComic.colorist, .colorist),
+            (editedComic.inker, .inker),
+            (editedComic.editor, .editor),
+        ]
+
+        for (value, type) in fieldsToCheck {
+            if let name = value, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                // Check if it exists, if not, add it
+                let exists = try? await DatabaseManager.shared.knowledgeEntryExists(
+                    type: type, name: name)
+                if exists == false {
+                    let newEntry = KnowledgeEntry(type: type, name: name)
+                    try? await DatabaseManager.shared.saveKnowledgeEntry(newEntry)
+                    print(
+                        "[ComicDetailView] ➕ Auto-added '\(name)' to \(type.pluralName) Knowledge Base"
+                    )
+                }
+            }
+        }
 
         // Create final version with updated dateModified
         var finalComic = editedComic
