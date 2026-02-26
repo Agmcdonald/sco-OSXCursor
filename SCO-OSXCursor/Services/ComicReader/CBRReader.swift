@@ -9,6 +9,13 @@ import Foundation
 import Unrar
 
 // MARK: - CBR Reader (RAR Archive)
+//
+// NOTE: Security-scoped resource access is managed centrally by ReaderViewModel
+// (via resolveFileURL). CBRReader MUST NOT call startAccessingSecurityScopedResource /
+// stopAccessingSecurityScopedResource itself — doing so would cause double-start,
+// prematurely end access via defer, and produce "Operation not permitted" errors on
+// subsequent page reads (manifesting as Unrar.UnrarError error 2 / badArchive).
+//
 class CBRReader: ComicReaderProtocol {
 
     private let imageExtensions = ["jpg", "jpeg", "png", "gif", "webp", "bmp"]
@@ -25,28 +32,7 @@ class CBRReader: ComicReaderProtocol {
         print("    [CBRReader] loadComic() ENTRY at \(startTime)")
         print("    [CBRReader] URL: \(url.path)")
 
-        // Check if bundled resource
-        let isBundled = url.path.contains(Bundle.main.bundlePath)
-        print("    [CBRReader] Is bundled: \(isBundled)")
-
-        // Only start security access for user files
-        var accessing = false
-        if !isBundled {
-            print("    [CBRReader] Attempting to start security-scoped access...")
-            accessing = url.startAccessingSecurityScopedResource()
-            print("    [CBRReader] Security access started: \(accessing)")
-        } else {
-            print("    [CBRReader] Skipping security access for bundled resource")
-        }
-
-        if accessing {
-            defer {
-                print("    [CBRReader] Stopping security-scoped access...")
-                url.stopAccessingSecurityScopedResource()
-            }
-        }
-
-        // Verify file exists
+        // Verify file exists (security access is already held by ReaderViewModel)
         print("    [CBRReader] Checking if file exists...")
         let fileExists = FileManager.default.fileExists(atPath: url.path)
         print("    [CBRReader] File exists: \(fileExists)")
@@ -151,6 +137,9 @@ class CBRReader: ComicReaderProtocol {
     }
 
     private func _extractCover(from url: URL) throws -> Data {
+        // Note: For cover extraction during import, CBRReader may be called
+        // without an active security scope. We start/stop access here ONLY
+        // for this import-time use case (not during reading).
         let accessing = url.startAccessingSecurityScopedResource()
         defer {
             if accessing {
@@ -195,13 +184,8 @@ class CBRReader: ComicReaderProtocol {
     }
 
     private func _getPageCount(from url: URL) throws -> Int {
-        let accessing = url.startAccessingSecurityScopedResource()
-        defer {
-            if accessing {
-                url.stopAccessingSecurityScopedResource()
-            }
-        }
-
+        // Security access is already held by ReaderViewModel when reading.
+        // For import-time calls, the URL is already user-selected so accessible.
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw ComicReaderError.fileNotFound
         }
@@ -224,13 +208,7 @@ class CBRReader: ComicReaderProtocol {
     }
 
     private func _loadPage(at index: Int, from url: URL) throws -> ComicPage {
-        let accessing = url.startAccessingSecurityScopedResource()
-        defer {
-            if accessing {
-                url.stopAccessingSecurityScopedResource()
-            }
-        }
-
+        // Security access is already held by ReaderViewModel.
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw ComicReaderError.fileNotFound
         }

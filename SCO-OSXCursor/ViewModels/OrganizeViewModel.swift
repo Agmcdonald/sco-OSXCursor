@@ -87,7 +87,9 @@ final class OrganizeViewModel: ObservableObject {
 
     /// Update metadata for a staged comic
     func updateMetadata(
-        id: UUID, series: String, issue: String, year: Int, publisher: String, volume: Int?
+        id: UUID, series: String, issue: String, year: Int, publisher: String, volume: Int?,
+        title: String?, writer: String?, artist: String?, coverArtist: String?, colorist: String?,
+        inker: String?, editor: String?, summary: String?
     ) {
         guard let index = stagedComics.firstIndex(where: { $0.id == id }) else { return }
 
@@ -97,6 +99,14 @@ final class OrganizeViewModel: ObservableObject {
         comic.year = year
         comic.publisher = publisher
         comic.volume = volume
+        comic.title = title
+        comic.writer = writer
+        comic.artist = artist
+        comic.coverArtist = coverArtist
+        comic.colorist = colorist
+        comic.inker = inker
+        comic.editor = editor
+        comic.summary = summary
 
         // Re-evaluate status
         if !series.isEmpty && !issue.isEmpty {
@@ -159,6 +169,14 @@ final class OrganizeViewModel: ObservableObject {
             volume: current.volume,
             year: current.year,
             publisher: current.publisher,
+            title: current.title,
+            writer: current.writer,
+            artist: current.artist,
+            coverArtist: current.coverArtist,
+            colorist: current.colorist,
+            inker: current.inker,
+            editor: current.editor,
+            summary: current.summary,
             originalURL: originalURL,
             fileURL: finalURL
         )

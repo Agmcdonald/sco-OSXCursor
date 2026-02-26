@@ -54,6 +54,14 @@ struct StagedComic: Identifiable, Equatable {
     var year: Int?
     var publisher: String?
     var format: String?  // "Digital", "Scan", etc.
+    var title: String?
+    var writer: String?
+    var artist: String?
+    var coverArtist: String?
+    var colorist: String?
+    var inker: String?
+    var editor: String?
+    var summary: String?
 
     // Original File Info
     let originalFileName: String
@@ -74,6 +82,11 @@ struct StagedComic: Identifiable, Equatable {
         self.year = metadata.year
         self.publisher = metadata.publisher
         self.format = metadata.format
+        self.title = metadata.title
+        self.writer = metadata.writer
+        self.artist = metadata.penciller
+        self.coverArtist = metadata.coverArtist
+        self.summary = metadata.summary
 
         // Calculate initial confidence
         if !self.series.isEmpty && self.issueNumber != nil && self.year != nil

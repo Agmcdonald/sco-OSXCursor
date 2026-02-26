@@ -19,6 +19,17 @@ struct OrganizeInspectorView: View {
     @State private var publisher: String
     @State private var volume: Int?
 
+    // Optional additional metadata
+    @State private var title: String
+    @State private var writer: String
+    @State private var artist: String
+    @State private var coverArtist: String
+    @State private var colorist: String
+    @State private var inker: String
+    @State private var editor: String
+    @State private var summary: String
+    @State private var isAdditionalMetadataExpanded: Bool = false
+
     let comic: StagedComic
 
     init(comic: StagedComic, viewModel: OrganizeViewModel) {
@@ -31,6 +42,14 @@ struct OrganizeInspectorView: View {
         _year = State(initialValue: comic.year ?? 0)
         _publisher = State(initialValue: comic.publisher ?? "")
         _volume = State(initialValue: comic.volume)
+        _title = State(initialValue: comic.title ?? "")
+        _writer = State(initialValue: comic.writer ?? "")
+        _artist = State(initialValue: comic.artist ?? "")
+        _coverArtist = State(initialValue: comic.coverArtist ?? "")
+        _colorist = State(initialValue: comic.colorist ?? "")
+        _inker = State(initialValue: comic.inker ?? "")
+        _editor = State(initialValue: comic.editor ?? "")
+        _summary = State(initialValue: comic.summary ?? "")
     }
 
     var body: some View {
@@ -126,6 +145,136 @@ struct OrganizeInspectorView: View {
                 .onChange(of: publisher) { _ in update() }
                 .onChange(of: volume) { _ in update() }
 
+                DisclosureGroup("Additional Metadata", isExpanded: $isAdditionalMetadataExpanded) {
+                    Group {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Storyline Title")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            TextField("Optional", text: $title)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                        }
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Writer")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            AutocompleteTextField(
+                                title: "Optional",
+                                text: $writer,
+                                fetchSuggestions: { query in
+                                    await knowledgeViewModel.getSuggestions(
+                                        for: "writer", query: query)
+                                }
+                            )
+                            .zIndex(8)
+                        }
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Artist")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            AutocompleteTextField(
+                                title: "Optional",
+                                text: $artist,
+                                fetchSuggestions: { query in
+                                    await knowledgeViewModel.getSuggestions(
+                                        for: "artist", query: query)
+                                }
+                            )
+                            .zIndex(7)
+                        }
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Cover Artist")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            AutocompleteTextField(
+                                title: "Optional",
+                                text: $coverArtist,
+                                fetchSuggestions: { query in
+                                    await knowledgeViewModel.getSuggestions(
+                                        for: "coverArtist", query: query)
+                                }
+                            )
+                            .zIndex(6)
+                        }
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Colorist")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            AutocompleteTextField(
+                                title: "Optional",
+                                text: $colorist,
+                                fetchSuggestions: { query in
+                                    await knowledgeViewModel.getSuggestions(
+                                        for: "colorist", query: query)
+                                }
+                            )
+                            .zIndex(5)
+                        }
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Inker")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            AutocompleteTextField(
+                                title: "Optional",
+                                text: $inker,
+                                fetchSuggestions: { query in
+                                    await knowledgeViewModel.getSuggestions(
+                                        for: "inker", query: query)
+                                }
+                            )
+                            .zIndex(4)
+                        }
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Editor")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            AutocompleteTextField(
+                                title: "Optional",
+                                text: $editor,
+                                fetchSuggestions: { query in
+                                    await knowledgeViewModel.getSuggestions(
+                                        for: "editor", query: query)
+                                }
+                            )
+                            .zIndex(3)
+                        }
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Summary")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            if #available(macOS 13.0, iOS 16.0, *) {
+                                TextField("Optional summary", text: $summary, axis: .vertical)
+                                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                                    .lineLimit(4...8)
+                            } else {
+                                TextEditor(text: $summary)
+                                    .frame(minHeight: 80)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                                    )
+                            }
+                        }
+                    }
+                    .padding(.top, 8)
+                }
+                .font(.subheadline)
+                .onChange(of: title) { _ in update() }
+                .onChange(of: writer) { _ in update() }
+                .onChange(of: artist) { _ in update() }
+                .onChange(of: coverArtist) { _ in update() }
+                .onChange(of: colorist) { _ in update() }
+                .onChange(of: inker) { _ in update() }
+                .onChange(of: editor) { _ in update() }
+                .onChange(of: summary) { _ in update() }
+
                 Divider()
 
                 // Actions
@@ -137,7 +286,7 @@ struct OrganizeInspectorView: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(series.isEmpty || issueNumber.isEmpty)
+                    .disabled(series.isEmpty || issueNumber.isEmpty || publisher.isEmpty)
                 }
                 .frame(maxWidth: .infinity)
 
@@ -163,7 +312,15 @@ struct OrganizeInspectorView: View {
                 issue: issueNumber,
                 year: year,
                 publisher: publisher,
-                volume: volume
+                volume: volume,
+                title: title.isEmpty ? nil : title,
+                writer: writer.isEmpty ? nil : writer,
+                artist: artist.isEmpty ? nil : artist,
+                coverArtist: coverArtist.isEmpty ? nil : coverArtist,
+                colorist: colorist.isEmpty ? nil : colorist,
+                inker: inker.isEmpty ? nil : inker,
+                editor: editor.isEmpty ? nil : editor,
+                summary: summary.isEmpty ? nil : summary
             )
         }
     }

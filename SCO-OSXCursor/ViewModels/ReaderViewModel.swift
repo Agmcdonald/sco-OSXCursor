@@ -63,6 +63,9 @@ class ReaderViewModel: ObservableObject {
     // Page change observation for progress tracking
     private var cancellables = Set<AnyCancellable>()
 
+    // MARK: - Notifications
+    static let bookmarkRefreshedNotification = Notification.Name("ReaderViewModelBookmarkRefreshed")
+
     init() {
         // Observe page changes and save progress
         $currentPage
@@ -158,11 +161,10 @@ class ReaderViewModel: ObservableObject {
 
                     if isStale {
                         print(
-                            "[ATTEMPT #\(currentAttempt)] ⚠️ Bookmark is stale for: \(comic.fileName)"
+                            "[ATTEMPT #\(currentAttempt)] ⚠️ Bookmark is stale for: \(comic.fileName) — attempting refresh"
                         )
-                        // TODO: In future, refresh the bookmark
-                        // For now, try the original URL
-                        return comic.resolvedURL
+                        // Try to access the URL and issue a fresh bookmark
+                        return try refreshAndReturnURL(staleURL: resolvedURL, comic: comic)
                     }
 
                     // Start accessing the security-scoped resource
@@ -180,17 +182,18 @@ class ReaderViewModel: ObservableObject {
                         "[ATTEMPT #\(currentAttempt)] ✅ Resolved bookmark and started access for: \(comic.fileName)"
                     )
                     return resolvedURL
+                } catch let err as ComicReaderError {
+                    throw err
                 } catch {
                     print(
                         "[ATTEMPT #\(currentAttempt)] ⚠️ Failed to resolve bookmark for \(comic.fileName): \(error)"
                     )
-                    print("[ATTEMPT #\(currentAttempt)]    Error type: \(type(of: error))")
-                    print("[ATTEMPT #\(currentAttempt)]    Falling back to original URL")
-                    // Fall back to original URL
-                    return comic.resolvedURL
+                    print("[ATTEMPT #\(currentAttempt)]    Attempting fallback to raw URL")
+                    return try refreshAndReturnURL(staleURL: comic.resolvedURL, comic: comic)
                 }
             } else {
-                print("[ATTEMPT #\(currentAttempt)] No bookmark data available")
+                print("[ATTEMPT #\(currentAttempt)] No bookmark data — attempting to create one")
+                return try refreshAndReturnURL(staleURL: comic.resolvedURL, comic: comic)
             }
         #endif
 
@@ -198,6 +201,59 @@ class ReaderViewModel: ObservableObject {
         print("[ATTEMPT #\(currentAttempt)] Using original URL (no bookmark)")
         return comic.resolvedURL
     }
+
+    /// Attempts to access `staleURL`, creates a fresh security-scoped bookmark,
+    /// notifies LibraryViewModel to persist it, and starts access.
+    #if os(macOS)
+        private func refreshAndReturnURL(staleURL: URL, comic: Comic) throws -> URL {
+            // Check the file is reachable at all
+            guard FileManager.default.fileExists(atPath: staleURL.path) else {
+                print(
+                    "[ATTEMPT #\(currentAttempt)] ❌ File not accessible at \(staleURL.path) — throwing accessDenied"
+                )
+                throw ComicReaderError.accessDenied
+            }
+
+            // Try to create a fresh bookmark
+            do {
+                let freshBookmark = try staleURL.bookmarkData(
+                    options: .withSecurityScope,
+                    includingResourceValuesForKeys: nil,
+                    relativeTo: nil
+                )
+                print(
+                    "[ATTEMPT #\(currentAttempt)] ✅ Created fresh bookmark (\(freshBookmark.count) bytes)"
+                )
+
+                // Notify LibraryViewModel to persist the refreshed bookmark
+                NotificationCenter.default.post(
+                    name: Self.bookmarkRefreshedNotification,
+                    object: nil,
+                    userInfo: ["comicID": comic.id, "bookmarkData": freshBookmark]
+                )
+
+                // Start access using the stale URL (which still points to the right file)
+                guard staleURL.startAccessingSecurityScopedResource() else {
+                    throw ComicReaderError.accessDenied
+                }
+                cleanupURL = staleURL
+                return staleURL
+            } catch let err as ComicReaderError {
+                throw err
+            } catch {
+                print(
+                    "[ATTEMPT #\(currentAttempt)] ⚠️ Could not create fresh bookmark: \(error). Trying raw access."
+                )
+                // Final fallback: use the URL as-is (may work for iCloud Drive files)
+                guard staleURL.startAccessingSecurityScopedResource() else {
+                    throw ComicReaderError.accessDenied
+                }
+                return staleURL
+            }
+        }
+    #endif
+
+    // Placeholder close brace removed — resolveFileURL ends before this.
 
     // MARK: - Load Comic (Fast - metadata only)
     func loadComic(from comic: Comic) async {

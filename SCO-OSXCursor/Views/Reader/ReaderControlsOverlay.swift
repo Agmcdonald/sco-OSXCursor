@@ -63,21 +63,21 @@ struct ReaderControlsOverlay: View {
     // MARK: - Top Bar
     private var topBar: some View {
         HStack(spacing: Spacing.lg) {
-            // Close button
-            Button(action: {
-                onClose()
-                onUserInteraction()
-            }) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(width: 44, height: 44)
-                    .background(Color.black.opacity(0.5))
-                    .clipShape(Circle())
-            }
-            .buttonStyle(.plain)
-            #if os(macOS)
-                .help("Close Reader (Esc)")
+
+            // Close button — iOS only. macOS uses the persistent corner X button.
+            #if os(iOS)
+                Button(action: {
+                    onClose()
+                    onUserInteraction()
+                }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 44, height: 44)
+                        .background(Color.black.opacity(0.5))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
             #endif
 
             Spacer()

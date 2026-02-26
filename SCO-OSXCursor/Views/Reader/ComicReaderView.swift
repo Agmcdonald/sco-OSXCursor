@@ -68,6 +68,9 @@ import SwiftUI
 @MainActor
 struct ComicReaderView: View {
     let comic: Comic
+    // NOTE: dismiss() must ONLY be called on iOS — on macOS the reader lives in
+    // a .overlay on ContentView's main window, so calling dismiss() closes the
+    // *entire* NSWindow. On macOS, setting readingComic = nil is sufficient.
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var libraryViewModel: LibraryViewModel  // To update progress
     @StateObject private var viewModel = ReaderViewModel()
@@ -84,6 +87,8 @@ struct ComicReaderView: View {
     private let tapCooldown: TimeInterval = 0.22
     #if os(macOS)
         @State private var keyboardMonitor: KeyboardMonitor? = nil
+        @State private var closeButtonHovered = false
+        @State private var showLocateFilePrompt = false
     #endif
 
     init(comic: Comic) {
@@ -134,6 +139,39 @@ struct ComicReaderView: View {
                     .zIndex(999)  // Keep on top
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
+            #endif
+
+            // macOS: Persistent close button always visible in top-left corner.
+            // Does NOT depend on the HUD being visible — prevents accidental window closure.
+            #if os(macOS)
+                VStack {
+                    HStack {
+                        Button(action: {
+                            libraryViewModel.readingComic = nil
+                        }) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.white)
+                                .frame(width: 31, height: 31)
+                                .background(Color.black.opacity(closeButtonHovered ? 0.75 : 0.2))
+                                .clipShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Close Reader (Esc)")
+                        .onHover { hovering in
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                closeButtonHovered = hovering
+                            }
+                        }
+                        .opacity(closeButtonHovered ? 1.0 : 0.45)
+                        .animation(.easeInOut(duration: 0.15), value: closeButtonHovered)
+                        .padding(10)
+
+                        Spacer()
+                    }
+                    Spacer()
+                }
+                .zIndex(1000)  // Always on top
             #endif
         }
         .task {
@@ -249,7 +287,6 @@ struct ComicReaderView: View {
                 pages: viewModel.allPages,
                 onClose: {
                     libraryViewModel.readingComic = nil
-                    dismiss()
                 },
                 controlsVisible: $controlsVisible,
                 showingMenu: $showingMenu,
@@ -432,6 +469,25 @@ struct ComicReaderView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
                 .buttonStyle(.plain)
+
+                // Locate File button (macOS only) — lets the user re-grant sandbox access
+                #if os(macOS)
+                    Button(action: {
+                        locateFile()
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "folder.badge.questionmark")
+                            Text("Locate File")
+                        }
+                        .font(Typography.button)
+                        .foregroundColor(TextColors.secondary)
+                        .padding(.horizontal, Spacing.xl)
+                        .padding(.vertical, Spacing.md)
+                        .background(BackgroundColors.elevated)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.plain)
+                #endif
             }
 
             // Always show close button in top-left (especially for iPad)
@@ -582,6 +638,49 @@ struct ComicReaderView: View {
     }
 
     #if os(macOS)
+        // MARK: - Locate File (sandbox recovery)
+
+        /// Opens an NSOpenPanel so the user can re-grant sandbox access to a
+        /// comic that couldn't be opened (e.g., iCloud file with an expired bookmark).
+        /// On success, creates a fresh bookmark, notifies LibraryViewModel to
+        /// persist it, then retries loading the comic.
+        private func locateFile() {
+            let panel = NSOpenPanel()
+            panel.title = "Locate \"\(currentComic.fileName)\""
+            panel.message = "The file could not be accessed. Please locate it to re-grant access."
+            panel.allowsMultipleSelection = false
+            panel.canChooseDirectories = false
+            panel.canChooseFiles = true
+            panel.allowedContentTypes = []  // allow any file type
+
+            // Pre-navigate to the file's parent directory if possible
+            let parentDir = currentComic.resolvedURL.deletingLastPathComponent()
+            panel.directoryURL = parentDir
+
+            guard panel.runModal() == .OK, let selectedURL = panel.url else { return }
+
+            // Create a fresh security-scoped bookmark
+            do {
+                let bookmark = try selectedURL.bookmarkData(
+                    options: .withSecurityScope,
+                    includingResourceValuesForKeys: nil,
+                    relativeTo: nil
+                )
+                // Persist via LibraryViewModel notification channel
+                NotificationCenter.default.post(
+                    name: ReaderViewModel.bookmarkRefreshedNotification,
+                    object: nil,
+                    userInfo: ["comicID": currentComic.id, "bookmarkData": bookmark]
+                )
+                // Retry loading
+                Task {
+                    await viewModel.loadComic(from: currentComic)
+                }
+            } catch {
+                print("[ComicReaderView] ❌ Could not create bookmark from located file: \(error)")
+            }
+        }
+
         // MARK: - Keyboard Navigation
 
         /// Setup keyboard event monitoring
@@ -637,10 +736,9 @@ struct ComicReaderView: View {
                 }
             }
 
-            monitor.onEscape = { [self, dismiss] in
+            monitor.onEscape = { [self] in
                 Task { @MainActor in
                     libraryViewModel.readingComic = nil
-                    dismiss()
                 }
             }
 

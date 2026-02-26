@@ -23,6 +23,7 @@ final class LibraryViewModel: ObservableObject {
 
     private let database: DatabaseManager
     private let progressTracker = ReadingProgressTracker.shared
+    private var cancellables = Set<AnyCancellable>()
 
     init(database: DatabaseManager) {
         self.database = database
@@ -34,6 +35,32 @@ final class LibraryViewModel: ObservableObject {
                 await importBundledComics()
             }
         }
+
+        // Listen for refreshed security-scoped bookmarks from ReaderViewModel
+        // and persist them so subsequent opens don't need to re-create them.
+        NotificationCenter.default
+            .publisher(for: ReaderViewModel.bookmarkRefreshedNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] notification in
+                guard let self = self,
+                    let comicID = notification.userInfo?["comicID"] as? UUID,
+                    let bookmarkData = notification.userInfo?["bookmarkData"] as? Data
+                else { return }
+
+                guard let index = self.comics.firstIndex(where: { $0.id == comicID }) else {
+                    return
+                }
+                var updated = self.comics[index]
+                updated.bookmarkData = bookmarkData
+                self.comics[index] = updated
+                Task {
+                    try? await self.database.saveComic(updated)
+                    print(
+                        "[LibraryViewModel] ✅ Persisted refreshed bookmark for: \(updated.fileName)"
+                    )
+                }
+            }
+            .store(in: &cancellables)
     }
 
     // MARK: - Load Comics
@@ -536,7 +563,9 @@ final class LibraryViewModel: ObservableObject {
     /// and uses the originalURL for security-scoped access.
     func importStagedComic(
         series: String, issueNumber: String?, volume: Int?, year: Int?,
-        publisher: String?, originalURL: URL, fileURL: URL
+        publisher: String?, title: String?, writer: String?, artist: String?,
+        coverArtist: String?, colorist: String?, inker: String?, editor: String?,
+        summary: String?, originalURL: URL, fileURL: URL
     ) async {
         await MainActor.run {
             isImporting = true
@@ -625,11 +654,19 @@ final class LibraryViewModel: ObservableObject {
                 filePath: fileURL,
                 fileName: fileName,
                 bookmarkData: bookmarkData,
+                title: title,
                 publisher: publisher,
                 series: series.isEmpty ? nil : series,
                 issueNumber: issueNumber,
                 volume: volume,
                 year: year,
+                writer: writer,
+                artist: artist,
+                coverArtist: coverArtist,
+                colorist: colorist,
+                inker: inker,
+                editor: editor,
+                summary: summary,
                 coverImageData: coverData,
                 status: .unread,
                 currentPage: 0,

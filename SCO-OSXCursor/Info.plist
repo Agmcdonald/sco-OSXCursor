@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- ========================================================= -->
+	<!-- Exported UTI for RAR archives (CBR comic books)           -->
+	<!-- Silences: "Type com.rarlab.rar-archive was expected to    -->
+	<!-- be declared..." console warnings.                         -->
+	<!-- ========================================================= -->
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.rarlab.rar-archive</string>
+			<key>UTTypeDescription</key>
+			<string>RAR Archive</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.archive</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>rar</string>
+					<string>cbr</string>
+				</array>
+				<key>public.mime-type</key>
+				<string>application/x-rar-compressed</string>
+			</dict>
+		</dict>
+	</array>
+
+	<!-- ========================================================= -->
+	<!-- Required macOS app keys (carried over from auto-gen)       -->
+	<!-- ========================================================= -->
+
+	<!-- macOS: Allow opening files from the Downloads folder      -->
+	<!-- (set via sandbox entitlement, referenced here for clarity) -->
+
+	<!-- CFBundleName is set by Xcode build system via PRODUCT_NAME -->
+</dict>
+</plist>
