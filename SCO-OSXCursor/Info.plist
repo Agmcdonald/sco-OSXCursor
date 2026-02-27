@@ -3,6 +3,24 @@
 <plist version="1.0">
 <dict>
 	<!-- ========================================================= -->
+	<!-- Required bundle identity keys                              -->
+	<!-- ========================================================= -->
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+
+	<!-- ========================================================= -->
 	<!-- Exported UTI for RAR archives (CBR comic books)           -->
 	<!-- Silences: "Type com.rarlab.rar-archive was expected to    -->
 	<!-- be declared..." console warnings.                         -->
@@ -31,14 +49,5 @@
 			</dict>
 		</dict>
 	</array>
-
-	<!-- ========================================================= -->
-	<!-- Required macOS app keys (carried over from auto-gen)       -->
-	<!-- ========================================================= -->
-
-	<!-- macOS: Allow opening files from the Downloads folder      -->
-	<!-- (set via sandbox entitlement, referenced here for clarity) -->
-
-	<!-- CFBundleName is set by Xcode build system via PRODUCT_NAME -->
 </dict>
 </plist>

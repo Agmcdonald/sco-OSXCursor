@@ -20,7 +20,7 @@ struct SCO_OSXCursorApp: App {
     @StateObject private var settingsViewModel = SettingsViewModel()
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup("") {
             ContentView()
                 .environmentObject(settingsViewModel)
                 .preferredColorScheme(settingsViewModel.settings.theme.colorScheme)

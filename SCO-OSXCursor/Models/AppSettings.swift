@@ -14,26 +14,26 @@ struct AppSettings: Codable {
     var namingPattern: String
     var rootLibraryPath: URL?
     var autoOrganize: Bool
-    var confidenceThreshold: Double // 0.0 - 1.0
-    
+    var confidenceThreshold: Double  // 0.0 - 1.0
+
     // MARK: - Reading Settings
     var readingMode: ReadingMode
     var pageTransition: PageTransition
     var enableDoublePage: Bool
     var fitToScreen: Bool
-    
+
     // MARK: - UI Settings
     var theme: Theme
     var showDetailPanel: Bool
     var gridColumns: Int
     var cardSize: CardSize
-    
+
     // MARK: - Advanced Settings
     var enableLearning: Bool
     var enableMetadataLookup: Bool
     var apiKey: String?
-    var maxCacheSize: Int64 // in bytes
-    
+    var maxCacheSize: Int64  // in bytes
+
     // MARK: - Default Initializer
     init(
         folderStructure: FolderStructure = .publisherSeriesIssue,
@@ -52,7 +52,7 @@ struct AppSettings: Codable {
         enableLearning: Bool = true,
         enableMetadataLookup: Bool = false,
         apiKey: String? = nil,
-        maxCacheSize: Int64 = 1_000_000_000 // 1 GB
+        maxCacheSize: Int64 = 1_000_000_000  // 1 GB
     ) {
         self.folderStructure = folderStructure
         self.namingPattern = namingPattern
@@ -83,11 +83,11 @@ extension AppSettings {
         case flat = "Flat (All in one folder)"
         case yearPublisherSeries = "Year/Publisher/Series"
         case custom = "Custom"
-        
+
         var displayName: String {
             rawValue
         }
-        
+
         var description: String {
             switch self {
             case .publisherSeriesIssue:
@@ -104,7 +104,7 @@ extension AppSettings {
                 return "Use custom naming pattern"
             }
         }
-        
+
         var examplePath: String {
             switch self {
             case .publisherSeriesIssue:
@@ -131,7 +131,7 @@ extension AppSettings {
         case fitToHeight = "Fit to Height"
         case fitToScreen = "Fit to Screen"
         case original = "Original Size"
-        
+
         var displayName: String {
             rawValue
         }
@@ -139,18 +139,9 @@ extension AppSettings {
 }
 
 // MARK: - Page Transition Enum
-extension AppSettings {
-    enum PageTransition: String, Codable, CaseIterable {
-        case slide = "Slide"
-        case fade = "Fade"
-        case curl = "Page Curl"
-        case instant = "Instant"
-        
-        var displayName: String {
-            rawValue
-        }
-    }
-}
+// NOTE: The canonical PageTransition enum lives in ReaderSettings.swift.
+// AppSettings.pageTransition stores the user's global default — it uses
+// the same top-level PageTransition type so there is a single source of truth.
 
 // MARK: - Theme Enum
 extension AppSettings {
@@ -158,7 +149,7 @@ extension AppSettings {
         case dark = "Dark"
         case light = "Light"
         case auto = "System"
-        
+
         var displayName: String {
             rawValue
         }
@@ -171,11 +162,11 @@ extension AppSettings {
         case small = "Small"
         case medium = "Medium"
         case large = "Large"
-        
+
         var displayName: String {
             rawValue
         }
-        
+
         var width: CGFloat {
             switch self {
             case .small: return 120
@@ -183,9 +174,9 @@ extension AppSettings {
             case .large: return 200
             }
         }
-        
+
         var height: CGFloat {
-            width * 1.5 // 2:3 aspect ratio
+            width * 1.5  // 2:3 aspect ratio
         }
     }
 }
@@ -193,23 +184,24 @@ extension AppSettings {
 // MARK: - UserDefaults Extension
 extension AppSettings {
     private static let settingsKey = "AppSettings"
-    
+
     /// Save settings to UserDefaults
     func save() {
         if let encoded = try? JSONEncoder().encode(self) {
             UserDefaults.standard.set(encoded, forKey: AppSettings.settingsKey)
         }
     }
-    
+
     /// Load settings from UserDefaults
     static func load() -> AppSettings {
         if let data = UserDefaults.standard.data(forKey: settingsKey),
-           let decoded = try? JSONDecoder().decode(AppSettings.self, from: data) {
+            let decoded = try? JSONDecoder().decode(AppSettings.self, from: data)
+        {
             return decoded
         }
-        return AppSettings() // Return default settings if none saved
+        return AppSettings()  // Return default settings if none saved
     }
-    
+
     /// Reset settings to defaults
     static func reset() {
         UserDefaults.standard.removeObject(forKey: settingsKey)
@@ -227,19 +219,19 @@ extension AppSettings {
         "{title}": "Full comic title",
         "{volume}": "Volume number",
         "{writer}": "Writer name",
-        "{artist}": "Artist name"
+        "{artist}": "Artist name",
     ]
-    
+
     /// Validate naming pattern
     func isValidNamingPattern(_ pattern: String) -> Bool {
         // Check if pattern contains at least one valid variable
         return AppSettings.namingPatternVariables.keys.contains { pattern.contains($0) }
     }
-    
+
     /// Preview naming pattern with sample data
     func previewNamingPattern(with comic: Comic) -> String {
         var result = namingPattern
-        
+
         result = result.replacingOccurrences(of: "{publisher}", with: comic.publisher ?? "Unknown")
         result = result.replacingOccurrences(of: "{series}", with: comic.series ?? "Unknown")
         result = result.replacingOccurrences(of: "{issue}", with: comic.issueNumber ?? "000")
@@ -248,8 +240,7 @@ extension AppSettings {
         result = result.replacingOccurrences(of: "{volume}", with: String(comic.volume ?? 1))
         result = result.replacingOccurrences(of: "{writer}", with: comic.writer ?? "Unknown")
         result = result.replacingOccurrences(of: "{artist}", with: comic.artist ?? "Unknown")
-        
+
         return result
     }
 }
-

@@ -411,6 +411,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         static let tags = Column("tags")
         static let rating = Column("rating")
         static let isFavorite = Column("is_favorite")
+        static let isOnReadingList = Column("is_on_reading_list")
         static let preferredTransition = Column("preferred_transition")
         static let fileSize = Column("file_size")
         static let fileType = Column("file_type")
@@ -445,6 +446,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         container[Columns.tags] = try? JSONEncoder().encode(tags)  // Store as JSON
         container[Columns.rating] = rating
         container[Columns.isFavorite] = isFavorite
+        container[Columns.isOnReadingList] = isOnReadingList
         container[Columns.preferredTransition] = preferredTransition
         container[Columns.fileSize] = fileSize
         container[Columns.fileType] = fileType.rawValue
@@ -504,6 +506,7 @@ extension Comic: FetchableRecord, PersistableRecord {
             tags: decodedTags,
             rating: row["rating"],
             isFavorite: row["is_favorite"] ?? false,
+            isOnReadingList: row["is_on_reading_list"] ?? false,
             preferredTransition: row["preferred_transition"],
             fileSize: fileSize,
             fileType: fileType,

@@ -161,35 +161,6 @@ struct DashboardInsightsView: View {
                 .frame(maxWidth: .infinity)
             }
 
-            // Comics by Publication Year (full-width line chart)
-            DashboardSectionCard(title: "Comics by Publication Year") {
-                if comicsByYear.isEmpty {
-                    EmptyChartPlaceholder(label: "No year data")
-                } else {
-                    Chart(comicsByYear, id: \.year) { item in
-                        BarMark(
-                            x: .value("Year", item.year),
-                            y: .value("Count", item.count)
-                        )
-                        .foregroundStyle(AccentColors.primary.gradient)
-                        .cornerRadius(2)
-                    }
-                    .chartXAxis {
-                        AxisMarks(values: .stride(by: 5)) { value in
-                            AxisValueLabel()
-                            AxisGridLine(stroke: StrokeStyle(dash: [3, 3]))
-                        }
-                    }
-                    .chartYAxis {
-                        AxisMarks { _ in
-                            AxisValueLabel()
-                            AxisGridLine(stroke: StrokeStyle(dash: [3, 3]))
-                        }
-                    }
-                    .frame(height: 220)
-                }
-            }
-
             // Most Collected Series list
             DashboardSectionCard(
                 title: "Most Collected Series",

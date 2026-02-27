@@ -21,8 +21,43 @@ struct KnowledgeView: View {
                 .background(BorderColors.subtle)
 
             // Content
-            HSplitView {
-                // Sidebar List
+            #if os(macOS)
+                HSplitView {
+                    // Sidebar List
+                    VStack(spacing: 0) {
+                        searchBar
+                            .padding(Spacing.md)
+
+                        List(viewModel.entries) { entry in
+                            HStack {
+                                Text(entry.name)
+                                    .font(Typography.body)
+                                    .foregroundColor(TextColors.primary)
+                                Spacer()
+                            }
+                            .contentShape(Rectangle())
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    viewModel.deleteEntry(entry)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                        }
+                        .listStyle(.plain)
+                    }
+                    .frame(minWidth: 250, maxWidth: 350)
+
+                    // Detail / Placeholder (Future expansion: stats, related comics)
+                    VStack {
+                        Text("Select an item to view usage statistics")
+                            .font(Typography.body)
+                            .foregroundColor(TextColors.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(BackgroundColors.primary)
+                }
+            #else
                 VStack(spacing: 0) {
                     searchBar
                         .padding(Spacing.md)
@@ -45,17 +80,7 @@ struct KnowledgeView: View {
                     }
                     .listStyle(.plain)
                 }
-                .frame(minWidth: 250, maxWidth: 350)
-
-                // Detail / Placeholder (Future expansion: stats, related comics)
-                VStack {
-                    Text("Select an item to view usage statistics")
-                        .font(Typography.body)
-                        .foregroundColor(TextColors.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(BackgroundColors.primary)
-            }
+            #endif
         }
         .background(BackgroundColors.sidebar)
         .onAppear {

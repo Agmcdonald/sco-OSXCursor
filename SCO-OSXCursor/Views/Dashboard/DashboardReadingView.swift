@@ -7,7 +7,7 @@ struct DashboardReadingView: View {
     @State private var showCompleted: Bool = false
 
     enum SubTab: String, CaseIterable {
-        case readingList  = "Reading List"
+        case readingList = "Reading List"
         case recentlyRead = "Recently Read"
     }
 
@@ -30,7 +30,8 @@ struct DashboardReadingView: View {
     }
 
     private var readingListFiltered: [Comic] {
-        let base = showCompleted ? readingListComics : readingListComics.filter { $0.status != .completed }
+        let base =
+            showCompleted ? readingListComics : readingListComics.filter { $0.status != .completed }
         if searchText.isEmpty { return base }
         return base.filter { $0.displayName.localizedCaseInsensitiveContains(searchText) }
     }
@@ -56,12 +57,14 @@ struct DashboardReadingView: View {
                                 color: AccentColors.primary
                             )
                             ReadingMetric(
-                                value: "\(readingListComics.filter { $0.status == .completed }.count)",
+                                value:
+                                    "\(readingListComics.filter { $0.status == .completed }.count)",
                                 label: "Completed",
                                 color: .green
                             )
                             ReadingMetric(
-                                value: "\(recentlyRead.filter { Calendar.current.isDateInLastWeek($0.lastReadDate ?? .distantPast) }.count)",
+                                value:
+                                    "\(recentlyRead.filter { Calendar.current.isDateInLastWeek($0.lastReadDate ?? .distantPast) }.count)",
                                 label: "This Week",
                                 color: .orange
                             )
@@ -110,30 +113,40 @@ struct DashboardReadingView: View {
 
                             if selectedSubTab == .readingList {
                                 Toggle("Show completed", isOn: $showCompleted)
-                                    .toggleStyle(.checkbox)
+                                    #if os(macOS)
+                                        .toggleStyle(.checkbox)
+                                    #else
+                                        .toggleStyle(.switch)
+                                    #endif
                                     .font(Typography.caption)
                                     .foregroundColor(TextColors.secondary)
                             }
                         }
 
                         // List content
-                        let items = selectedSubTab == .readingList
+                        let items =
+                            selectedSubTab == .readingList
                             ? readingListFiltered : recentlyReadFiltered
 
                         if items.isEmpty {
                             VStack(spacing: Spacing.sm) {
-                                Image(systemName: selectedSubTab == .readingList ? "bookmark.slash" : "book.closed")
-                                    .font(.system(size: 36))
-                                    .foregroundColor(TextColors.tertiary)
+                                Image(
+                                    systemName: selectedSubTab == .readingList
+                                        ? "bookmark.slash" : "book.closed"
+                                )
+                                .font(.system(size: 36))
+                                .foregroundColor(TextColors.tertiary)
 
                                 if selectedSubTab == .readingList {
                                     Text("Your reading list is empty")
                                         .font(Typography.bodySmall)
                                         .foregroundColor(TextColors.secondary)
-                                    Text("Right-click any comic in your Library and choose Add to Reading List")
-                                        .font(Typography.caption)
-                                        .foregroundColor(TextColors.tertiary)
-                                        .multilineTextAlignment(.center)
+                                    Text(
+                                        "Right-click any comic in your Library and choose Add to Reading List"
+                                    )
+                                    .font(Typography.caption)
+                                    .foregroundColor(TextColors.tertiary)
+                                    .multilineTextAlignment(.center)
                                 } else {
                                     Text("No recently read comics")
                                         .font(Typography.bodySmall)

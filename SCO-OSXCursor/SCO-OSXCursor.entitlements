@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- App Sandbox -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+
+	<!-- Read/write access to files the user explicitly opens -->
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+
+	<!-- Read/write access to the Downloads folder -->
+	<key>com.apple.security.files.downloads.read-write</key>
+	<true/>
+
+	<!-- Security-scoped bookmarks for persistent file access -->
+	<key>com.apple.security.files.bookmarks.app-scope</key>
+	<true/>
+
+	<!-- Outgoing network connections (for future metadata lookup) -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+</dict>
+</plist>

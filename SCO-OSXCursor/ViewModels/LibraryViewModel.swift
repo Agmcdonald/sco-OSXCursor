@@ -176,15 +176,26 @@ final class LibraryViewModel: ObservableObject {
         var didStartAccess = false
         if let bookmarkData = comic.bookmarkData {
             var isStale = false
-            if let resolved = try? URL(
-                resolvingBookmarkData: bookmarkData,
-                options: .withSecurityScope,
-                relativeTo: nil,
-                bookmarkDataIsStale: &isStale
-            ) {
-                fileURL = resolved
-                didStartAccess = resolved.startAccessingSecurityScopedResource()
-            }
+            #if os(macOS)
+                if let resolved = try? URL(
+                    resolvingBookmarkData: bookmarkData,
+                    options: .withSecurityScope,
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &isStale
+                ) {
+                    fileURL = resolved
+                    didStartAccess = resolved.startAccessingSecurityScopedResource()
+                }
+            #else
+                if let resolved = try? URL(
+                    resolvingBookmarkData: bookmarkData,
+                    options: [],
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &isStale
+                ) {
+                    fileURL = resolved
+                }
+            #endif
         }
         defer { if didStartAccess { fileURL.stopAccessingSecurityScopedResource() } }
 
