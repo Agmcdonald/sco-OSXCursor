@@ -23,25 +23,30 @@ struct ComicDetailView: View {
     @EnvironmentObject var libraryViewModel: LibraryViewModel
     @StateObject private var knowledgeViewModel = KnowledgeViewModel()
 
+    // The authoritative edited copy — only updated when Save is pressed.
     @State private var editedComic: Comic
-    @State private var originalTitle: String?
-    @State private var originalPublisher: String?
-    @State private var originalSeries: String?
-    @State private var originalIssueNumber: String?
-    @State private var originalVolume: Int?
-    @State private var originalYear: Int?
-    @State private var originalWriter: String?
-    @State private var originalArtist: String?
-    @State private var originalCoverArtist: String?
-    @State private var originalColorist: String?
-    @State private var originalInker: String?
-    @State private var originalEditor: String?
-    @State private var originalSummary: String?
+
+    // MARK: - Draft (local) state for every editable field
+    // Bound directly to the TextFields so re-renders of the parent struct
+    // cannot overwrite in-progress keystrokes.
+    @State private var draftTitle: String
+    @State private var draftPublisher: String
+    @State private var draftSeries: String
+    @State private var draftIssueNumber: String
+    @State private var draftVolume: String  // stored as String; converted to Int? on save
+    @State private var draftYear: String  // stored as String; converted to Int? on save
+    @State private var draftWriter: String
+    @State private var draftArtist: String
+    @State private var draftCoverArtist: String
+    @State private var draftColorist: String
+    @State private var draftInker: String
+    @State private var draftEditor: String
+    @State private var draftSummary: String
+
     @State private var showingSaveConfirmation = false
-    @State private var hasInitialized = false
     @State private var saveError: String?
 
-    // Track focus to force commit changes before saving
+    // Track focus to force-commit TextEditor on macOS before saving
     enum Field: Hashable {
         case title, publisher, series, issue, volume, year, writer, artist, coverArtist, colorist,
             inker, editor, summary
@@ -53,34 +58,36 @@ struct ComicDetailView: View {
         self.comic = comic
         self.onSave = onSave
 
-        self._editedComic = State(initialValue: comic)
-        self._originalTitle = State(initialValue: comic.title)
-        self._originalPublisher = State(initialValue: comic.publisher)
-        self._originalSeries = State(initialValue: comic.series)
-        self._originalIssueNumber = State(initialValue: comic.issueNumber)
-        self._originalVolume = State(initialValue: comic.volume)
-        self._originalYear = State(initialValue: comic.year)
-        self._originalWriter = State(initialValue: comic.writer)
-        self._originalArtist = State(initialValue: comic.artist)
-        self._originalCoverArtist = State(initialValue: comic.coverArtist)
-        self._originalColorist = State(initialValue: comic.colorist)
-        self._originalInker = State(initialValue: comic.inker)
-        self._originalEditor = State(initialValue: comic.editor)
-        self._originalSummary = State(initialValue: comic.summary)
+        _editedComic = State(initialValue: comic)
+
+        // Populate drafts from the comic's current values.
+        // Using empty string instead of nil so TextFields stay stable.
+        _draftTitle = State(initialValue: comic.title ?? "")
+        _draftPublisher = State(initialValue: comic.publisher ?? "")
+        _draftSeries = State(initialValue: comic.series ?? "")
+        _draftIssueNumber = State(initialValue: comic.issueNumber ?? "")
+        _draftVolume = State(initialValue: comic.volume.map { String($0) } ?? "")
+        _draftYear = State(initialValue: comic.year.map { String($0) } ?? "")
+        _draftWriter = State(initialValue: comic.writer ?? "")
+        _draftArtist = State(initialValue: comic.artist ?? "")
+        _draftCoverArtist = State(initialValue: comic.coverArtist ?? "")
+        _draftColorist = State(initialValue: comic.colorist ?? "")
+        _draftInker = State(initialValue: comic.inker ?? "")
+        _draftEditor = State(initialValue: comic.editor ?? "")
+        _draftSummary = State(initialValue: comic.summary ?? "")
     }
 
+    // MARK: - hasChanges
+    // Compare each draft against the original `comic` constant (not editedComic).
     var hasChanges: Bool {
-        // Compare only against original state values (never against the live binding)
-        editedComic.title != originalTitle || editedComic.publisher != originalPublisher
-            || editedComic.series != originalSeries
-            || editedComic.issueNumber != originalIssueNumber
-            || editedComic.volume != originalVolume || editedComic.year != originalYear
-            || editedComic.writer != originalWriter || editedComic.artist != originalArtist
-            || editedComic.coverArtist != originalCoverArtist
-            || editedComic.colorist != originalColorist
-            || editedComic.inker != originalInker
-            || editedComic.editor != originalEditor
-            || editedComic.summary != originalSummary
+        draftTitle != (comic.title ?? "") || draftPublisher != (comic.publisher ?? "")
+            || draftSeries != (comic.series ?? "") || draftIssueNumber != (comic.issueNumber ?? "")
+            || draftVolume != (comic.volume.map { String($0) } ?? "")
+            || draftYear != (comic.year.map { String($0) } ?? "")
+            || draftWriter != (comic.writer ?? "") || draftArtist != (comic.artist ?? "")
+            || draftCoverArtist != (comic.coverArtist ?? "")
+            || draftColorist != (comic.colorist ?? "") || draftInker != (comic.inker ?? "")
+            || draftEditor != (comic.editor ?? "") || draftSummary != (comic.summary ?? "")
     }
 
     var body: some View {
@@ -179,7 +186,8 @@ struct ComicDetailView: View {
             }
 
             VStack(alignment: .leading, spacing: Spacing.sm) {
-                Text(editedComic.displayTitle)
+                // Display title built from current draft values so it updates as the user types
+                Text(displayTitleFromDrafts)
                     .font(Typography.h1)
                     .foregroundColor(TextColors.primary)
 
@@ -203,6 +211,25 @@ struct ComicDetailView: View {
         }
     }
 
+    // Live preview of the display title using the current draft values
+    private var displayTitleFromDrafts: String {
+        let base =
+            draftSeries.isEmpty
+            ? (draftTitle.isEmpty ? editedComic.fileName : draftTitle) : draftSeries
+        var result = base
+        if !draftIssueNumber.isEmpty {
+            if draftIssueNumber.prefix(1).allSatisfy(\.isNumber) {
+                result += " #\(draftIssueNumber)"
+            } else {
+                result += " \(draftIssueNumber)"
+            }
+        }
+        if !draftYear.isEmpty {
+            result += " (\(draftYear))"
+        }
+        return result
+    }
+
     // MARK: - Metadata Fields
 
     private var metadataFields: some View {
@@ -210,53 +237,38 @@ struct ComicDetailView: View {
             // Core Metadata Section
             metadataSection(title: "Core Information", icon: "info.circle") {
                 metadataField(
-                    label: "Series", text: $editedComic.series, field: .series,
+                    label: "Series", text: $draftSeries, field: .series,
                     knowledgeType: .series)
                 metadataField(
-                    label: "Publisher", text: $editedComic.publisher, field: .publisher,
+                    label: "Publisher", text: $draftPublisher, field: .publisher,
                     isPublisher: true, knowledgeType: .publisher)
-                metadataField(label: "Storyline Title", text: $editedComic.title, field: .title)
-                metadataField(label: "Issue Number", text: $editedComic.issueNumber, field: .issue)
+                metadataField(label: "Storyline Title", text: $draftTitle, field: .title)
+                metadataField(label: "Issue Number", text: $draftIssueNumber, field: .issue)
 
                 HStack {
-                    metadataField(
-                        label: "Volume",
-                        value: Binding(
-                            get: { editedComic.volume.map { String($0) } ?? "" },
-                            set: { editedComic.volume = Int($0) }
-                        ),
-                        field: .volume
-                    )
-
-                    metadataField(
-                        label: "Year",
-                        value: Binding(
-                            get: { editedComic.year.map { String($0) } ?? "" },
-                            set: { editedComic.year = Int($0) }
-                        ),
-                        field: .year
-                    )
+                    metadataNumericField(label: "Volume", value: $draftVolume, field: .volume)
+                    metadataNumericField(label: "Year", value: $draftYear, field: .year)
                 }
             }
 
             // Credits Section
             metadataSection(title: "Credits", icon: "person.2.fill") {
                 metadataField(
-                    label: "Writer", text: $editedComic.writer, field: .writer,
+                    label: "Writer", text: $draftWriter, field: .writer,
                     knowledgeType: .writer)
                 metadataField(
-                    label: "Artist", text: $editedComic.artist, field: .artist,
+                    label: "Artist", text: $draftArtist, field: .artist,
                     knowledgeType: .artist)
                 metadataField(
-                    label: "Cover Artist", text: $editedComic.coverArtist, field: .coverArtist,
+                    label: "Cover Artist", text: $draftCoverArtist, field: .coverArtist,
                     knowledgeType: .coverArtist)
                 metadataField(
-                    label: "Colorist", text: $editedComic.colorist, field: .colorist,
+                    label: "Colorist", text: $draftColorist, field: .colorist,
                     knowledgeType: .colorist)
                 metadataField(
-                    label: "Inker", text: $editedComic.inker, field: .inker, knowledgeType: .inker)
+                    label: "Inker", text: $draftInker, field: .inker, knowledgeType: .inker)
                 metadataField(
-                    label: "Editor", text: $editedComic.editor, field: .editor,
+                    label: "Editor", text: $draftEditor, field: .editor,
                     knowledgeType: .editor)
             }
 
@@ -267,23 +279,18 @@ struct ComicDetailView: View {
                         .font(Typography.bodySmall)
                         .foregroundColor(TextColors.secondary)
 
-                    TextEditor(
-                        text: Binding(
-                            get: { editedComic.summary ?? "" },
-                            set: { editedComic.summary = $0.isEmpty ? nil : $0 }
+                    TextEditor(text: $draftSummary)
+                        .focused($focusedField, equals: .summary)
+                        .font(Typography.body)
+                        .foregroundColor(TextColors.primary)
+                        .frame(minHeight: 100)
+                        .padding(Spacing.sm)
+                        .background(BackgroundColors.secondary)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(BorderColors.subtle, lineWidth: 1)
                         )
-                    )
-                    .focused($focusedField, equals: .summary)
-                    .font(Typography.body)
-                    .foregroundColor(TextColors.primary)
-                    .frame(minHeight: 100)
-                    .padding(Spacing.sm)
-                    .background(BackgroundColors.secondary)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(BorderColors.subtle, lineWidth: 1)
-                    )
                 }
             }
         }
@@ -314,14 +321,16 @@ struct ComicDetailView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
-    // MARK: - Metadata Field
+    // MARK: - Metadata Field (String draft binding)
 
+    /// Text field bound to a `String` draft variable (optional fields stored as empty string).
     private func metadataField(
-        label: String, text: Binding<String?>, field: Field, isPublisher: Bool = false,
+        label: String,
+        text: Binding<String>,
+        field: Field,
+        isPublisher: Bool = false,
         knowledgeType: KnowledgeEntry.EntryType? = nil
-    )
-        -> some View
-    {
+    ) -> some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             Text(label)
                 .font(Typography.bodySmall)
@@ -330,10 +339,7 @@ struct ComicDetailView: View {
             if let knowledgeType = knowledgeType {
                 AutocompleteTextField(
                     title: label,
-                    text: Binding(
-                        get: { text.wrappedValue ?? "" },
-                        set: { text.wrappedValue = $0.isEmpty ? nil : $0 }
-                    ),
+                    text: text,  // bound directly to the draft String — no wrapping needed
                     fetchSuggestions: { query in
                         await knowledgeViewModel.getSuggestions(
                             for: knowledgeType.rawValue, query: query)
@@ -345,46 +351,47 @@ struct ComicDetailView: View {
                     .autocapitalization(.words)
                 #endif
             } else {
-                TextField(
-                    label,
-                    text: Binding(
-                        get: { text.wrappedValue ?? "" },
-                        set: { text.wrappedValue = $0.isEmpty ? nil : $0 }
+                TextField(label, text: text)
+                    .focused($focusedField, equals: field)
+                    .textFieldStyle(.plain)
+                    .font(Typography.body)
+                    .foregroundColor(TextColors.primary)
+                    .padding(Spacing.md)
+                    .background(BackgroundColors.secondary)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(BorderColors.subtle, lineWidth: 1)
                     )
-                )
-                .focused($focusedField, equals: field)
-                .textFieldStyle(.plain)
-                .font(Typography.body)
-                .foregroundColor(TextColors.primary)
-                .padding(Spacing.md)
-                .background(BackgroundColors.secondary)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(BorderColors.subtle, lineWidth: 1)
-                )
-                .autocorrectionDisabled()
-                #if os(iOS)
-                    .autocapitalization(.words)
-                #endif
+                    .autocorrectionDisabled()
+                    #if os(iOS)
+                        .autocapitalization(.words)
+                    #endif
             }
 
-            // Show publisher color indicator if publisher field
-            if isPublisher, let publisher = text.wrappedValue, !publisher.isEmpty {
+            // Publisher color indicator
+            if isPublisher, !text.wrappedValue.isEmpty {
                 HStack(spacing: Spacing.xs) {
                     Circle()
-                        .fill(PublisherDetector.color(for: publisher))
+                        .fill(PublisherDetector.color(for: text.wrappedValue))
                         .frame(width: 8, height: 8)
-                    Text("Normalized: \(PublisherDetector.normalize(publisher) ?? publisher)")
-                        .font(Typography.caption)
-                        .foregroundColor(TextColors.tertiary)
+                    Text(
+                        "Normalized: \(PublisherDetector.normalize(text.wrappedValue) ?? text.wrappedValue)"
+                    )
+                    .font(Typography.caption)
+                    .foregroundColor(TextColors.tertiary)
                 }
                 .padding(.top, Spacing.xs)
             }
         }
     }
 
-    private func metadataField(label: String, value: Binding<String>, field: Field) -> some View {
+    // MARK: - Numeric Field (Volume / Year)
+
+    /// Text field for numeric values (Volume, Year) — bound to a String draft, validated on save.
+    private func metadataNumericField(label: String, value: Binding<String>, field: Field)
+        -> some View
+    {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             Text(label)
                 .font(Typography.bodySmall)
@@ -412,12 +419,12 @@ struct ComicDetailView: View {
 
     private var saveButton: some View {
         Button(action: {
-            // Force focus to clear to ensure all bindings update before saving
+            // Clear focus so any in-flight TextEditor changes are committed
             focusedField = nil
 
             Task {
-                // Wait a split second for the runloop to process the focus change
-                try? await Task.sleep(nanoseconds: 100_000_000)  // 0.1s
+                // Small pause lets the run-loop process the focus change
+                try? await Task.sleep(nanoseconds: 100_000_000)  // 0.1 s
 
                 do {
                     try await saveChanges()
@@ -434,26 +441,36 @@ struct ComicDetailView: View {
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
             .padding(Spacing.md)
-            .background(AccentColors.primary)  // Always bold/active
+            .background(AccentColors.primary)
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
-        // .disabled(!hasChanges) // Disabled check removed to allow forced saves
     }
 
     // MARK: - Actions
 
     private func saveChanges() async throws {
+        // Commit all draft values → editedComic before persisting
+        editedComic.title = draftTitle.nilIfEmpty
+        editedComic.publisher = draftPublisher.nilIfEmpty
+        editedComic.series = draftSeries.nilIfEmpty
+        editedComic.issueNumber = draftIssueNumber.nilIfEmpty
+        editedComic.volume = Int(draftVolume)  // nil if draftVolume is empty / non-numeric
+        editedComic.year = Int(draftYear)
+        editedComic.writer = draftWriter.nilIfEmpty
+        editedComic.artist = draftArtist.nilIfEmpty
+        editedComic.coverArtist = draftCoverArtist.nilIfEmpty
+        editedComic.colorist = draftColorist.nilIfEmpty
+        editedComic.inker = draftInker.nilIfEmpty
+        editedComic.editor = draftEditor.nilIfEmpty
+        editedComic.summary = draftSummary.nilIfEmpty
+
         print("[ComicDetailView] 💾 Saving changes...")
         print("[ComicDetailView]    Title: '\(editedComic.title ?? "nil")'")
         print("[ComicDetailView]    Publisher: '\(editedComic.publisher ?? "nil")'")
         print("[ComicDetailView]    Series: '\(editedComic.series ?? "nil")'")
 
-        // Check if publisher or series was corrected
-        let publisherChanged = editedComic.publisher != originalPublisher
-        let seriesChanged = editedComic.series != originalSeries
-
-        // Handle Auto-Add to Knowledge Base
+        // Auto-add new values to the Knowledge Base
         let fieldsToCheck: [(String?, KnowledgeEntry.EntryType)] = [
             (editedComic.series, .series),
             (editedComic.publisher, .publisher),
@@ -467,7 +484,6 @@ struct ComicDetailView: View {
 
         for (value, type) in fieldsToCheck {
             if let name = value, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                // Check if it exists, if not, add it
                 let exists = try? await DatabaseManager.shared.knowledgeEntryExists(
                     type: type, name: name)
                 if exists == false {
@@ -480,30 +496,41 @@ struct ComicDetailView: View {
             }
         }
 
-        // Create final version with updated dateModified
+        // Stamp modification date
         var finalComic = editedComic
         finalComic.dateModified = Date()
 
-        // Update the binding (which updates the viewModel's array)
         print("[ComicDetailView]    Calling onSave closure...")
         try await onSave(finalComic)
         print("[ComicDetailView]    ✅ Save completed successfully")
 
-        // Learn from correction if publisher or series changed
+        // Learn from corrections if publisher or series changed
+        let publisherChanged = finalComic.publisher != comic.publisher
+        let seriesChanged = finalComic.series != comic.series
+
         if publisherChanged || seriesChanged {
             Task {
                 await OrganizationLearner.shared.learnFromCorrection(
                     comic: finalComic,
-                    originalPublisher: originalPublisher,
-                    correctedPublisher: editedComic.publisher,
-                    originalSeries: originalSeries,
-                    correctedSeries: editedComic.series
+                    originalPublisher: comic.publisher,
+                    correctedPublisher: finalComic.publisher,
+                    originalSeries: comic.series,
+                    correctedSeries: finalComic.series
                 )
                 print("[ComicDetailView] ✅ Learned from correction")
             }
         }
 
         dismiss()
+    }
+}
+
+// MARK: - String helper
+extension String {
+    /// Returns nil if the string is empty (after trimming), otherwise the trimmed value.
+    fileprivate var nilIfEmpty: String? {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 

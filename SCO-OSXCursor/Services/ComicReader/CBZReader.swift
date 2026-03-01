@@ -37,14 +37,10 @@ class CBZReader: ComicReaderProtocol {
             print("    [CBZReader] Skipping security access for bundled resource")
         }
 
-        if accessing {
-            defer {
-                print("    [CBZReader] Stopping security-scoped access...")
-                url.stopAccessingSecurityScopedResource()
-            }
-        }
-
-        // Note: We keep access open during reading. The ReaderViewModel will release it.
+        // Note: Security access is kept open during reading.
+        // ReaderViewModel's deinit releases it via cleanupURL.
+        // (The premature defer that was here fired before file operations, causing
+        //  File exists: false on iOS — that's the bug this change fixes.)
 
         // Verify file exists
         print("    [CBZReader] Checking if file exists...")

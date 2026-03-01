@@ -87,8 +87,10 @@ struct ComicReaderView: View {
     private let tapCooldown: TimeInterval = 0.22
     #if os(macOS)
         @State private var keyboardMonitor: KeyboardMonitor? = nil
-        @State private var closeButtonHovered = false
         @State private var showLocateFilePrompt = false
+    #endif
+    #if os(iOS)
+        @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     #endif
 
     init(comic: Comic) {
@@ -113,66 +115,6 @@ struct ComicReaderView: View {
                 readerView(comicBook)
             }
 
-            // Close button on iPad (hides/shows with controls)
-            #if os(iOS)
-                if controlsVisible {
-                    VStack {
-                        HStack {
-                            Button(action: {
-                                libraryViewModel.readingComic = nil
-                                dismiss()
-                            }) {
-                                Image(systemName: "xmark")
-                                    .font(.system(size: 20, weight: .semibold))
-                                    .foregroundColor(.white)
-                                    .frame(width: 44, height: 44)
-                                    .background(Color.black.opacity(0.7))
-                                    .clipShape(Circle())
-                            }
-                            .buttonStyle(.plain)
-                            .padding(Spacing.lg)
-
-                            Spacer()
-                        }
-                        Spacer()
-                    }
-                    .zIndex(999)  // Keep on top
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-                }
-            #endif
-
-            // macOS: Persistent close button always visible in top-left corner.
-            // Does NOT depend on the HUD being visible — prevents accidental window closure.
-            #if os(macOS)
-                VStack {
-                    HStack {
-                        Button(action: {
-                            libraryViewModel.readingComic = nil
-                        }) {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(.white)
-                                .frame(width: 31, height: 31)
-                                .background(Color.black.opacity(closeButtonHovered ? 0.75 : 0.2))
-                                .clipShape(Circle())
-                        }
-                        .buttonStyle(.plain)
-                        .help("Close Reader (Esc)")
-                        .onHover { hovering in
-                            withAnimation(.easeInOut(duration: 0.15)) {
-                                closeButtonHovered = hovering
-                            }
-                        }
-                        .opacity(closeButtonHovered ? 1.0 : 0.45)
-                        .animation(.easeInOut(duration: 0.15), value: closeButtonHovered)
-                        .padding(10)
-
-                        Spacer()
-                    }
-                    Spacer()
-                }
-                .zIndex(1000)  // Always on top
-            #endif
         }
         .task {
             print("📖 [ComicReaderView] .task triggered - about to load comic")
@@ -223,6 +165,17 @@ struct ComicReaderView: View {
         #else
             .statusBar(hidden: !controlsVisible)
             .navigationBarHidden(true)
+            .onAppear {
+                // Set initial spread mode based on current orientation
+                viewModel.isSpreadMode = (horizontalSizeClass == .regular)
+            }
+            .onChange(of: horizontalSizeClass) { _, newValue in
+                // Auto-switch page mode when orientation changes:
+                // landscape (regular) → two-page spread, portrait (compact) → single page
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    viewModel.isSpreadMode = (newValue == .regular)
+                }
+            }
         #endif
         .onReceive(NotificationCenter.default.publisher(for: .scoToggleControls)) { _ in
             handleTapToToggleControls()

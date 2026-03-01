@@ -310,8 +310,10 @@ final class LibraryViewModel: ObservableObject {
                         relativeTo: nil
                     )
                 #else
+                    // .minimalBookmark creates a resolvable bookmark on iOS/iPadOS.
+                    // Empty options [] produce a non-resolvable bookmark — do NOT use [].
                     let bookmarkData = try? url.bookmarkData(
-                        options: [],
+                        options: .minimalBookmark,
                         includingResourceValuesForKeys: nil,
                         relativeTo: nil
                     )
@@ -403,6 +405,12 @@ final class LibraryViewModel: ObservableObject {
                     do {
                         // Avoid overwriting an existing file with the same clean name
                         if !FileManager.default.fileExists(atPath: newURL.path) {
+                            // Ensure destination directory exists before moving
+                            try? FileManager.default.createDirectory(
+                                at: newURL.deletingLastPathComponent(),
+                                withIntermediateDirectories: true,
+                                attributes: nil
+                            )
                             try FileManager.default.moveItem(at: url, to: newURL)
                             extractedComic.filePath = newURL
                             extractedComic.fileName = newFileName
@@ -412,6 +420,12 @@ final class LibraryViewModel: ObservableObject {
                                     options: [
                                         .withSecurityScope, .securityScopeAllowOnlyReadAccess,
                                     ],
+                                    includingResourceValuesForKeys: nil,
+                                    relativeTo: nil
+                                )
+                            #else
+                                extractedComic.bookmarkData = try? newURL.bookmarkData(
+                                    options: .minimalBookmark,
                                     includingResourceValuesForKeys: nil,
                                     relativeTo: nil
                                 )
@@ -607,8 +621,10 @@ final class LibraryViewModel: ObservableObject {
                     relativeTo: nil
                 )
             #else
+                // .minimalBookmark creates a resolvable bookmark on iOS/iPadOS.
+                // Empty options [] produce a non-resolvable bookmark — do NOT use [].
                 let bookmarkData = try? fileURL.bookmarkData(
-                    options: [],
+                    options: .minimalBookmark,
                     includingResourceValuesForKeys: nil,
                     relativeTo: nil
                 )

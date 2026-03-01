@@ -195,11 +195,57 @@ class ReaderViewModel: ObservableObject {
                 print("[ATTEMPT #\(currentAttempt)] No bookmark data — attempting to create one")
                 return try refreshAndReturnURL(staleURL: comic.resolvedURL, comic: comic)
             }
-        #endif
+        #else
+            // iOS / iPadOS: resolve bookmark and start security-scoped access
+            if let bookmarkData = comic.bookmarkData {
+                print(
+                    "[ATTEMPT #\(currentAttempt)] [iOS] Attempting to resolve bookmark (\(bookmarkData.count) bytes)"
+                )
+                var isStale = false
+                do {
+                    let resolvedURL = try URL(
+                        resolvingBookmarkData: bookmarkData,
+                        options: .withoutUI,
+                        relativeTo: nil,
+                        bookmarkDataIsStale: &isStale
+                    )
+                    print(
+                        "[ATTEMPT #\(currentAttempt)] [iOS] Bookmark resolved. Is stale: \(isStale)"
+                    )
 
-        // For iOS or files without bookmarks, just use the original URL
-        print("[ATTEMPT #\(currentAttempt)] Using original URL (no bookmark)")
-        return comic.resolvedURL
+                    let started = resolvedURL.startAccessingSecurityScopedResource()
+                    print("[ATTEMPT #\(currentAttempt)] [iOS] Security access started: \(started)")
+                    if started {
+                        cleanupURL = resolvedURL
+                    }
+
+                    if isStale {
+                        // Refresh bookmark and notify LibraryViewModel to persist it
+                        if let freshBookmark = try? resolvedURL.bookmarkData(
+                            options: .minimalBookmark,
+                            includingResourceValuesForKeys: nil,
+                            relativeTo: nil)
+                        {
+                            NotificationCenter.default.post(
+                                name: Self.bookmarkRefreshedNotification,
+                                object: nil,
+                                userInfo: ["comicID": comic.id, "bookmarkData": freshBookmark]
+                            )
+                        }
+                    }
+
+                    return resolvedURL
+                } catch {
+                    print(
+                        "[ATTEMPT #\(currentAttempt)] [iOS] Failed to resolve bookmark: \(error). Falling back to raw URL."
+                    )
+                }
+            }
+
+            // iOS fallback: raw URL (works for bundled files; handled above for non-bundled)
+            print("[ATTEMPT #\(currentAttempt)] [iOS] Using original URL (no bookmark / fallback)")
+            return comic.resolvedURL
+        #endif
     }
 
     /// Attempts to access `staleURL`, creates a fresh security-scoped bookmark,
@@ -402,13 +448,12 @@ class ReaderViewModel: ObservableObject {
         // Cancel background loading task
         backgroundLoadTask?.cancel()
 
-        // Stop accessing security-scoped resource when done (using stored URL)
-        #if os(macOS)
-            if let url = cleanupURL {
-                url.stopAccessingSecurityScopedResource()
-                print("🧹 Released security access for: \(url.lastPathComponent)")
-            }
-        #endif
+        // Stop accessing security-scoped resource when done (using stored URL).
+        // Applies to both macOS and iOS — each platform starts access in resolveFileURL.
+        if let url = cleanupURL {
+            url.stopAccessingSecurityScopedResource()
+            print("🧹 Released security access for: \(url.lastPathComponent)")
+        }
     }
 
     // MARK: - Navigation
