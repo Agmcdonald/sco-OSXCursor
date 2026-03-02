@@ -17,6 +17,7 @@ struct SCO_OSXCursorApp: App {
         print("[App] ✅ App initialization complete")
     }
 
+    @Environment(\.openWindow) private var openWindow
     @StateObject private var settingsViewModel = SettingsViewModel()
 
     var body: some Scene {
@@ -26,6 +27,25 @@ struct SCO_OSXCursorApp: App {
                 .preferredColorScheme(settingsViewModel.settings.theme.colorScheme)
         }
         .defaultSize(width: AppLayout.defaultWindowWidth, height: AppLayout.defaultWindowHeight)
+        #if os(macOS)
+            .commands {
+                CommandGroup(replacing: .help) {
+                    Button("Super Comic Organizer Help") {
+                        openWindow(id: "user-manual")
+                    }
+                    .keyboardShortcut("?", modifiers: .command)
+                }
+            }
+        #endif
+
+        #if os(macOS)
+            Window("User Manual", id: "user-manual") {
+                UserManualView()
+                    .environmentObject(settingsViewModel)
+            }
+            .defaultSize(width: 800, height: 900)
+            .handlesExternalEvents(matching: Set(arrayLiteral: "user-manual"))
+        #endif
     }
 }
 

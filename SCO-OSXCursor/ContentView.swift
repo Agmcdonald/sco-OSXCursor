@@ -27,6 +27,7 @@ struct ContentView: View {
         case learning = "Learning"
         case knowledge = "Knowledge"
         case maintenance = "Maintenance"
+        case userManual = "User Manual"
         case settings = "Settings"
 
         var icon: String {
@@ -37,6 +38,7 @@ struct ContentView: View {
             case .learning: return "brain.head.profile"
             case .knowledge: return "book.closed"
             case .maintenance: return "wrench.and.screwdriver"
+            case .userManual: return "questionmark.circle"
             case .settings: return "gear"
             }
         }
@@ -101,6 +103,8 @@ struct ContentView: View {
                 subtitle: "Database and file maintenance tools will appear here",
                 icon: "wrench.and.screwdriver"
             )
+        case .userManual:
+            UserManualView()
         case .settings:
             SettingsView()
         }
@@ -159,7 +163,10 @@ struct SidebarView: View {
             // Navigation items
             ScrollView {
                 VStack(spacing: 4) {
-                    ForEach(ContentView.Tab.allCases, id: \.self) { tab in
+                    ForEach(
+                        ContentView.Tab.allCases.filter { $0 != .settings && $0 != .userManual },
+                        id: \.self
+                    ) { tab in
                         Button {
                             selectedTab = tab
                         } label: {
@@ -177,7 +184,37 @@ struct SidebarView: View {
 
             Spacer()
 
-            // Bottom section: Theme toggle
+            // Bottom section: Settings, User Manual, Theme toggle
+            Divider()
+                .background(BorderColors.subtle)
+
+            VStack(spacing: 4) {
+                Button {
+                    selectedTab = .settings
+                } label: {
+                    SidebarItem(
+                        icon: ContentView.Tab.settings.icon,
+                        title: ContentView.Tab.settings.rawValue,
+                        isSelected: selectedTab == .settings
+                    )
+                }
+                .buttonStyle(.plain)
+
+                #if os(iOS)
+                    Button {
+                        selectedTab = .userManual
+                    } label: {
+                        SidebarItem(
+                            icon: ContentView.Tab.userManual.icon,
+                            title: ContentView.Tab.userManual.rawValue,
+                            isSelected: selectedTab == .userManual
+                        )
+                    }
+                    .buttonStyle(.plain)
+                #endif
+            }
+            .padding(.vertical, Spacing.sm)
+
             Divider()
                 .background(BorderColors.subtle)
 

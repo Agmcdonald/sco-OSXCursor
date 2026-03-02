@@ -204,6 +204,9 @@ struct ComicPageView: View {
                 debugLog(
                     "[\(platform)][ComicPageView] 📍 Drag ended: scale=\(scale), dx=\(dx), dy=\(dy)")
 
+                // Compute distance once — used both by the zoom guard and iOS swipe fallback below
+                let distance = hypot(dx, dy)
+
                 // If zoomed, finish pan and return (no page turn, no swipe detection)
                 if scale > 1.01 {
                     debugLog("[\(platform)][ComicPageView] → Finishing pan (zoomed)")
@@ -213,9 +216,8 @@ struct ComicPageView: View {
                     )
                     lastOffset = clamped(offset: finalOffset, in: geo, scale: scale)
 
-                    // FIXED: When zoomed, ALL taps toggle controls (no page turns)
-                    // Check if this was essentially a tap (minimal movement)
-                    let distance = hypot(dx, dy)
+                    // When zoomed, a tiny movement is a tap → toggle controls only
+                    // (no page turn regardless of tap position)
                     if distance < 5 {
                         debugLog(
                             "[\(platform)][ComicPageView] 👆 Tap while zoomed → toggle controls only"
@@ -226,16 +228,11 @@ struct ComicPageView: View {
                 }
 
                 #if os(iOS)
-                    // FIXED: Check if this was a tap FIRST (minimal movement)
-                    let distance = hypot(dx, dy)
+                    // NOTE: Pure taps are now handled globally by SpreadView's hit-zone
+                    // overlay (full spread width). ComicPageView only handles swipes here.
+                    // `distance` is declared above, before the zoom guard.
 
-                    if distance < 10 {
-                        // Pure tap - handle immediately
-                        handleTap(location: value.startLocation, geo: geo)
-                        return  // Exit early - don't try swipe detection
-                    }
-
-                    // Not a tap - try swipe detection
+                    // Try swipe detection (taps fall through to SpreadView's overlay)
                     let isHorizontal = abs(dx) > abs(dy)
 
                     if isHorizontal && abs(dx) >= swipeThreshold {
@@ -249,15 +246,11 @@ struct ComicPageView: View {
                             debugLog(
                                 "[\(platform)][ComicPageView] ❌ Too diagonal: ratio=\(String(format: "%.3f", ratio)) >= \(maxDiagonalRatio)"
                             )
-
-                            // Diagonal gesture rejected - treat as tap if close enough
-                            if distance < 50 {
-                                handleTap(location: value.startLocation, geo: geo)
-                            }
+                            // Diagonal gesture rejected — let SpreadView's overlay handle it
                             return
                         }
 
-                        // Valid swipe!
+                        // Valid horizontal swipe!
                         if dx < 0 {
                             debugLog(
                                 "[\(platform)][ComicPageView] ⬅️ SWIPE LEFT accepted: dx=\(dx), ratio=\(String(format: "%.3f", ratio))"
@@ -272,57 +265,20 @@ struct ComicPageView: View {
                         return
                     }
 
-                    // Not a swipe - maybe a small tap-like gesture
-                    if distance < 50 {
-                        handleTap(location: value.startLocation, geo: geo)
+                    // Short movement but not a qualifying swipe — let SpreadView handle it
+                    if distance < swipeThreshold {
+                        debugLog(
+                            "[\(platform)][ComicPageView] ℹ️ Short drag (\(Int(distance))pt) — deferring to SpreadView overlay"
+                        )
                     } else {
                         debugLog(
-                            "[\(platform)][ComicPageView] ❌ Below threshold: |dx|=\(abs(dx)) < threshold=\(swipeThreshold)"
+                            "[\(platform)][ComicPageView] ❌ Below swipe threshold: |dx|=\(abs(dx)) < \(swipeThreshold)"
                         )
                     }
                 #else
                     debugLog("[\(platform)][ComicPageView] ⚠️ iOS guard blocked swipe (macOS build)")
                 #endif
             }
-    }
-
-    /// FIXED: Handle tap gestures with edge zone detection
-    /// Changes from old version:
-    /// 1. Uses absolute edge widths (100/150pt) instead of percentages (25%)
-    /// 2. ONLY posts toggle controls notification in center zone
-    /// 3. Edge taps call onSwipeLeft/onSwipeRight (page turns)
-    private func handleTap(location: CGPoint, geo: GeometryProxy) {
-        let tapX = location.x
-        let width = geo.size.width
-
-        // Define zones based on width fractions
-        // Left 33% = Back
-        // Right 66% = Forward
-        // Middle 30% (centered) = Toggle (overrides others)
-
-        let leftLimit = width * 0.33
-        let toggleStart = width * 0.35
-        let toggleEnd = width * 0.65
-
-        debugLog(
-            "[\(platform)][ComicPageView] 👆 Tap at x=\(Int(tapX))/\(Int(width)) (zones: Back < \(Int(leftLimit)), Toggle \(Int(toggleStart))-\(Int(toggleEnd)), Forward > \(Int(leftLimit)))"
-        )
-
-        // 1. Check Toggle Zone first (takes precedence in the middle)
-        if tapX >= toggleStart && tapX <= toggleEnd {
-            debugLog("[\(platform)][ComicPageView] 👆 Center tap → toggle controls")
-            NotificationCenter.default.post(name: .scoToggleControls, object: nil)
-        }
-        // 2. Check Back Zone
-        else if tapX < leftLimit {
-            debugLog("[\(platform)][ComicPageView] 👆 Left 1/3 tap → previous page")
-            onSwipeRight()
-        }
-        // 3. Everything else (Right 2/3) is Forward
-        else {
-            debugLog("[\(platform)][ComicPageView] 👆 Right 2/3 tap → next page")
-            onSwipeLeft()
-        }
     }
 
     /// Magnification gesture with clamping and scale snapping

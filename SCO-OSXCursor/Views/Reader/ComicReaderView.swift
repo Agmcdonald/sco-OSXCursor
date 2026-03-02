@@ -202,35 +202,66 @@ struct ComicReaderView: View {
     // MARK: - Reader View
     private func readerView(_ comicBook: ComicBook) -> some View {
         ZStack {
-            // Reader mode: single-page or two-page spread
-            if viewModel.isSpreadMode {
-                SpreadReaderView(
-                    spreads: viewModel.pageSpreads,
-                    currentSpreadIndex: Binding(
-                        get: { spreadIndexForPage(viewModel.currentPage) },
-                        set: { newSpreadIndex in
-                            viewModel.currentPage = pageForSpreadIndex(newSpreadIndex)
-                        }
-                    ),
-                    comic: currentComic,
-                    viewModel: viewModel,
-                    onBeginDragging: beginDragging,
-                    onEndDragging: endDragging,
-                    onBeginPinching: beginPinching,
-                    onEndPinching: endPinching
-                )
-            } else {
-                PagedReaderView(
-                    pages: viewModel.allPages,
-                    currentPage: $viewModel.currentPage,
-                    comic: currentComic,
-                    viewModel: viewModel,
-                    onBeginDragging: beginDragging,
-                    onEndDragging: endDragging,
-                    onBeginPinching: beginPinching,
-                    onEndPinching: endPinching
-                )
+            // Reader content (single or two-page spread)
+            Group {
+                if viewModel.isSpreadMode {
+                    SpreadReaderView(
+                        spreads: viewModel.pageSpreads,
+                        currentSpreadIndex: Binding(
+                            get: { spreadIndexForPage(viewModel.currentPage) },
+                            set: { newSpreadIndex in
+                                viewModel.currentPage = pageForSpreadIndex(newSpreadIndex)
+                            }
+                        ),
+                        comic: currentComic,
+                        viewModel: viewModel,
+                        onBeginDragging: beginDragging,
+                        onEndDragging: endDragging,
+                        onBeginPinching: beginPinching,
+                        onEndPinching: endPinching
+                    )
+                } else {
+                    PagedReaderView(
+                        pages: viewModel.allPages,
+                        currentPage: $viewModel.currentPage,
+                        comic: currentComic,
+                        viewModel: viewModel,
+                        onBeginDragging: beginDragging,
+                        onEndDragging: endDragging,
+                        onBeginPinching: beginPinching,
+                        onEndPinching: endPinching
+                    )
+                }
             }
+            // MARK: Unified Global Tap Overlay
+            //
+            // A simultaneousGesture ensures this tap handler COEXISTS with
+            // DragGesture swipes in ComicPageView — neither cancels the other.
+            //
+            // We use DragGesture(minimumDistance: 0) because TapGesture doesn't
+            // expose the tap location. A movement < 10pt is classified as a tap.
+            //
+            // This single overlay covers both single-page and spread modes,
+            // eliminating the "deference gap" (missing receiver in single-page mode)
+            // and the "lockdown" (overlay blocking swipes in dual-page mode).
+            #if os(iOS)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                        .onEnded { value in
+                            let dx = value.translation.width
+                            let dy = value.translation.height
+                            let distance = hypot(dx, dy)
+
+                            // Only classify as a tap if movement is tiny
+                            guard distance < 10 else { return }
+
+                            // Don't act during active drag / pinch (cooldown state)
+                            guard !isDragging && !isPinching else { return }
+
+                            handleGlobalTap(at: value.startLocation)
+                        }
+                )
+            #endif
 
             // Controls overlay
             ReaderControlsOverlay(
@@ -280,6 +311,50 @@ struct ComicReaderView: View {
             )
         }
     }
+
+    // MARK: - Global Tap Handler (iOS)
+    //
+    // Zones are computed from the full screen width so the spine area in dual-page
+    // mode always falls in the "centre = toggle controls" zone.
+    //
+    //   Left  0–15%  → Previous page
+    //   Right 85–100% → Next page
+    //   Centre 15–85% → Toggle controls / HUD
+    #if os(iOS)
+        private func handleGlobalTap(at location: CGPoint) {
+            let screenWidth = UIScreen.main.bounds.width
+            guard screenWidth > 0 else { return }
+            let percent = location.x / screenWidth
+
+            #if DEBUG
+                print(
+                    "👆 [ComicReaderView] Global tap x=\(Int(location.x))/\(Int(screenWidth)) (\(String(format: "%.0f", percent * 100))%)"
+                )
+            #endif
+
+            let outerZone: CGFloat = 0.15
+
+            switch percent {
+            case ..<outerZone:
+                #if DEBUG
+                    print("⬅️ [ComicReaderView] Left zone → previous page")
+                #endif
+                viewModel.turn(by: -1)
+
+            case (1.0 - outerZone)...:
+                #if DEBUG
+                    print("➡️ [ComicReaderView] Right zone → next page")
+                #endif
+                viewModel.turn(by: +1)
+
+            default:
+                #if DEBUG
+                    print("🎛️ [ComicReaderView] Centre zone → toggle controls")
+                #endif
+                NotificationCenter.default.post(name: .scoToggleControls, object: nil)
+            }
+        }
+    #endif
 
     // MARK: - Navigation Menu Overlay (iPad)
     #if os(iOS)
