@@ -90,7 +90,12 @@ struct ComicReaderView: View {
         @State private var showLocateFilePrompt = false
     #endif
     #if os(iOS)
-        @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+        // Tracks whether the user has manually overridden the auto-orientation layout.
+        // When true, device rotation won't fight their chosen spread mode.
+        @State private var isManualLayoutOverride = false
+        // Swipe-down-to-dismiss gesture state
+        @State private var dragOffset: CGFloat = 0
+        @State private var dismissDragActive = false
     #endif
 
     init(comic: Comic) {
@@ -116,11 +121,72 @@ struct ComicReaderView: View {
             }
 
         }
+        #if os(iOS)
+        // Swipe-down drag handle pill — fades in as user starts pulling down
+        .overlay(alignment: .top) {
+            Capsule()
+                .fill(Color.white.opacity(0.5))
+                .frame(width: 36, height: 5)
+                .padding(.top, 10)
+                .opacity(Double(min(dragOffset / 40.0, 1.0)))
+                .allowsHitTesting(false)
+        }
+        // Drag visual: follow finger downward only
+        .offset(y: max(0, dragOffset))
+        // Slight scale-down as a depth cue while dragging
+        .scaleEffect(dragOffset > 0 ? max(0.92, 1.0 - dragOffset / 1800.0) : 1.0)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 16)
+                .onChanged { value in
+                    // Only activate when gesture is clearly vertical downward
+                    guard value.translation.height > 0,
+                          value.translation.height > abs(value.translation.width) * 1.2
+                    else { return }
+                    dismissDragActive = true
+                    dragOffset = value.translation.height
+                }
+                .onEnded { value in
+                    guard dismissDragActive else { return }
+                    dismissDragActive = false
+
+                    let predictedEnd = value.predictedEndTranslation.height
+                    let shouldDismiss = dragOffset > 130 || predictedEnd > 400
+
+                    if shouldDismiss {
+                        // Slide off screen, then close the cover
+                        withAnimation(.easeIn(duration: 0.22)) {
+                            dragOffset = 900
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+                            libraryViewModel.readingComic = nil
+                            dragOffset = 0
+                        }
+                    } else {
+                        // Snap back with a spring
+                        withAnimation(.spring(response: 0.38, dampingFraction: 0.75)) {
+                            dragOffset = 0
+                        }
+                    }
+                }
+        )
+        #endif
         .task {
             print("📖 [ComicReaderView] .task triggered - about to load comic")
             print("📖 [ComicReaderView] Comic: \(comic.fileName)")
-            await viewModel.loadComic(from: comic)
-            print("📖 [ComicReaderView] loadComic() returned")
+
+            #if os(iOS)
+                // Fast-path: if LibraryViewModel pre-fetched this comic, skip the spinner
+                if let prefetched = libraryViewModel.consumePrefetchedComicBook(for: comic.id) {
+                    viewModel.acceptPrefetched(prefetched, for: comic)
+                    print("📖 [ComicReaderView] ⚡ Using pre-fetched data — skipped spinner")
+                } else {
+                    await viewModel.loadComic(from: comic)
+                    print("📖 [ComicReaderView] loadComic() returned")
+                }
+            #else
+                await viewModel.loadComic(from: comic)
+                print("📖 [ComicReaderView] loadComic() returned")
+            #endif
 
             // Start auto-hide timer when reader loads
             resetAutoHideTimer()
@@ -163,18 +229,35 @@ struct ComicReaderView: View {
                 removeKeyboardMonitoring()
             }
         #else
-            .statusBar(hidden: !controlsVisible)
             .navigationBarHidden(true)
-            .onAppear {
-                // Set initial spread mode based on current orientation
-                viewModel.isSpreadMode = (horizontalSizeClass == .regular)
-            }
-            .onChange(of: horizontalSizeClass) { _, newValue in
-                // Auto-switch page mode when orientation changes:
-                // landscape (regular) → two-page spread, portrait (compact) → single page
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    viewModel.isSpreadMode = (newValue == .regular)
+            // Use a zero-size GeometryReader to observe real screen dimensions.
+            // horizontalSizeClass is .regular on iPad in BOTH portrait and landscape,
+            // so aspect-ratio is the only reliable orientation signal.
+            .background(
+                GeometryReader { geo in
+                    Color.clear
+                        .onAppear {
+                            guard !isManualLayoutOverride else { return }
+                            let isLandscape = geo.size.width > geo.size.height
+                            viewModel.isSpreadMode = isLandscape
+                            print("📐 [ComicReaderView] Initial orientation: \(isLandscape ? "landscape (spread)" : "portrait (single)")")
+                        }
+                        .onChange(of: geo.size) { _, newSize in
+                            guard !isManualLayoutOverride else {
+                                print("📐 [ComicReaderView] Rotation ignored — manual override active")
+                                return
+                            }
+                            let isLandscape = newSize.width > newSize.height
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                viewModel.isSpreadMode = isLandscape
+                            }
+                            print("📐 [ComicReaderView] Rotated — spread: \(isLandscape)")
+                        }
                 }
+            )
+            .onDisappear {
+                // Clear override so the next comic follows automatic orientation
+                isManualLayoutOverride = false
             }
         #endif
         .onReceive(NotificationCenter.default.publisher(for: .scoToggleControls)) { _ in
@@ -280,6 +363,13 @@ struct ComicReaderView: View {
                 isSpreadMode: $viewModel.isSpreadMode,
                 onUserInteraction: {
                     resetAutoHideTimer()
+                },
+                onUserToggledSpread: {
+                    #if os(iOS)
+                        // Lock in the user's manual choice; orientation changes won't override it
+                        isManualLayoutOverride = true
+                        print("📐 [ComicReaderView] Manual spread override enabled")
+                    #endif
                 }
             )
 

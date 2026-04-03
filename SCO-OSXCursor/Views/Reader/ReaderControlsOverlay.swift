@@ -22,6 +22,7 @@ struct ReaderControlsOverlay: View {
     @Binding var isFullScreen: Bool  // Fullscreen mode
     @Binding var isSpreadMode: Bool  // Two-page spread mode
     let onUserInteraction: () -> Void  // Called when user interacts
+    var onUserToggledSpread: (() -> Void)? = nil  // Called when user manually toggles spread mode
 
     var body: some View {
         ZStack {
@@ -140,6 +141,7 @@ struct ReaderControlsOverlay: View {
                 withAnimation(.easeInOut(duration: 0.3)) {
                     isSpreadMode.toggle()
                 }
+                onUserToggledSpread?()  // Notify parent of manual user toggle
                 onUserInteraction()
             }) {
                 Image(systemName: isSpreadMode ? "rectangle.split.2x1" : "rectangle")

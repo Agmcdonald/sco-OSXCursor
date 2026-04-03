@@ -434,6 +434,40 @@ class ReaderViewModel: ObservableObject {
         print(String(repeating: "=", count: 80) + "\n")
     }
 
+    // MARK: - Accept Pre-fetched Comic (iOS fast-path)
+
+    /// Injects an already-loaded ComicBook directly, skipping the loading spinner entirely.
+    /// Called by ComicReaderView when LibraryViewModel has a pre-fetched result ready.
+    #if os(iOS)
+        func acceptPrefetched(_ comicBook: ComicBook, for comic: Comic) {
+            isLoading = false
+            errorMessage = nil
+            loadingProgress = 1.0
+
+            self.comicBook = comicBook
+            isLazyLoaded = comicBook.isLazyLoaded
+            currentComic = comic
+            cleanupComicID = comic.id
+            cleanupTotalPages = comicBook.totalPages
+
+            // Populate lazy-loaded pages cache if needed
+            if comicBook.isLazyLoaded {
+                for page in comicBook.pages {
+                    loadedPages[page.pageNumber - 1] = page
+                }
+            }
+
+            // Restore saved progress
+            if let savedProgress = progressTracker.loadProgress(for: comic.id) {
+                currentPage = savedProgress.currentPage
+            } else {
+                currentPage = comic.currentPage
+            }
+
+            print("[ReaderViewModel] ⚡ Accepted pre-fetched comic — no spinner shown")
+        }
+    #endif
+
     // MARK: - Cleanup
     deinit {
         // Save reading progress before closing (using stored values, not MainActor properties)

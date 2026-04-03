@@ -6,6 +6,10 @@ import SwiftUI
     import AppKit
 #endif
 
+#if os(iOS)
+    import UIKit
+#endif
+
 @MainActor
 final class LibraryViewModel: ObservableObject {
 
@@ -16,6 +20,13 @@ final class LibraryViewModel: ObservableObject {
 
     // ✅ Track the comic currently being read to present in full screen
     @Published var readingComic: Comic?
+
+    // ✅ Pre-fetched comic data for instant reader launch (iOS only)
+    #if os(iOS)
+        @Published var prefetchedComicBook: ComicBook?
+        private(set) var prefetchedForComicID: UUID?
+        private var prefetchTask: Task<Void, Never>?
+    #endif
 
     // Import tracking
     @Published var isImporting: Bool = false
@@ -561,6 +572,89 @@ final class LibraryViewModel: ObservableObject {
             }
         }
     }
+
+    // MARK: - Pre-fetching (iOS only)
+
+    #if os(iOS)
+        /// Begin loading a comic in the background so the reader can open without a spinner.
+        /// Call this just before setting `readingComic` — the head start is usually enough
+        /// for small-to-medium CBZ files to be fully in memory by the time the view appears.
+        func prefetchComic(_ comic: Comic) {
+            // Cancel any in-flight pre-fetch for a different comic
+            if prefetchedForComicID != comic.id {
+                prefetchTask?.cancel()
+                prefetchedComicBook = nil
+                prefetchedForComicID = nil
+            }
+
+            // Don't re-fetch if we already have this comic ready
+            if prefetchedForComicID == comic.id, prefetchedComicBook != nil { return }
+
+            prefetchedForComicID = comic.id
+
+            prefetchTask = Task.detached(priority: .userInitiated) { [weak self] in
+                guard let self = self else { return }
+
+                // Resolve file URL
+                var fileURL: URL
+                var didStartAccess = false
+                if let bookmarkData = comic.bookmarkData {
+                    var isStale = false
+                    if let resolved = try? URL(
+                        resolvingBookmarkData: bookmarkData,
+                        options: .withoutUI,
+                        relativeTo: nil,
+                        bookmarkDataIsStale: &isStale
+                    ) {
+                        fileURL = resolved
+                        didStartAccess = resolved.startAccessingSecurityScopedResource()
+                    } else {
+                        fileURL = comic.resolvedURL
+                    }
+                } else {
+                    // Bundled or plain URL
+                    fileURL = comic.resolvedURL
+                }
+
+                defer {
+                    // Pre-fetch only needs access during loading; ReaderViewModel manages its own
+                    if didStartAccess { fileURL.stopAccessingSecurityScopedResource() }
+                }
+
+                let reader: ComicReaderProtocol
+                switch comic.fileType {
+                case .pdf: reader = PDFReader()
+                case .cbr: reader = CBRReader()
+                default:   reader = CBZReader()
+                }
+
+                guard !Task.isCancelled else { return }
+
+                do {
+                    let comicBook = try await reader.loadComic(from: fileURL)
+                    guard !Task.isCancelled else { return }
+                    await MainActor.run {
+                        // Only store if the ID still matches (user hasn't changed selection)
+                        if self.prefetchedForComicID == comic.id {
+                            self.prefetchedComicBook = comicBook
+                            print("[LibraryViewModel] ⚡ Pre-fetch complete for: \(comic.fileName)")
+                        }
+                    }
+                } catch {
+                    print("[LibraryViewModel] ⚠️ Pre-fetch failed for \(comic.fileName): \(error)")
+                }
+            }
+        }
+
+        /// Consume (and clear) the pre-fetched comic book, returning it if it matches.
+        func consumePrefetchedComicBook(for comicID: UUID) -> ComicBook? {
+            guard prefetchedForComicID == comicID, let book = prefetchedComicBook else { return nil }
+            prefetchedComicBook = nil
+            prefetchedForComicID = nil
+            print("[LibraryViewModel] ✅ Consumed pre-fetched comic — skipping load spinner")
+            return book
+        }
+    #endif
 
     // MARK: - Knowledge Base Integration
 

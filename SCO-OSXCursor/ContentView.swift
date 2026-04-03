@@ -56,17 +56,27 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .navigationSplitViewStyle(.balanced)
-        .overlay {
-            if let comic = libraryViewModel.readingComic {
+        #if os(iOS)
+            // iOS/iPadOS: true full-screen cover — hides system chrome completely
+            .fullScreenCover(item: $libraryViewModel.readingComic) { comic in
                 ComicReaderView(comic: comic)
                     .environmentObject(libraryViewModel)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .transition(.opacity)
-                    .zIndex(100)
+                    .ignoresSafeArea()                          // Art fills the entire glass
+                    .statusBarHidden(true)                      // Always hide clock/battery
+                    .persistentSystemOverlays(.hidden)          // Always hide home bar
             }
-        }
-        .animation(.easeInOut(duration: 0.25), value: libraryViewModel.readingComic == nil)
-        #if os(macOS)
+        #else
+            // macOS: overlay on top of the split view (preserve existing behaviour)
+            .overlay {
+                if let comic = libraryViewModel.readingComic {
+                    ComicReaderView(comic: comic)
+                        .environmentObject(libraryViewModel)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .transition(.opacity)
+                        .zIndex(100)
+                }
+            }
+            .animation(.easeInOut(duration: 0.25), value: libraryViewModel.readingComic == nil)
             .onChange(of: libraryViewModel.readingComic) { _, newComic in
                 if newComic == nil {
                     // Reader was dismissed — bring the main window back into focus

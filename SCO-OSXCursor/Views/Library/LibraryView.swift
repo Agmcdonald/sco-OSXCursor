@@ -1447,8 +1447,26 @@ struct LibraryView: View {
         print("\n🎯 [LibraryView] User tapped comic: \(comic.fileName)")
         print("🎯 [LibraryView] File type: \(comic.fileType.rawValue)")
         print("🎯 [LibraryView] Has bookmark: \(comic.bookmarkData != nil)")
-        print("🎯 [LibraryView] Setting viewModel.readingComic (triggers full screen reader)")
-        viewModel.readingComic = comic
+
+        #if os(iOS)
+            // Start pre-fetching immediately so the reader has a head start.
+            // The reader will consume this data and skip its loading spinner.
+            viewModel.prefetchComic(comic)
+            print("🎯 [LibraryView] ⚡ Pre-fetch triggered — opening reader")
+
+            // Give the CPU a 200ms head start to decompress (especially helpful for CBR).
+            // This usually eliminates the visible spinner entirely for most file sizes.
+            Task {
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                await MainActor.run {
+                    print("🎯 [LibraryView] Setting viewModel.readingComic after 200ms head start")
+                    viewModel.readingComic = comic
+                }
+            }
+        #else
+            print("🎯 [LibraryView] Setting viewModel.readingComic (triggers full screen reader)")
+            viewModel.readingComic = comic
+        #endif
     }
 
     private func editComic(_ comic: Comic) {
