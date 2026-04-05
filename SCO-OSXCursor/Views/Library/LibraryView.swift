@@ -23,9 +23,17 @@ private struct ComicID: Identifiable {
 @MainActor
 struct LibraryView: View {
     @ObservedObject var viewModel: LibraryViewModel
+    @Binding var columnVisibility: NavigationSplitViewVisibility
+    var onAddComicsOrganize: (() -> Void)?
 
-    init(viewModel: LibraryViewModel) {
+    init(
+        viewModel: LibraryViewModel,
+        columnVisibility: Binding<NavigationSplitViewVisibility> = .constant(.all),
+        onAddComicsOrganize: (() -> Void)? = nil
+    ) {
         self.viewModel = viewModel
+        self._columnVisibility = columnVisibility
+        self.onAddComicsOrganize = onAddComicsOrganize
     }
 
     @State private var searchText = ""
@@ -45,6 +53,8 @@ struct LibraryView: View {
     @State private var isDropTargeted = false
     @State private var showingDeleteConfirmation = false
     @State private var editingComicID: ComicID?
+    @State private var focusedComic: Comic?
+    @State private var isInspectorPresented = false
 
     enum ViewMode {
         case grid, list, publisher
@@ -291,6 +301,50 @@ struct LibraryView: View {
                 .frame(width: 400, height: 200)
                 .padding()
             }
+        }
+        .onChange(of: focusedComic) { _, _ in
+            // Selection alone no longer opens the inspector —
+            // the user must tap the Info (ⓘ) button explicitly.
+        }
+        .onChange(of: isInspectorPresented) { _, newValue in
+            if !newValue {
+                // Inspector closed — restore sidebar but keep the comic focused
+                // so the user can re-summon the inspector without re-clicking.
+                columnVisibility = .all
+            } else {
+                // Inspector opening — collapse left sidebar for more room
+                columnVisibility = .detailOnly
+            }
+        }
+        .inspector(isPresented: $isInspectorPresented) {
+            if let comic = focusedComic {
+                ComicInspectorView(comic: comic, onDismiss: {
+                    isInspectorPresented = false
+                })
+                .inspectorColumnWidth(min: 250, ideal: 300, max: 400)
+            } else {
+                Text("No Comic Selected")
+                    .foregroundColor(TextColors.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(BackgroundColors.secondary)
+            }
+        }
+        .onKeyPress(.space) {
+            // Only act when no sheet / overlay is capturing keyboard input
+            guard editingComicID == nil, !showingFilters else { return .ignored }
+            if let comic = focusedComic, !isSelectionMode {
+                openReader(for: comic)
+                return .handled
+            }
+            return .ignored
+        }
+        .onKeyPress(.return) {
+            guard editingComicID == nil, !showingFilters else { return .ignored }
+            if let comic = focusedComic, !isSelectionMode {
+                openReader(for: comic)
+                return .handled
+            }
+            return .ignored
         }
     }
 
@@ -648,22 +702,41 @@ struct LibraryView: View {
                         .foregroundColor(TextColors.secondary)
                     }
                 } else {
-                    // Add Comics button
-                    Button(action: {
-                        showingFilePicker = true
-                    }) {
-                        HStack(spacing: Spacing.sm) {
-                            Image(systemName: "plus")
-                            Text("Add Comics")
-                                .font(Typography.button)
+                    HStack(spacing: Spacing.md) {
+                        // Quick Add button
+                        Button(action: {
+                            showingFilePicker = true
+                        }) {
+                            HStack(spacing: Spacing.sm) {
+                                Image(systemName: "plus")
+                                Text("Quick Add")
+                                    .font(Typography.button)
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, Spacing.lg)
+                            .padding(.vertical, Spacing.sm)
+                            .background(AccentColors.primary)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
-                        .foregroundColor(.white)
-                        .padding(.horizontal, Spacing.lg)
-                        .padding(.vertical, Spacing.sm)
-                        .background(AccentColors.primary)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .buttonStyle(.plain)
+
+                        // Add Comics (Organize) button
+                        Button(action: {
+                            onAddComicsOrganize?()
+                        }) {
+                            HStack(spacing: Spacing.sm) {
+                                Image(systemName: "folder.badge.plus")
+                                Text("Add Comics")
+                                    .font(Typography.button)
+                            }
+                            .foregroundColor(AccentColors.primary)
+                            .padding(.horizontal, Spacing.lg)
+                            .padding(.vertical, Spacing.sm)
+                            .background(AccentColors.primary.opacity(0.12))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
             }
 
@@ -680,6 +753,26 @@ struct LibraryView: View {
                     if !isSelectionMode {
                         selectButton
                     }
+                    // Info (ⓘ) button — enabled when a comic is focused
+                    Button(action: {
+                        if focusedComic != nil {
+                            isInspectorPresented.toggle()
+                        }
+                    }) {
+                        Image(systemName: isInspectorPresented ? "info.circle.fill" : "info.circle")
+                            .font(.system(size: 16))
+                            .foregroundColor(
+                                focusedComic != nil ? AccentColors.primary : TextColors.tertiary
+                            )
+                            .frame(width: 32, height: 32)
+                            .background(
+                                isInspectorPresented ? AccentColors.primary.opacity(0.12) : Color.clear
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(focusedComic == nil)
+                    .help(focusedComic == nil ? "Select a comic to view info" : (isInspectorPresented ? "Hide Info" : "Show Info"))
                     viewModeToggle
                 #else
                     // iPad/iOS: Compact "More" menu
@@ -912,6 +1005,24 @@ struct LibraryView: View {
                     ForEach(filteredAndSortedComics) { comic in
                         ZStack(alignment: .topLeading) {
                             ComicCardView(comic: comic)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(focusedComic?.id == comic.id ? AccentColors.primary : Color.clear, lineWidth: 3)
+                                )
+                                #if os(macOS)
+                                .onTapGesture(count: 2) {
+                                    if !isSelectionMode {
+                                        openReader(for: comic)
+                                    }
+                                }
+                                .onTapGesture(count: 1) {
+                                    if isSelectionMode {
+                                        toggleSelection(for: comic.id)
+                                    } else {
+                                        focusedComic = comic
+                                    }
+                                }
+                                #else
                                 .onTapGesture {
                                     if isSelectionMode {
                                         toggleSelection(for: comic.id)
@@ -919,6 +1030,7 @@ struct LibraryView: View {
                                         openReader(for: comic)
                                     }
                                 }
+                                #endif
                                 .contextMenu {
                                     Button(action: { openReader(for: comic) }) {
                                         Label("Read", systemImage: "book.fill")
@@ -1005,6 +1117,24 @@ struct LibraryView: View {
                             }
 
                             ComicRowView(comic: comic)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(focusedComic?.id == comic.id ? AccentColors.primary : Color.clear, lineWidth: 3)
+                                )
+                                #if os(macOS)
+                                .onTapGesture(count: 2) {
+                                    if !isSelectionMode {
+                                        openReader(for: comic)
+                                    }
+                                }
+                                .onTapGesture(count: 1) {
+                                    if isSelectionMode {
+                                        toggleSelection(for: comic.id)
+                                    } else {
+                                        focusedComic = comic
+                                    }
+                                }
+                                #else
                                 .onTapGesture {
                                     if isSelectionMode {
                                         toggleSelection(for: comic.id)
@@ -1012,6 +1142,7 @@ struct LibraryView: View {
                                         openReader(for: comic)
                                     }
                                 }
+                                #endif
                                 .contextMenu {
                                     Button(action: { openReader(for: comic) }) {
                                         Label("Read", systemImage: "book.fill")
@@ -1268,13 +1399,32 @@ struct LibraryView: View {
                 ForEach(group.comics) { comic in
                     ZStack(alignment: .topLeading) {
                         ComicCardView(comic: comic)
-                            .onTapGesture {
-                                if isSelectionMode {
-                                    toggleSelection(for: comic.id)
-                                } else {
-                                    openReader(for: comic)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(focusedComic?.id == comic.id ? AccentColors.primary : Color.clear, lineWidth: 3)
+                                )
+                                #if os(macOS)
+                                .onTapGesture(count: 2) {
+                                    if !isSelectionMode {
+                                        openReader(for: comic)
+                                    }
                                 }
-                            }
+                                .onTapGesture(count: 1) {
+                                    if isSelectionMode {
+                                        toggleSelection(for: comic.id)
+                                    } else {
+                                        focusedComic = comic
+                                    }
+                                }
+                                #else
+                                .onTapGesture {
+                                    if isSelectionMode {
+                                        toggleSelection(for: comic.id)
+                                    } else {
+                                        openReader(for: comic)
+                                    }
+                                }
+                                #endif
                             .contextMenu {
                                 Button(action: { openReader(for: comic) }) {
                                     Label("Read", systemImage: "book.fill")

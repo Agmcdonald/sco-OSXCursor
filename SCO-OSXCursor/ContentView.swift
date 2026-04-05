@@ -13,6 +13,7 @@ struct ContentView: View {
     @StateObject private var libraryViewModel: LibraryViewModel
     @StateObject private var organizeViewModel: OrganizeViewModel
     @State private var selectedTab: Tab = .library
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     init() {
         let libVM = LibraryViewModel(database: DatabaseManager.shared)
@@ -45,7 +46,7 @@ struct ContentView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             // Sidebar
             SidebarView(selectedTab: $selectedTab)
                 .environmentObject(settingsViewModel)
@@ -96,7 +97,13 @@ struct ContentView: View {
         case .dashboard:
             DashboardView(libraryViewModel: libraryViewModel)
         case .library:
-            LibraryView(viewModel: libraryViewModel)
+            LibraryView(
+                viewModel: libraryViewModel,
+                columnVisibility: $columnVisibility,
+                onAddComicsOrganize: {
+                    selectedTab = .organize
+                }
+            )
         case .organize:
             OrganizeView(viewModel: organizeViewModel)
         case .learning:
