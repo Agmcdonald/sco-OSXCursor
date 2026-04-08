@@ -306,6 +306,13 @@ struct LibraryView: View {
             // Selection alone no longer opens the inspector —
             // the user must tap the Info (ⓘ) button explicitly.
         }
+        .onChange(of: viewModel.comics) { _, newComics in
+            if let focused = focusedComic,
+               let updated = newComics.first(where: { $0.id == focused.id }) {
+                // Must update focusedComic because Comic's Equatable only checks ID
+                focusedComic = updated
+            }
+        }
         .onChange(of: isInspectorPresented) { _, newValue in
             if !newValue {
                 // Inspector closed — restore sidebar but keep the comic focused

@@ -390,6 +390,18 @@ struct ComicReaderView: View {
                     navigationMenuOverlay
                 }
             #endif
+
+            // Hidden Keyboard Shortcuts
+            Group {
+                Button("") { viewModel.turn(by: -1) }.keyboardShortcut(.leftArrow, modifiers: [])
+                Button("") { viewModel.turn(by: 1) }.keyboardShortcut(.rightArrow, modifiers: [])
+                Button("") { showControls() }.keyboardShortcut(.upArrow, modifiers: [])
+                Button("") { withAnimation { controlsVisible = false } }.keyboardShortcut(.downArrow, modifiers: [])
+                Button("") { handleTapToToggleControls() }.keyboardShortcut(.space, modifiers: [])
+                Button("") { libraryViewModel.readingComic = nil; dismiss() }.keyboardShortcut(.escape, modifiers: [])
+            }
+            .opacity(0)
+            .frame(width: 0, height: 0)
         }
         .sheet(isPresented: $showingReaderSettings) {
             InReaderSettingsView(

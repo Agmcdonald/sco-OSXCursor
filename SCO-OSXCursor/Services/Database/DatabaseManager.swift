@@ -179,6 +179,24 @@ final class DatabaseManager {
             print("[DatabaseManager] ✅ Migration v6_publisher_banners complete")
         }
 
+        // Version 7: Content Ratings
+        migrator.registerMigration("v7_content_ratings") { db in
+            print("[DatabaseManager] 🔄 Running migration: v7_content_ratings")
+            if try db.tableExists("comics") {
+                do {
+                    try db.alter(table: "comics") { t in
+                        t.add(column: "content_rating", .integer).notNull().defaults(to: 0)
+                    }
+                    print("[DatabaseManager] ✅ Added content_rating column")
+                } catch {
+                    print(
+                        "[DatabaseManager] ℹ️ content_rating column may already exist: \(error.localizedDescription)"
+                    )
+                }
+            }
+            print("[DatabaseManager] ✅ Migration v7_content_ratings complete")
+        }
+
         return migrator
     }
 
@@ -218,6 +236,7 @@ final class DatabaseManager {
             // Organization
             t.column("tags", .text)  // JSON array
             t.column("rating", .integer)
+            t.column("content_rating", .integer).notNull().defaults(to: 0)
             t.column("is_favorite", .boolean).notNull().defaults(to: false)
             t.column("preferred_transition", .text)
 
@@ -330,6 +349,19 @@ final class DatabaseManager {
         return try await dbQueue.read { db in
             try Comic
                 .filter(Column("status") == status.rawValue)
+                .fetchAll(db)
+        }
+    }
+
+    /// Fetch comics with specific content rating
+    func fetchComics(withContentRating rating: Comic.ContentRating) async throws -> [Comic] {
+        guard let dbQueue = dbQueue else {
+            throw DatabaseError.notInitialized
+        }
+
+        return try await dbQueue.read { db in
+            try Comic
+                .filter(Column("content_rating") == rating.rawValue)
                 .fetchAll(db)
         }
     }

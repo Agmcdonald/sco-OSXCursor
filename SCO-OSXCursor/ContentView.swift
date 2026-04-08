@@ -14,6 +14,7 @@ struct ContentView: View {
     @StateObject private var organizeViewModel: OrganizeViewModel
     @State private var selectedTab: Tab = .library
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
 
     init() {
         let libVM = LibraryViewModel(database: DatabaseManager.shared)
@@ -57,6 +58,12 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .navigationSplitViewStyle(.balanced)
+        .sheet(isPresented: Binding(
+            get: { !hasSeenWelcome },
+            set: { _ in hasSeenWelcome = true }
+        )) {
+            WelcomeSheet(hasSeenWelcome: $hasSeenWelcome)
+        }
         #if os(iOS)
             // iOS/iPadOS: true full-screen cover — hides system chrome completely
             .fullScreenCover(item: $libraryViewModel.readingComic) { comic in
@@ -125,6 +132,52 @@ struct ContentView: View {
         case .settings:
             SettingsView()
         }
+    }
+}
+
+// MARK: - Welcome Sheet
+struct WelcomeSheet: View {
+    @Binding var hasSeenWelcome: Bool
+    
+    var body: some View {
+        VStack(spacing: Spacing.xl) {
+            #if os(macOS)
+                if let logo = NSImage(named: "logo_SCO") {
+                    Image(nsImage: logo)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxHeight: 250)
+                }
+            #else
+                if let logo = UIImage(named: "logo_SCO") {
+                    Image(uiImage: logo)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxHeight: 250)
+                }
+            #endif
+            
+            Text("Welcome to SCO!")
+                .font(Typography.h1)
+                .multilineTextAlignment(.center)
+            
+            Text("Your ultimate digital comic library. Organize, read, and track your comic collection seamlessly.")
+                .font(Typography.body)
+                .foregroundColor(TextColors.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, Spacing.xl)
+            
+            Button("Get Started") {
+                hasSeenWelcome = true
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .padding(.top, Spacing.lg)
+            .tint(AccentColors.primary)
+        }
+        .padding(Spacing.xxl)
+        .frame(width: 600, height: 500)
+        .background(BackgroundColors.primary)
     }
 }
 

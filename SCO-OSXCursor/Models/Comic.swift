@@ -53,6 +53,7 @@ struct Comic: Identifiable, Codable {
 
     // MARK: - Reader Preferences
     var preferredTransition: String?  // Per-book transition override (PageTransition.rawValue)
+    var contentRating: ContentRating
 
     // MARK: - File Info
     var fileSize: Int64  // in bytes
@@ -91,6 +92,7 @@ struct Comic: Identifiable, Codable {
         isFavorite: Bool = false,
         isOnReadingList: Bool = false,
         preferredTransition: String? = nil,
+        contentRating: ContentRating = .allAges,
         fileSize: Int64 = 0,
         fileType: FileType = .cbz,
         dateAdded: Date = Date(),
@@ -123,6 +125,7 @@ struct Comic: Identifiable, Codable {
         self.isFavorite = isFavorite
         self.isOnReadingList = isOnReadingList
         self.preferredTransition = preferredTransition
+        self.contentRating = contentRating
         self.fileSize = fileSize
         self.fileType = fileType
         self.dateAdded = dateAdded
@@ -150,6 +153,23 @@ extension Comic {
             case .unread: return "book.closed"
             case .reading: return "book"
             case .completed: return "checkmark.circle.fill"
+            }
+        }
+    }
+}
+
+// MARK: - Content Rating Enum
+extension Comic {
+    enum ContentRating: Int, Codable, CaseIterable {
+        case allAges = 0, teen, matureTeen, mature, explicit
+
+        var label: String {
+            switch self {
+            case .allAges: return "All Ages"
+            case .teen: return "Teen"
+            case .matureTeen: return "Mature Teen"
+            case .mature: return "Mature"
+            case .explicit: return "Explicit"
             }
         }
     }
@@ -413,6 +433,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         static let isFavorite = Column("is_favorite")
         static let isOnReadingList = Column("is_on_reading_list")
         static let preferredTransition = Column("preferred_transition")
+        static let contentRating = Column("content_rating")
         static let fileSize = Column("file_size")
         static let fileType = Column("file_type")
         static let dateAdded = Column("date_added")
@@ -448,6 +469,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         container[Columns.isFavorite] = isFavorite
         container[Columns.isOnReadingList] = isOnReadingList
         container[Columns.preferredTransition] = preferredTransition
+        container[Columns.contentRating] = contentRating.rawValue
         container[Columns.fileSize] = fileSize
         container[Columns.fileType] = fileType.rawValue
         container[Columns.dateAdded] = dateAdded
@@ -508,6 +530,7 @@ extension Comic: FetchableRecord, PersistableRecord {
             isFavorite: row["is_favorite"] ?? false,
             isOnReadingList: row["is_on_reading_list"] ?? false,
             preferredTransition: row["preferred_transition"],
+            contentRating: ContentRating(rawValue: row["content_rating"] ?? 0) ?? .allAges,
             fileSize: fileSize,
             fileType: fileType,
             dateAdded: dateAdded,

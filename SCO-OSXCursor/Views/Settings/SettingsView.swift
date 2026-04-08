@@ -19,6 +19,8 @@ struct SettingsView: View {
 
     // Publishers from the library (deduped) for the branding tool
     @State private var libraryPublishers: [String] = []
+    
+    @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
 
     var body: some View {
         ScrollView {
@@ -36,6 +38,30 @@ struct SettingsView: View {
                         Text("Choose between Light, Dark, or follow your System settings.")
                             .font(Typography.caption)
                             .foregroundColor(TextColors.secondary)
+                            
+                        Divider()
+                            .background(BorderColors.subtle)
+                            .padding(.vertical, Spacing.xs)
+                            
+                        HStack {
+                            VStack(alignment: .leading, spacing: Spacing.xs) {
+                                Text("Show Welcome Screen")
+                                    .font(Typography.h3)
+                                    .foregroundColor(TextColors.primary)
+                                
+                                Text("Display the welcome sheet the next time the app starts")
+                                    .font(Typography.bodySmall)
+                                    .foregroundColor(TextColors.secondary)
+                            }
+                            
+                            Spacer()
+                            
+                            Toggle("", isOn: Binding(
+                                get: { !hasSeenWelcome },
+                                set: { hasSeenWelcome = !$0 }
+                            ))
+                            .labelsHidden()
+                        }
                     }
                 }
 

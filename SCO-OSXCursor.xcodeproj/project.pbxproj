@@ -30,9 +30,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		1ABFF6102EBC3B6600485435 /* SCO-OSXCursor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "SCO-OSXCursor.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		1ABFF61D2EBC3B6800485435 /* SCO-OSXCursorTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "SCO-OSXCursorTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		1ABFF6272EBC3B6800485435 /* SCO-OSXCursorUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "SCO-OSXCursorUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		1ABFF6102EBC3B6600485435 /* Super Comic Organizer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Super Comic Organizer.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		1ABFF61D2EBC3B6800485435 /* SCO-OSXCursorTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; name = "SCO-OSXCursorTests.xctest"; path = "Super Comic Organizer.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		1ABFF6272EBC3B6800485435 /* SCO-OSXCursorUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; name = "SCO-OSXCursorUITests.xctest"; path = "Super Comic Organizer.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -112,7 +112,7 @@
 		1ABFF6112EBC3B6600485435 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				1ABFF6102EBC3B6600485435 /* SCO-OSXCursor.app */,
+				1ABFF6102EBC3B6600485435 /* Super Comic Organizer.app */,
 				1ABFF61D2EBC3B6800485435 /* SCO-OSXCursorTests.xctest */,
 				1ABFF6272EBC3B6800485435 /* SCO-OSXCursorUITests.xctest */,
 			);
@@ -144,7 +144,7 @@
 				1A7CB0002F41FA0000CB0001 /* Unrar */,
 			);
 			productName = "SCO-OSXCursor";
-			productReference = 1ABFF6102EBC3B6600485435 /* SCO-OSXCursor.app */;
+			productReference = 1ABFF6102EBC3B6600485435 /* Super Comic Organizer.app */;
 			productType = "com.apple.product-type.application";
 		};
 		1ABFF61C2EBC3B6800485435 /* SCO-OSXCursorTests */ = {

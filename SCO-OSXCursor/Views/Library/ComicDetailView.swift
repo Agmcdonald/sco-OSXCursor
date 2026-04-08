@@ -35,6 +35,7 @@ struct ComicDetailView: View {
     @State private var draftIssueNumber: String
     @State private var draftVolume: String  // stored as String; converted to Int? on save
     @State private var draftYear: String  // stored as String; converted to Int? on save
+    @State private var draftContentRating: Comic.ContentRating
     @State private var draftWriter: String
     @State private var draftArtist: String
     @State private var draftCoverArtist: String
@@ -42,6 +43,7 @@ struct ComicDetailView: View {
     @State private var draftInker: String
     @State private var draftEditor: String
     @State private var draftSummary: String
+    @State private var draftRating: Int
 
     @State private var showingSaveConfirmation = false
     @State private var saveError: String?
@@ -68,6 +70,7 @@ struct ComicDetailView: View {
         _draftIssueNumber = State(initialValue: comic.issueNumber ?? "")
         _draftVolume = State(initialValue: comic.volume.map { String($0) } ?? "")
         _draftYear = State(initialValue: comic.year.map { String($0) } ?? "")
+        _draftContentRating = State(initialValue: comic.contentRating)
         _draftWriter = State(initialValue: comic.writer ?? "")
         _draftArtist = State(initialValue: comic.artist ?? "")
         _draftCoverArtist = State(initialValue: comic.coverArtist ?? "")
@@ -75,6 +78,7 @@ struct ComicDetailView: View {
         _draftInker = State(initialValue: comic.inker ?? "")
         _draftEditor = State(initialValue: comic.editor ?? "")
         _draftSummary = State(initialValue: comic.summary ?? "")
+        _draftRating = State(initialValue: comic.rating ?? 0)
     }
 
     // MARK: - hasChanges
@@ -84,10 +88,12 @@ struct ComicDetailView: View {
             || draftSeries != (comic.series ?? "") || draftIssueNumber != (comic.issueNumber ?? "")
             || draftVolume != (comic.volume.map { String($0) } ?? "")
             || draftYear != (comic.year.map { String($0) } ?? "")
+            || draftContentRating != comic.contentRating
             || draftWriter != (comic.writer ?? "") || draftArtist != (comic.artist ?? "")
             || draftCoverArtist != (comic.coverArtist ?? "")
             || draftColorist != (comic.colorist ?? "") || draftInker != (comic.inker ?? "")
             || draftEditor != (comic.editor ?? "") || draftSummary != (comic.summary ?? "")
+            || draftRating != (comic.rating ?? 0)
     }
 
     var body: some View {
@@ -248,6 +254,40 @@ struct ComicDetailView: View {
                 HStack {
                     metadataNumericField(label: "Volume", value: $draftVolume, field: .volume)
                     metadataNumericField(label: "Year", value: $draftYear, field: .year)
+                }
+
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text("Content Rating")
+                        .font(Typography.bodySmall)
+                        .foregroundColor(TextColors.secondary)
+                    
+                    Picker("Content Rating", selection: $draftContentRating) {
+                        ForEach(Comic.ContentRating.allCases, id: \.self) { rating in
+                            Text(rating.label).tag(rating)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.top, Spacing.xs)
+                }
+
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text("User Rating")
+                        .font(Typography.bodySmall)
+                        .foregroundColor(TextColors.secondary)
+                    
+                    HStack(spacing: Spacing.sm) {
+                        ForEach(1...5, id: \.self) { star in
+                            Button(action: {
+                                draftRating = (draftRating == star) ? 0 : star
+                            }) {
+                                Image(systemName: star <= draftRating ? "star.fill" : "star")
+                                    .foregroundColor(star <= draftRating ? AccentColors.warning : TextColors.tertiary)
+                                    .font(.system(size: 20))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.top, Spacing.xs)
                 }
             }
 
@@ -457,6 +497,7 @@ struct ComicDetailView: View {
         editedComic.issueNumber = draftIssueNumber.nilIfEmpty
         editedComic.volume = Int(draftVolume)  // nil if draftVolume is empty / non-numeric
         editedComic.year = Int(draftYear)
+        editedComic.contentRating = draftContentRating
         editedComic.writer = draftWriter.nilIfEmpty
         editedComic.artist = draftArtist.nilIfEmpty
         editedComic.coverArtist = draftCoverArtist.nilIfEmpty
@@ -464,6 +505,7 @@ struct ComicDetailView: View {
         editedComic.inker = draftInker.nilIfEmpty
         editedComic.editor = draftEditor.nilIfEmpty
         editedComic.summary = draftSummary.nilIfEmpty
+        editedComic.rating = draftRating > 0 ? draftRating : nil
 
         print("[ComicDetailView] 💾 Saving changes...")
         print("[ComicDetailView]    Title: '\(editedComic.title ?? "nil")'")

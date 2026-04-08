@@ -9,6 +9,22 @@ import SwiftUI
 
 @MainActor
 struct UserManualView: View {
+    @State private var searchText = ""
+    
+    let shortcuts = [
+        ("Next Page", "→"),
+        ("Previous Page", "←"),
+        ("Show Controls", "↑"),
+        ("Hide Controls", "↓"),
+        ("Toggle Controls", "Space"),
+        ("Close/Exit", "Esc")
+    ]
+    
+    var filteredShortcuts: [(String, String)] {
+        if searchText.isEmpty { return shortcuts }
+        return shortcuts.filter { $0.0.localizedCaseInsensitiveContains(searchText) || $0.1.localizedCaseInsensitiveContains(searchText) }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.xxl) {
@@ -139,6 +155,35 @@ struct UserManualView: View {
                             description:
                                 "Add comics to your Reading List (from the selection toolbar or context menu) to keep them accessible at the top of the Library and Dashboard."
                         )
+                    }
+                }
+
+                // 5. Shortcuts
+                ManualSection(
+                    title: "Keyboard Shortcuts",
+                    icon: "keyboard",
+                    description: "Navigate quickly with keyboard shortcuts."
+                ) {
+                    VStack(alignment: .leading, spacing: Spacing.md) {
+                        TextField("Search shortcuts...", text: $searchText)
+                            .textFieldStyle(.roundedBorder)
+                            .padding(.bottom, Spacing.sm)
+                        
+                        ForEach(filteredShortcuts, id: \.0) { shortcut in
+                            HStack {
+                                Text(shortcut.0)
+                                    .font(Typography.body)
+                                    .foregroundColor(TextColors.primary)
+                                Spacer()
+                                Text(shortcut.1)
+                                    .font(.system(.body, design: .monospaced))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.gray.opacity(0.1))
+                                    .cornerRadius(4)
+                            }
+                            Divider()
+                        }
                     }
                 }
             }

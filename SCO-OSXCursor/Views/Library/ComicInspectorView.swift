@@ -76,6 +76,23 @@ struct ComicInspectorView: View {
                     if let year = comic.year {
                         InspectorField(title: "Year", value: String(year))
                     }
+                    
+                    InspectorField(title: "Content Rating", value: comic.contentRating.label)
+                    
+                    if let rating = comic.rating, rating > 0 {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("User Rating")
+                                .font(Typography.label)
+                                .foregroundColor(TextColors.tertiary)
+                            HStack(spacing: 2) {
+                                ForEach(1...5, id: \.self) { star in
+                                    Image(systemName: star <= rating ? "star.fill" : "star")
+                                        .foregroundColor(star <= rating ? AccentColors.warning : TextColors.tertiary)
+                                        .font(.system(size: 14))
+                                }
+                            }
+                        }
+                    }
                 }
 
                 Divider()
