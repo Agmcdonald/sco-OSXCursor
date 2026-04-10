@@ -197,6 +197,24 @@ final class DatabaseManager {
             print("[DatabaseManager] ✅ Migration v7_content_ratings complete")
         }
 
+        // Version 8: Home Library — needs_attention flag
+        migrator.registerMigration("v8_needs_attention") { db in
+            print("[DatabaseManager] 🔄 Running migration: v8_needs_attention")
+            if try db.tableExists("comics") {
+                do {
+                    try db.alter(table: "comics") { t in
+                        t.add(column: "needs_attention", .boolean).notNull().defaults(to: false)
+                    }
+                    print("[DatabaseManager] ✅ Added needs_attention column")
+                } catch {
+                    print(
+                        "[DatabaseManager] ℹ️ needs_attention column may already exist: \(error.localizedDescription)"
+                    )
+                }
+            }
+            print("[DatabaseManager] ✅ Migration v8_needs_attention complete")
+        }
+
         return migrator
     }
 

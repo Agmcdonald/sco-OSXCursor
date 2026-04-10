@@ -62,6 +62,38 @@ struct UserManualView: View {
                         )
 
                         FeatureRow(
+                            icon: "house.and.flag",
+                            title: "Home Library Folder",
+                            description:
+                                "Set a Home Library folder in Settings → Home Library to have every confirmed comic automatically moved into a Publisher/Series/ folder structure. The file is also renamed to a clean format (e.g. \"Batman #001 (2025).cbz\") as part of the move."
+                        )
+
+                        // Cloud & Network Drive warning callout
+                        HStack(alignment: .top, spacing: Spacing.sm) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(AccentColors.warning)
+                                .font(.system(size: 14, weight: .semibold))
+                                .padding(.top, 2)
+                            VStack(alignment: .leading, spacing: Spacing.xs) {
+                                Text("Important: Avoid Cloud & Network Drives")
+                                    .font(Typography.bodySmall.weight(.semibold))
+                                    .foregroundColor(AccentColors.warning)
+                                Text("Due to macOS App Sandbox restrictions, SCO cannot create folders or move files inside iCloud Drive, Google Drive, Dropbox, OneDrive, or Network/NAS drives. If your Home Library is set to one of these locations, auto-sorting will silently fail.\n\nChoose a purely local folder instead — Downloads, Documents, or a dedicated folder on your Mac's internal drive all work perfectly.")
+                                    .font(Typography.caption)
+                                    .foregroundColor(TextColors.secondary)
+                                    .lineSpacing(4)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .padding(Spacing.md)
+                        .background(AccentColors.warning.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(AccentColors.warning.opacity(0.3), lineWidth: 1)
+                        )
+
+                        FeatureRow(
                             icon: "brain.head.profile",
                             title: "Adaptive Learning",
                             description:

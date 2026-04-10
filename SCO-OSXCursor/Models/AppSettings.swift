@@ -16,6 +16,12 @@ struct AppSettings: Codable {
     var autoOrganize: Bool
     var confidenceThreshold: Double  // 0.0 - 1.0
 
+    // MARK: - Home Library Settings
+    /// Security-scoped bookmark for the home library folder (persisted across launches).
+    var homeLibraryBookmark: Data?
+    /// When true, every confirmed import is automatically moved into the home library folder.
+    var autoSortIntoLibrary: Bool
+
     // MARK: - Reading Settings
     var readingMode: ReadingMode
     var pageTransition: PageTransition
@@ -52,7 +58,9 @@ struct AppSettings: Codable {
         enableLearning: Bool = true,
         enableMetadataLookup: Bool = false,
         apiKey: String? = nil,
-        maxCacheSize: Int64 = 1_000_000_000  // 1 GB
+        maxCacheSize: Int64 = 1_000_000_000,  // 1 GB
+        homeLibraryBookmark: Data? = nil,
+        autoSortIntoLibrary: Bool = true
     ) {
         self.folderStructure = folderStructure
         self.namingPattern = namingPattern
@@ -71,6 +79,8 @@ struct AppSettings: Codable {
         self.enableMetadataLookup = enableMetadataLookup
         self.apiKey = apiKey
         self.maxCacheSize = maxCacheSize
+        self.homeLibraryBookmark = homeLibraryBookmark
+        self.autoSortIntoLibrary = autoSortIntoLibrary
     }
 }
 

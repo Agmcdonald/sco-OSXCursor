@@ -134,6 +134,17 @@ struct ComicCardView: View {
                 // Status badge overlay
                 VStack {
                     HStack {
+                        // ⚠ Attention badge (file missing / move failed)
+                        if comic.needsAttention {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(AccentColors.warning)
+                                .padding(5)
+                                .background(.ultraThinMaterial)
+                                .clipShape(Circle())
+                                .padding(Spacing.sm)
+                        }
+
                         Spacer()
 
                         // Status indicator

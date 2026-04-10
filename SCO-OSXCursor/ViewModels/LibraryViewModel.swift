@@ -45,6 +45,8 @@ final class LibraryViewModel: ObservableObject {
             if comics.isEmpty {
                 await importBundledComics()
             }
+            // Check for missing files on launch
+            await checkMissingFiles()
         }
 
         // Listen for refreshed security-scoped bookmarks from ReaderViewModel
@@ -145,6 +147,26 @@ final class LibraryViewModel: ObservableObject {
             if old.fileName != comic.fileName {
                 await logActivity(.renamed, comic: comic, old: old.fileName, new: comic.fileName)
             }
+
+            // Auto-relocate file if publisher or series changed and a home library is set
+            let publisherChanged = old.publisher != comic.publisher
+            let seriesChanged    = old.series    != comic.series
+            if (publisherChanged || seriesChanged),
+               AppSettings.load().autoSortIntoLibrary,
+               let libraryRoot = SettingsViewModel().resolveHomeLibraryURL()
+            {
+                let updated = await LibraryRelocator.shared.handleMetadataChange(
+                    old: old,
+                    new: comic,
+                    libraryRoot: libraryRoot,
+                    database: database
+                )
+                await MainActor.run {
+                    if let idx = comics.firstIndex(where: { $0.id == updated.id }) {
+                        comics[idx] = updated
+                    }
+                }
+            }
         }
     }
 
@@ -169,6 +191,69 @@ final class LibraryViewModel: ObservableObject {
         var updated = comic
         updated.isOnReadingList = !comic.isOnReadingList
         updateComic(updated)
+    }
+
+    // MARK: - Missing File Detection
+
+    /// On launch, check every comic's stored path still exists on disk.
+    /// Uses the comic's security-scoped bookmark (if present) to gain temporary
+    /// sandbox access before checking, avoiding false-positive missing flags on
+    /// iCloud/Downloads files that exist but aren't accessible without access start.
+    func checkMissingFiles() async {
+        let fm = FileManager.default
+        var flaggedCount = 0
+
+        for i in comics.indices {
+            let comic = comics[i]
+
+            // Skip files inside the app bundle (bundled sample comics)
+            if comic.filePath.path.hasPrefix(Bundle.main.bundlePath) { continue }
+
+            // Try to start security-scoped access using the stored bookmark
+            var bookmarkURL: URL? = nil
+            if let bookmarkData = comic.bookmarkData {
+                var stale = false
+                #if os(macOS)
+                bookmarkURL = try? URL(
+                    resolvingBookmarkData: bookmarkData,
+                    options: .withSecurityScope,
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &stale
+                )
+                #else
+                bookmarkURL = try? URL(
+                    resolvingBookmarkData: bookmarkData,
+                    options: [],
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &stale
+                )
+                #endif
+            }
+            let accessing = bookmarkURL?.startAccessingSecurityScopedResource() ?? false
+
+            // Use the bookmark-resolved URL if available (may differ from stored path
+            // if the file was moved externally); fall back to the stored path.
+            let checkURL = bookmarkURL ?? comic.filePath
+            let exists = fm.fileExists(atPath: checkURL.path)
+
+            if accessing { bookmarkURL?.stopAccessingSecurityScopedResource() }
+
+            if !exists && !comic.needsAttention {
+                comics[i].needsAttention = true
+                try? await database.updateComic(comics[i])
+                flaggedCount += 1
+                print("[LibraryViewModel] ⚠️ Missing file flagged: \(comic.fileName)")
+            } else if exists && comic.needsAttention {
+                // Auto-clear: file reappeared (e.g. drive remounted / iCloud synced)
+                comics[i].needsAttention = false
+                try? await database.updateComic(comics[i])
+                print("[LibraryViewModel] ✅ Cleared missing flag: \(comic.fileName)")
+            }
+        }
+
+        if flaggedCount > 0 {
+            print("[LibraryViewModel] ⚠️ \(flaggedCount) comics flagged as missing")
+        }
     }
 
     // MARK: - Cover Regeneration

@@ -23,6 +23,8 @@ final class OrganizeViewModel: ObservableObject {
     // Processing State
     @Published var isProcessing: Bool = false
     @Published var processingProgress: Double = 0.0
+    /// Path description shown after a successful library sort (e.g. "Marvel/X-Men/")
+    @Published var lastMoveDestination: String?
 
     // Dependencies
     private let libraryViewModel: LibraryViewModel
@@ -180,6 +182,41 @@ final class OrganizeViewModel: ObservableObject {
             originalURL: originalURL,
             fileURL: finalURL
         )
+
+        // 3. Auto-sort into home library (if enabled)
+        let settings = AppSettings.load()
+        if settings.autoSortIntoLibrary,
+           let libraryRoot = SettingsViewModel().resolveHomeLibraryURL(),
+           let importedComic = libraryViewModel.comics.first(where: {
+               $0.fileName == current.proposedFileName
+                   || $0.filePath == finalURL
+           })
+        {
+            do {
+                let movedComic = try await LibraryFileService.shared.moveToLibrary(
+                    importedComic,
+                    libraryRoot: libraryRoot,
+                    database: DatabaseManager.shared
+                )
+                // Update in-memory library array
+                if let idx = libraryViewModel.comics.firstIndex(where: { $0.id == movedComic.id }) {
+                    libraryViewModel.comics[idx] = movedComic
+                }
+                // Show destination in UI
+                let rootPath = libraryRoot.standardizedFileURL.path
+                let destPath = movedComic.filePath.standardizedFileURL.path
+                let rel = destPath.hasPrefix(rootPath)
+                    ? String(destPath.dropFirst(rootPath.count + 1))
+                    : destPath
+                lastMoveDestination = (rel as NSString).deletingLastPathComponent
+                await libraryViewModel.logActivity(.fileMoved, comic: movedComic, new: rel)
+            } catch {
+                print("[OrganizeViewModel] ⚠️ Auto-sort failed: \(error)")
+                lastMoveDestination = nil
+            }
+        } else {
+            lastMoveDestination = nil
+        }
 
         // 3. Remove from staging
         if let idx = stagedComics.firstIndex(where: { $0.id == current.id }) {

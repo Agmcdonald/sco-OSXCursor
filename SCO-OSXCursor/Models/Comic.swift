@@ -50,6 +50,8 @@ struct Comic: Identifiable, Codable {
     var rating: Int?  // 1-5 stars
     var isFavorite: Bool
     var isOnReadingList: Bool
+    /// Set when a file move fails or the file is missing on disk; cleared when resolved.
+    var needsAttention: Bool
 
     // MARK: - Reader Preferences
     var preferredTransition: String?  // Per-book transition override (PageTransition.rawValue)
@@ -91,6 +93,7 @@ struct Comic: Identifiable, Codable {
         rating: Int? = nil,
         isFavorite: Bool = false,
         isOnReadingList: Bool = false,
+        needsAttention: Bool = false,
         preferredTransition: String? = nil,
         contentRating: ContentRating = .allAges,
         fileSize: Int64 = 0,
@@ -124,6 +127,7 @@ struct Comic: Identifiable, Codable {
         self.rating = rating
         self.isFavorite = isFavorite
         self.isOnReadingList = isOnReadingList
+        self.needsAttention = needsAttention
         self.preferredTransition = preferredTransition
         self.contentRating = contentRating
         self.fileSize = fileSize
@@ -432,6 +436,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         static let rating = Column("rating")
         static let isFavorite = Column("is_favorite")
         static let isOnReadingList = Column("is_on_reading_list")
+        static let needsAttention = Column("needs_attention")
         static let preferredTransition = Column("preferred_transition")
         static let contentRating = Column("content_rating")
         static let fileSize = Column("file_size")
@@ -468,6 +473,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         container[Columns.rating] = rating
         container[Columns.isFavorite] = isFavorite
         container[Columns.isOnReadingList] = isOnReadingList
+        container[Columns.needsAttention] = needsAttention
         container[Columns.preferredTransition] = preferredTransition
         container[Columns.contentRating] = contentRating.rawValue
         container[Columns.fileSize] = fileSize
@@ -529,6 +535,7 @@ extension Comic: FetchableRecord, PersistableRecord {
             rating: row["rating"],
             isFavorite: row["is_favorite"] ?? false,
             isOnReadingList: row["is_on_reading_list"] ?? false,
+            needsAttention: row["needs_attention"] ?? false,
             preferredTransition: row["preferred_transition"],
             contentRating: ContentRating(rawValue: row["content_rating"] ?? 0) ?? .allAges,
             fileSize: fileSize,

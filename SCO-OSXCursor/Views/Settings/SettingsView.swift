@@ -16,6 +16,9 @@ struct SettingsView: View {
     @State private var showingPathPicker = false
     @State private var showingResetConfirmation = false
     @State private var showingBrandingSheet = false
+    @State private var showingReorganizeSheet = false
+    @State private var homeLibraryStatus: SettingsViewModel.HomeLibraryStatus = .notSet
+    @State private var allComicsForReorganize: [Comic] = []
 
     // Publishers from the library (deduped) for the branding tool
     @State private var libraryPublishers: [String] = []
@@ -116,6 +119,14 @@ struct SettingsView: View {
         .sheet(isPresented: $showingBrandingSheet) {
             BatchPublisherBrandingView(libraryPublishers: libraryPublishers)
         }
+        .sheet(isPresented: $showingReorganizeSheet) {
+            if let libraryRoot = viewModel.resolveHomeLibraryURL() {
+                ReorganizeLibraryView(
+                    libraryRoot: libraryRoot,
+                    comics: allComicsForReorganize
+                )
+            }
+        }
         .fileImporter(
             isPresented: $showingPathPicker,
             allowedContentTypes: [.folder],
@@ -127,11 +138,15 @@ struct SettingsView: View {
             Button("Cancel", role: .cancel) {}
             Button("Reset", role: .destructive) {
                 viewModel.resetToDefaults()
+                homeLibraryStatus = viewModel.homeLibraryStatus()
             }
         } message: {
             Text(
                 "This will reset all organization settings to their default values. This action cannot be undone."
             )
+        }
+        .onAppear {
+            homeLibraryStatus = viewModel.homeLibraryStatus()
         }
     }
 
@@ -237,16 +252,17 @@ struct SettingsView: View {
             .background(BackgroundColors.elevated)
             .clipShape(RoundedRectangle(cornerRadius: 8))
 
-            // Root Library Path
+            // Root Library Path → expanded Home Library section
             VStack(alignment: .leading, spacing: Spacing.sm) {
-                Text("Root Library Path")
+                Text("Home Library Folder")
                     .font(Typography.h3)
                     .foregroundColor(TextColors.primary)
 
-                Text("Base folder where comics will be organized")
+                Text("Comics confirmed in Organize are automatically moved into this folder, organized by publisher and series.")
                     .font(Typography.bodySmall)
                     .foregroundColor(TextColors.secondary)
 
+                // Path display + chooser
                 HStack(spacing: Spacing.md) {
                     Text(viewModel.settings.rootLibraryPath?.path ?? "Not set")
                         .font(Typography.body)
@@ -255,10 +271,11 @@ struct SettingsView: View {
                                 ? TextColors.primary : TextColors.tertiary
                         )
                         .lineLimit(1)
+                        .truncationMode(.middle)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
                     Button(action: { showingPathPicker = true }) {
-                        Text("Choose Folder")
+                        Text(viewModel.settings.rootLibraryPath == nil ? "Choose Folder" : "Change")
                             .font(Typography.button)
                             .foregroundColor(.white)
                             .padding(.horizontal, Spacing.md)
@@ -269,40 +286,104 @@ struct SettingsView: View {
                     .buttonStyle(.plain)
 
                     if viewModel.settings.rootLibraryPath != nil {
-                        Button(action: { viewModel.settings.rootLibraryPath = nil }) {
+                        Button(action: {
+                            viewModel.settings.rootLibraryPath = nil
+                            viewModel.settings.homeLibraryBookmark = nil
+                            homeLibraryStatus = .notSet
+                        }) {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundColor(TextColors.tertiary)
                         }
                         .buttonStyle(.plain)
                     }
                 }
+
+                // Validation badge
+                if viewModel.settings.rootLibraryPath != nil {
+                    homeLibraryStatusBadge
+                        .padding(.top, 2)
+                }
+
+                // Cloud & Network Drive warning note
+                HStack(alignment: .top, spacing: Spacing.sm) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(AccentColors.warning)
+                        .font(.system(size: 13, weight: .semibold))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Avoid Cloud & Network Drives")
+                            .font(Typography.bodySmall.weight(.semibold))
+                            .foregroundColor(AccentColors.warning)
+                        Text("Due to macOS sandbox restrictions, the app cannot create folders or move files inside iCloud Drive, Google Drive, Dropbox, OneDrive, or Network/NAS drives. Choose a purely local folder on your Mac's internal drive (like Downloads or Documents).")
+                            .font(Typography.caption)
+                            .foregroundColor(TextColors.secondary)
+                            .lineSpacing(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(Spacing.sm)
+                .background(AccentColors.warning.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(AccentColors.warning.opacity(0.3), lineWidth: 1)
+                )
+                .padding(.top, Spacing.xs)
             }
             .padding(Spacing.md)
             .background(BackgroundColors.elevated)
             .clipShape(RoundedRectangle(cornerRadius: 8))
 
-            // Auto-Organize Toggle
+            // Auto-sort toggle
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 HStack {
                     VStack(alignment: .leading, spacing: Spacing.xs) {
-                        Text("Auto-Organize")
+                        Text("Auto-Sort into Library")
                             .font(Typography.h3)
                             .foregroundColor(TextColors.primary)
 
-                        Text("Automatically organize comics into folders when imported")
+                        Text("Move files into the home library folder after each import is confirmed")
                             .font(Typography.bodySmall)
                             .foregroundColor(TextColors.secondary)
                     }
 
                     Spacer()
 
-                    Toggle("", isOn: viewModel.autoOrganize)
+                    Toggle("", isOn: viewModel.autoSortIntoLibrary)
                         .labelsHidden()
+                        .disabled(viewModel.settings.rootLibraryPath == nil)
                 }
             }
             .padding(Spacing.md)
             .background(BackgroundColors.elevated)
             .clipShape(RoundedRectangle(cornerRadius: 8))
+            .opacity(viewModel.settings.rootLibraryPath == nil ? 0.4 : 1)
+
+            // Reorganize button
+            if viewModel.settings.rootLibraryPath != nil && homeLibraryStatus == .accessible {
+                Button {
+                    Task {
+                        let comics = (try? await DatabaseManager.shared.fetchAllComics()) ?? []
+                        allComicsForReorganize = comics
+                        showingReorganizeSheet = true
+                    }
+                } label: {
+                    HStack(spacing: Spacing.sm) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                        Text("Reorganize Existing Library…")
+                            .font(Typography.button)
+                    }
+                    .foregroundColor(AccentColors.primary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Spacing.sm)
+                    .background(AccentColors.primary.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(AccentColors.primary.opacity(0.3), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
 
             // Confidence Threshold
             VStack(alignment: .leading, spacing: Spacing.sm) {
@@ -491,11 +572,40 @@ struct SettingsView: View {
         switch result {
         case .success(let urls):
             if let url = urls.first {
-                viewModel.settings.rootLibraryPath = url
+                viewModel.setHomeLibraryFolder(url)
+                homeLibraryStatus = viewModel.homeLibraryStatus()
             }
         case .failure(let error):
             print("Failed to select path: \(error.localizedDescription)")
         }
+    }
+
+    // MARK: - Home Library Status Badge
+
+    @ViewBuilder
+    private var homeLibraryStatusBadge: some View {
+        let (icon, label, color): (String, String, Color) = {
+            switch homeLibraryStatus {
+            case .notSet:
+                return ("questionmark.circle", "No library set", TextColors.tertiary)
+            case .accessible:
+                return ("checkmark.circle.fill", "Accessible and writable", AccentColors.success)
+            case .notFound:
+                return ("exclamationmark.triangle.fill", "Folder not found", AccentColors.error)
+            case .volumeNotMounted:
+                return ("externaldrive.badge.exclamationmark", "Volume not mounted", AccentColors.warning)
+            case .notWritable:
+                return ("lock.fill", "Folder is read-only", AccentColors.error)
+            }
+        }()
+
+        HStack(spacing: Spacing.xs) {
+            Image(systemName: icon)
+                .font(.system(size: 11))
+            Text(label)
+                .font(Typography.caption)
+        }
+        .foregroundColor(color)
     }
 }
 

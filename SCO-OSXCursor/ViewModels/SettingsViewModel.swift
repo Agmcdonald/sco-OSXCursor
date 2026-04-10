@@ -53,6 +53,13 @@ class SettingsViewModel: ObservableObject {
         )
     }
 
+    var autoSortIntoLibrary: Binding<Bool> {
+        Binding(
+            get: { self.settings.autoSortIntoLibrary },
+            set: { self.settings.autoSortIntoLibrary = $0 }
+        )
+    }
+
     var autoOrganize: Binding<Bool> {
         Binding(
             get: { self.settings.autoOrganize },
@@ -136,5 +143,98 @@ class SettingsViewModel: ObservableObject {
     /// Get example path for folder structure
     func examplePath(for structure: AppSettings.FolderStructure) -> String {
         return structure.examplePath
+    }
+
+    // MARK: - Home Library Management
+
+    /// Persists the chosen folder: stores the path AND creates a security-scoped
+    /// bookmark so the sandbox can reach the folder across relaunches.
+    func setHomeLibraryFolder(_ url: URL) {
+        settings.rootLibraryPath = url
+        #if os(macOS)
+        settings.homeLibraryBookmark = try? url.bookmarkData(
+            options: [.withSecurityScope],
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
+        #else
+        settings.homeLibraryBookmark = try? url.bookmarkData(
+            options: .minimalBookmark,
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
+        #endif
+        saveSettings()
+        print("[SettingsViewModel] 📁 Home library set: \(url.path)")
+    }
+
+    /// Resolves the stored bookmark → URL, refreshing it if stale.
+    /// Returns nil if no bookmark is stored or the volume is not mounted.
+    func resolveHomeLibraryURL() -> URL? {
+        // Quick path: bookmark available
+        if let bookmarkData = settings.homeLibraryBookmark {
+            var isStale = false
+            #if os(macOS)
+            if let resolved = try? URL(
+                resolvingBookmarkData: bookmarkData,
+                options: .withSecurityScope,
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            ) {
+                if isStale {
+                    // Refresh stale bookmark
+                    settings.homeLibraryBookmark = try? resolved.bookmarkData(
+                        options: [.withSecurityScope],
+                        includingResourceValuesForKeys: nil,
+                        relativeTo: nil
+                    )
+                    saveSettings()
+                }
+                return resolved
+            }
+            #else
+            if let resolved = try? URL(
+                resolvingBookmarkData: bookmarkData,
+                options: [],
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            ) {
+                return resolved
+            }
+            #endif
+        }
+        // Fallback: use raw URL if set
+        return settings.rootLibraryPath
+    }
+
+    /// Status of the home library folder.
+    enum HomeLibraryStatus {
+        case notSet
+        case accessible
+        case notFound        // Path doesn't exist
+        case volumeNotMounted // Path exists in settings but volume not present
+        case notWritable
+    }
+
+    /// Validates the home library folder and returns its current status.
+    func homeLibraryStatus() -> HomeLibraryStatus {
+        guard let url = resolveHomeLibraryURL() else { return .notSet }
+        let fm = FileManager.default
+        // Check the volume is mounted
+        var isReachable = false
+        do {
+            isReachable = try url.checkResourceIsReachable()
+        } catch {
+            // The error may be "no such volume" on external drives
+            let nsErr = error as NSError
+            if nsErr.code == NSFileReadNoSuchFileError || nsErr.code == NSFileNoSuchFileError {
+                // Distinguish: if the root path contains the library root but drive is gone
+                return fm.fileExists(atPath: "/Volumes") ? .volumeNotMounted : .notFound
+            }
+            return .notFound
+        }
+        guard isReachable else { return .notFound }
+        guard fm.isWritableFile(atPath: url.path) else { return .notWritable }
+        return .accessible
     }
 }
