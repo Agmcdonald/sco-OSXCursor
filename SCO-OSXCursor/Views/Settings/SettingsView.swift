@@ -17,8 +17,10 @@ struct SettingsView: View {
     @State private var showingResetConfirmation = false
     @State private var showingBrandingSheet = false
     @State private var showingReorganizeSheet = false
+    @State private var showingRelocateSheet = false
     @State private var homeLibraryStatus: SettingsViewModel.HomeLibraryStatus = .notSet
     @State private var allComicsForReorganize: [Comic] = []
+    @State private var allComicsForRelocate: [Comic] = []
 
     // Publishers from the library (deduped) for the branding tool
     @State private var libraryPublishers: [String] = []
@@ -125,6 +127,24 @@ struct SettingsView: View {
                     libraryRoot: libraryRoot,
                     comics: allComicsForReorganize
                 )
+            }
+        }
+        .sheet(isPresented: $showingRelocateSheet) {
+            // Use storedHomeLibraryURL() as old root — resolveHomeLibraryURL() may
+            // return nil when the bookmark is stale (which is exactly when this sheet
+            // is needed). Fall back to it if somehow resolve succeeds.
+            if let oldRoot = viewModel.storedHomeLibraryURL() ?? viewModel.resolveHomeLibraryURL() {
+                RelocateLibraryView(
+                    oldRoot: oldRoot,
+                    comics: allComicsForRelocate,
+                    settingsViewModel: viewModel
+                )
+            }
+        }
+        .onChange(of: showingRelocateSheet) { _, isShowing in
+            // Refresh status badge after the relocate sheet closes
+            if !isShowing {
+                homeLibraryStatus = viewModel.homeLibraryStatus()
             }
         }
         .fileImporter(
@@ -302,6 +322,36 @@ struct SettingsView: View {
                 if viewModel.settings.rootLibraryPath != nil {
                     homeLibraryStatusBadge
                         .padding(.top, 2)
+
+                    // ── Relocate Library button ────────────────────────
+                    // Shown only when the library folder can no longer be resolved
+                    // (e.g. after a drive migration). Hidden when accessible.
+                    if homeLibraryStatus == .notFound || homeLibraryStatus == .volumeNotMounted {
+                        Button {
+                            Task {
+                                let comics = (try? await DatabaseManager.shared.fetchAllComics()) ?? []
+                                allComicsForRelocate = comics
+                                showingRelocateSheet = true
+                            }
+                        } label: {
+                            HStack(spacing: Spacing.sm) {
+                                Image(systemName: "folder.badge.questionmark")
+                                Text("Relocate Library…")
+                                    .font(Typography.button)
+                            }
+                            .foregroundColor(AccentColors.warning)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, Spacing.sm)
+                            .background(AccentColors.warning.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(AccentColors.warning.opacity(0.3), lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, Spacing.xs)
+                    }
                 }
 
                 // Cloud & Network Drive warning note

@@ -237,4 +237,11 @@ class SettingsViewModel: ObservableObject {
         guard fm.isWritableFile(atPath: url.path) else { return .notWritable }
         return .accessible
     }
+
+    /// Returns the raw stored `rootLibraryPath` URL **without** any bookmark
+    /// resolution or reachability check.  Used by `RelocateLibraryView` as the
+    /// "old root" when the bookmark is stale and `resolveHomeLibraryURL()` returns nil.
+    func storedHomeLibraryURL() -> URL? {
+        settings.rootLibraryPath
+    }
 }
