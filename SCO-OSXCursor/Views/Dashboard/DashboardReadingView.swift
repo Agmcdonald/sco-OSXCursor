@@ -7,7 +7,7 @@ struct DashboardReadingView: View {
     @State private var showCompleted: Bool = false
 
     enum SubTab: String, CaseIterable {
-        case readingList = "Reading List"
+        case readingList = "Want To Read List"
         case recentlyRead = "Recently Read"
     }
 
@@ -100,7 +100,7 @@ struct DashboardReadingView: View {
                                     .foregroundColor(TextColors.tertiary)
                                 TextField(
                                     selectedSubTab == .readingList
-                                        ? "Search reading list…" : "Search recently read…",
+                                        ? "Search want to read list…" : "Search recently read…",
                                     text: $searchText
                                 )
                                 .textFieldStyle(.plain)
@@ -138,7 +138,7 @@ struct DashboardReadingView: View {
                                 .foregroundColor(TextColors.tertiary)
 
                                 if selectedSubTab == .readingList {
-                                    Text("Your reading list is empty")
+                                    Text("Your want to read list is empty")
                                         .font(Typography.bodySmall)
                                         .foregroundColor(TextColors.secondary)
                                     Text(
@@ -163,6 +163,7 @@ struct DashboardReadingView: View {
                                 ForEach(items) { comic in
                                     ReadingListRow(
                                         comic: comic,
+                                        onOpen: { libraryViewModel.readingComic = comic },
                                         onRemove: selectedSubTab == .readingList
                                             ? { libraryViewModel.toggleReadingList(comic) }
                                             : nil
@@ -213,19 +214,13 @@ struct ReadingMetric: View {
 
 struct ReadingListRow: View {
     let comic: Comic
+    var onOpen: (() -> Void)? = nil
     var onRemove: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: Spacing.sm) {
-            // Cover thumbnail placeholder
-            RoundedRectangle(cornerRadius: 4)
-                .fill(BackgroundColors.secondary)
-                .frame(width: 32, height: 44)
-                .overlay(
-                    Image(systemName: "book.closed")
-                        .font(.system(size: 14))
-                        .foregroundColor(TextColors.tertiary)
-                )
+            // Cover thumbnail with hover popover
+            CoverThumbnail(comic: comic)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(comic.displayName)
@@ -256,7 +251,7 @@ struct ReadingListRow: View {
             }
 
             // Status badge
-            Text(comic.status.rawValue)
+            Text(comic.status.displayLabel)
                 .font(Typography.caption)
                 .padding(.horizontal, Spacing.sm)
                 .padding(.vertical, 2)
@@ -277,13 +272,136 @@ struct ReadingListRow: View {
         }
         .padding(.vertical, Spacing.sm)
         .contentShape(Rectangle())
+        .onTapGesture {
+            onOpen?()
+        }
         .contextMenu {
+            if let onOpen = onOpen {
+                Button(action: onOpen) {
+                    Label("Open Comic", systemImage: "book.open")
+                }
+            }
             if let onRemove = onRemove {
                 Button(role: .destructive, action: onRemove) {
                     Label("Remove from Reading List", systemImage: "bookmark.slash")
                 }
             }
         }
+    }
+}
+
+// MARK: - Cover Thumbnail with Hover Preview
+
+private struct CoverThumbnail: View {
+    let comic: Comic
+    @State private var isHovering = false
+
+    var body: some View {
+        coverImage(width: 36, height: 50, cornerRadius: 5)
+            .overlay(
+                RoundedRectangle(cornerRadius: 5)
+                    .stroke(
+                        isHovering ? AccentColors.primary.opacity(0.8) : Color.white.opacity(0.08),
+                        lineWidth: isHovering ? 1.5 : 1
+                    )
+            )
+            .shadow(color: .black.opacity(isHovering ? 0.4 : 0.2), radius: isHovering ? 6 : 3)
+            .scaleEffect(isHovering ? 1.06 : 1.0)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isHovering)
+            .onHover { hovering in
+                isHovering = hovering
+            }
+            .popover(isPresented: $isHovering, arrowEdge: .trailing) {
+                coverPreviewPopover
+            }
+    }
+
+    @ViewBuilder
+    private func coverImage(width: CGFloat, height: CGFloat, cornerRadius: CGFloat) -> some View {
+        if let coverData = comic.coverImageData {
+            #if os(macOS)
+            if let nsImage = NSImage(data: coverData) {
+                Image(nsImage: nsImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: width, height: height)
+                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+            } else {
+                placeholderCover(width: width, height: height, cornerRadius: cornerRadius)
+            }
+            #else
+            if let uiImage = UIImage(data: coverData) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: width, height: height)
+                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+            } else {
+                placeholderCover(width: width, height: height, cornerRadius: cornerRadius)
+            }
+            #endif
+        } else {
+            placeholderCover(width: width, height: height, cornerRadius: cornerRadius)
+        }
+    }
+
+    private func placeholderCover(width: CGFloat, height: CGFloat, cornerRadius: CGFloat) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .fill(
+                    LinearGradient(
+                        colors: [BackgroundColors.secondary, BackgroundColors.primary],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: width, height: height)
+            Image(systemName: "book.closed")
+                .font(.system(size: width * 0.35))
+                .foregroundColor(TextColors.tertiary)
+        }
+    }
+
+    private var coverPreviewPopover: some View {
+        VStack(spacing: 0) {
+            coverImage(width: 360, height: 504, cornerRadius: 14)
+                .shadow(color: .black.opacity(0.5), radius: 16, x: 0, y: 8)
+                .padding(Spacing.lg)
+
+            VStack(spacing: 4) {
+                Text(comic.displayName)
+                    .font(Typography.bodySmall.bold())
+                    .foregroundColor(TextColors.primary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+
+                if let publisher = comic.publisher {
+                    Text(publisher)
+                        .font(Typography.caption)
+                        .foregroundColor(TextColors.secondary)
+                }
+
+                if comic.totalPages > 0 && comic.currentPage > 0 {
+                    HStack(spacing: Spacing.xs) {
+                        ProgressView(value: comic.progress)
+                            .progressViewStyle(.linear)
+                            .tint(AccentColors.primary)
+                            .frame(width: 110)
+                        Text(comic.progressPercentage)
+                            .font(Typography.caption)
+                            .foregroundColor(TextColors.tertiary)
+                    }
+                    .padding(.top, 2)
+                }
+            }
+            .padding(.horizontal, Spacing.lg)
+            .padding(.bottom, Spacing.lg)
+        }
+        .frame(width: 432)
+        .background(BackgroundColors.elevated)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 }
 

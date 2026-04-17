@@ -45,6 +45,7 @@ struct LibraryView: View {
     @State private var filterPublisher: String? = nil
     @State private var filterSeries: String? = nil
     @State private var filterYear: Int? = nil
+    @State private var filterReadingList: Bool = false
     @State private var showingFilters = false
     @State private var isSelectionMode = false
     @State private var selectedComics: Set<Comic.ID> = []
@@ -105,6 +106,11 @@ struct LibraryView: View {
         // Apply status filter
         if let status = filterStatus {
             result = result.filter { $0.status == status }
+        }
+
+        // Apply reading list filter
+        if filterReadingList {
+            result = result.filter { $0.isOnReadingList }
         }
 
         // Apply publisher filter
@@ -210,7 +216,7 @@ struct LibraryView: View {
     }
 
     var hasActiveFilters: Bool {
-        filterStatus != nil || filterPublisher != nil || filterSeries != nil || filterYear != nil
+        filterStatus != nil || filterPublisher != nil || filterSeries != nil || filterYear != nil || filterReadingList
     }
 
     // Publisher/Series expand state
@@ -807,9 +813,17 @@ struct LibraryView: View {
             HStack(spacing: Spacing.sm) {
                 if let status = filterStatus {
                     FilterBadge(
-                        title: "Status: \(status.rawValue)",
+                        title: "Status: \(status.displayLabel)",
                         icon: status.icon,
                         onRemove: { filterStatus = nil }
+                    )
+                }
+
+                if filterReadingList {
+                    FilterBadge(
+                        title: "Want to Read",
+                        icon: "bookmark.fill",
+                        onRemove: { filterReadingList = false }
                     )
                 }
 
@@ -843,6 +857,7 @@ struct LibraryView: View {
                     filterPublisher = nil
                     filterSeries = nil
                     filterYear = nil
+                    filterReadingList = false
                 }) {
                     HStack(spacing: Spacing.xs) {
                         Image(systemName: "xmark.circle.fill")
@@ -879,19 +894,28 @@ struct LibraryView: View {
                 HStack(spacing: Spacing.sm) {
                     FilterChip(
                         title: "All",
-                        isSelected: filterStatus == nil,
-                        action: { filterStatus = nil }
+                        isSelected: filterStatus == nil && !filterReadingList,
+                        action: { filterStatus = nil; filterReadingList = false }
                     )
 
                     ForEach(Comic.Status.allCases, id: \.self) { status in
                         FilterChip(
-                            title: status.rawValue,
+                            title: status.displayLabel,
                             icon: status.icon,
                             color: status.color,
                             isSelected: filterStatus == status,
-                            action: { filterStatus = status }
+                            action: { filterStatus = status; filterReadingList = false }
                         )
                     }
+
+                    // Reading list chip
+                    FilterChip(
+                        title: "Want to Read",
+                        icon: "bookmark.fill",
+                        color: AccentColors.primary,
+                        isSelected: filterReadingList,
+                        action: { filterReadingList = true; filterStatus = nil }
+                    )
                 }
             }
 
@@ -981,6 +1005,7 @@ struct LibraryView: View {
                     filterPublisher = nil
                     filterSeries = nil
                     filterYear = nil
+                    filterReadingList = false
                 }) {
                     HStack(spacing: Spacing.xs) {
                         Image(systemName: "xmark.circle.fill")

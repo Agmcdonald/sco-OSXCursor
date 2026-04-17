@@ -144,6 +144,15 @@ extension Comic {
         case reading = "Reading"
         case completed = "Completed"
 
+        /// Human-readable label shown in the UI (rawValue is kept for DB compatibility)
+        var displayLabel: String {
+            switch self {
+            case .unread: return "Unread"
+            case .reading: return "Currently Reading"
+            case .completed: return "Completed"
+            }
+        }
+
         var color: Color {
             switch self {
             case .unread: return SemanticColors.unread

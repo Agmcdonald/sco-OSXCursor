@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - RelocateLibraryView
 
@@ -212,11 +213,12 @@ struct RelocateLibraryView: View {
 
                     // Missing-files warning
                     if !viewModel.missingPreviews.isEmpty {
+                        let missingPlural = viewModel.missingPreviews.count == 1 ? "file" : "files"
                         HStack(alignment: .top, spacing: Spacing.sm) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundColor(AccentColors.warning)
                                 .font(.system(size: 12))
-                            Text("\(viewModel.missingPreviews.count) file\(viewModel.missingPreviews.count == 1 ? "" : "s") not found at the new location. These will be flagged as "Needs Attention" and left untouched.")
+                            Text("\(viewModel.missingPreviews.count) \(missingPlural) not found at the new location. These will be flagged as \"Needs Attention\" and left untouched.")
                                 .font(Typography.caption)
                                 .foregroundColor(TextColors.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -351,12 +353,14 @@ struct RelocateLibraryView: View {
     // MARK: - Done
 
     private var doneView: some View {
-        VStack(spacing: Spacing.lg) {
+        let recordPlural = viewModel.remappedCount == 1 ? "record" : "records"
+        let errorPlural  = viewModel.errors.count == 1 ? "error" : "errors"
+        return VStack(spacing: Spacing.lg) {
             if viewModel.notFoundCount == 0 && viewModel.errors.isEmpty {
                 emptyState(
                     icon: "checkmark.circle.fill",
                     title: "Library Relocated",
-                    subtitle: "\(viewModel.remappedCount) record\(viewModel.remappedCount == 1 ? "" : "s") updated successfully."
+                    subtitle: "\(viewModel.remappedCount) \(recordPlural) updated successfully."
                 )
             } else {
                 VStack(spacing: Spacing.lg) {
@@ -376,7 +380,7 @@ struct RelocateLibraryView: View {
                         if !viewModel.errors.isEmpty {
                             summaryChip(
                                 icon: "xmark.circle.fill",
-                                label: "\(viewModel.errors.count) error\(viewModel.errors.count == 1 ? "" : "s")",
+                                label: "\(viewModel.errors.count) \(errorPlural)",
                                 color: AccentColors.error
                             )
                         }
@@ -458,9 +462,10 @@ struct RelocateLibraryView: View {
                             )
                         }
                     } label: {
+                        let remapPlural = viewModel.totalToRemap == 1 ? "Record" : "Records"
                         HStack(spacing: Spacing.sm) {
                             Image(systemName: "arrow.triangle.swap")
-                            Text("Remap \(viewModel.totalToRemap) Record\(viewModel.totalToRemap == 1 ? "" : "s")")
+                            Text("Remap \(viewModel.totalToRemap) \(remapPlural)")
                         }
                     }
                     .buttonStyle(.borderedProminent)

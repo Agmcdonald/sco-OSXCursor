@@ -56,6 +56,26 @@ struct ContentView: View {
             // Main content
             selectedView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                #if os(iOS)
+                // Sidebar-recall button in the navigation bar zone (above content) —
+                // only visible on iPad when the sidebar is hidden.
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        if columnVisibility != .all {
+                            Button {
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                    columnVisibility = .all
+                                }
+                            } label: {
+                                Image(systemName: "sidebar.left")
+                                    .font(.system(size: 17, weight: .medium))
+                            }
+                            .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                        }
+                    }
+                }
+                .animation(.easeInOut(duration: 0.2), value: columnVisibility)
+                #endif
         }
         .navigationSplitViewStyle(.balanced)
         .sheet(isPresented: Binding(

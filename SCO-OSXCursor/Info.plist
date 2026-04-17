@@ -12,6 +12,12 @@
 	<string>Super Comic Organizer</string>
 	<key>CFBundleDisplayName</key>
 	<string>Super Comic Organizer</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.books</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>UILaunchScreen</key>
+	<dict/>
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
