@@ -215,6 +215,24 @@ final class DatabaseManager {
             print("[DatabaseManager] ✅ Migration v8_needs_attention complete")
         }
 
+        // Version 9: Reading Style — per-book reading style preference
+        migrator.registerMigration("v9_reading_style") { db in
+            print("[DatabaseManager] 🔄 Running migration: v9_reading_style")
+            if try db.tableExists("comics") {
+                do {
+                    try db.alter(table: "comics") { t in
+                        t.add(column: "reading_style", .text)
+                    }
+                    print("[DatabaseManager] ✅ Added reading_style column")
+                } catch {
+                    print(
+                        "[DatabaseManager] ℹ️ reading_style column may already exist: \(error.localizedDescription)"
+                    )
+                }
+            }
+            print("[DatabaseManager] ✅ Migration v9_reading_style complete")
+        }
+
         return migrator
     }
 

@@ -10,4 +10,5 @@ import Foundation
 extension Notification.Name {
     static let scoToggleZoom = Notification.Name("scoToggleZoom")
     static let scoToggleControls = Notification.Name("scoToggleControls")
+    static let scoOpenReaderSettings = Notification.Name("scoOpenReaderSettings")
 }

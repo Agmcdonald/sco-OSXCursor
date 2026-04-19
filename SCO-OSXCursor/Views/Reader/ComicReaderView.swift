@@ -84,6 +84,9 @@ struct ComicReaderView: View {
     @State private var isDragging = false
     @State private var isPinching = false
     @State private var gestureCooldownTask: Task<Void, Never>?
+    /// Fraction of screen width for pages in vertical-scroll mode (0.3…1.0).
+    /// Tick 4 of 15 on the 0.3…1.0 / 0.05-step slider = 0.5, matching a comfortable reading size.
+    @State private var verticalZoomScale: Double = 0.5
     private let tapCooldown: TimeInterval = 0.22
     #if os(macOS)
         @State private var keyboardMonitor: KeyboardMonitor? = nil
@@ -263,6 +266,9 @@ struct ComicReaderView: View {
         .onReceive(NotificationCenter.default.publisher(for: .scoToggleControls)) { _ in
             handleTapToToggleControls()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .scoOpenReaderSettings)) { _ in
+            showingReaderSettings = true
+        }
         #if os(macOS)
             .onContinuousHover { phase in
                 switch phase {
@@ -285,9 +291,21 @@ struct ComicReaderView: View {
     // MARK: - Reader View
     private func readerView(_ comicBook: ComicBook) -> some View {
         ZStack {
-            // Reader content (single or two-page spread)
+            // Reader content — branch on reading style
             Group {
-                if viewModel.isSpreadMode {
+                if viewModel.isVerticalScroll {
+                    // ── Vertical scroll (webtoon) mode ──────────────────────
+                    VerticalScrollReaderView(
+                        pages: viewModel.allPages,
+                        currentPage: $viewModel.currentPage,
+                        zoomScale: $verticalZoomScale,
+                        onBeginDragging: beginDragging,
+                        onEndDragging: endDragging,
+                        onBeginPinching: beginPinching,
+                        onEndPinching: endPinching
+                    )
+                } else if viewModel.isSpreadMode {
+                    // ── Two-page spread (standard or RTL) ───────────────────
                     SpreadReaderView(
                         spreads: viewModel.pageSpreads,
                         currentSpreadIndex: Binding(
@@ -304,6 +322,7 @@ struct ComicReaderView: View {
                         onEndPinching: endPinching
                     )
                 } else {
+                    // ── Single-page (standard or RTL) ────────────────────────
                     PagedReaderView(
                         pages: viewModel.allPages,
                         currentPage: $viewModel.currentPage,
@@ -361,6 +380,11 @@ struct ComicReaderView: View {
                 isBackgroundLoading: $viewModel.isBackgroundLoading,
                 isFullScreen: $isFullScreen,
                 isSpreadMode: $viewModel.isSpreadMode,
+                isRTL: viewModel.isMangaRTL,
+                isVerticalScroll: viewModel.isVerticalScroll,
+                verticalZoomScale: $verticalZoomScale,
+                readingStyle: $viewModel.readingStyle,
+                currentComic: $currentComic,
                 onUserInteraction: {
                     resetAutoHideTimer()
                 },
@@ -370,6 +394,17 @@ struct ComicReaderView: View {
                         isManualLayoutOverride = true
                         print("📐 [ComicReaderView] Manual spread override enabled")
                     #endif
+                },
+                onComicUpdated: { updatedComic in
+                    libraryViewModel.updateComic(updatedComic)
+                    // Immediately apply any reading style change from the Presets menu
+                    let newStyle = ReaderSettings.shared.effectiveReadingStyle(for: updatedComic)
+                    if viewModel.readingStyle != newStyle {
+                        viewModel.readingStyle = newStyle
+                        if newStyle == .verticalScroll {
+                            viewModel.isSpreadMode = false
+                        }
+                    }
                 }
             )
 
@@ -378,7 +413,8 @@ struct ComicReaderView: View {
                 ThumbnailGridView(
                     pages: viewModel.allPages,
                     currentPage: $viewModel.currentPage,
-                    isPresented: $showingThumbnails
+                    isPresented: $showingThumbnails,
+                    isRTL: viewModel.isMangaRTL
                 )
                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
                 .zIndex(1000)
@@ -393,8 +429,15 @@ struct ComicReaderView: View {
 
             // Hidden Keyboard Shortcuts
             Group {
-                Button("") { viewModel.turn(by: -1) }.keyboardShortcut(.leftArrow, modifiers: [])
-                Button("") { viewModel.turn(by: 1) }.keyboardShortcut(.rightArrow, modifiers: [])
+                // In vertical scroll mode, left/right arrows scroll half a page; otherwise turn pages
+                Button("") {
+                    if viewModel.isVerticalScroll { viewModel.verticalScrollHalf(forward: false) }
+                    else { viewModel.turn(by: -1) }
+                }.keyboardShortcut(.leftArrow, modifiers: [])
+                Button("") {
+                    if viewModel.isVerticalScroll { viewModel.verticalScrollHalf(forward: true) }
+                    else { viewModel.turn(by: 1) }
+                }.keyboardShortcut(.rightArrow, modifiers: [])
                 Button("") { showControls() }.keyboardShortcut(.upArrow, modifiers: [])
                 Button("") { withAnimation { controlsVisible = false } }.keyboardShortcut(.downArrow, modifiers: [])
                 Button("") { handleTapToToggleControls() }.keyboardShortcut(.space, modifiers: [])
@@ -409,6 +452,12 @@ struct ComicReaderView: View {
                 isPresented: $showingReaderSettings,
                 onComicUpdated: { updatedComic in
                     libraryViewModel.updateComic(updatedComic)
+                    // Re-apply reading style immediately
+                    let newStyle = ReaderSettings.shared.effectiveReadingStyle(for: updatedComic)
+                    viewModel.readingStyle = newStyle
+                    if newStyle == .verticalScroll {
+                        viewModel.isSpreadMode = false
+                    }
                 }
             )
         }
@@ -819,14 +868,19 @@ struct ComicReaderView: View {
 
             monitor.onLeftArrow = { [weak viewModel] in
                 guard let viewModel = viewModel else { return }
-                guard viewModel.currentPage > 0 else { return }
 
                 Task { @MainActor in
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        if viewModel.isSpreadMode {
-                            viewModel.currentPage = max(0, viewModel.currentPage - 2)
-                        } else {
-                            viewModel.currentPage -= 1
+                    if viewModel.isVerticalScroll {
+                        // In vertical scroll mode, left arrow scrolls up half a page
+                        viewModel.verticalScrollHalf(forward: false)
+                    } else {
+                        guard viewModel.currentPage > 0 else { return }
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            if viewModel.isSpreadMode {
+                                viewModel.currentPage = max(0, viewModel.currentPage - 2)
+                            } else {
+                                viewModel.currentPage -= 1
+                            }
                         }
                     }
                     // NOTE: Specifically NOT calling resetAutoHideTimer() or showControls()
@@ -837,14 +891,19 @@ struct ComicReaderView: View {
             monitor.onRightArrow = { [weak viewModel] in
                 guard let viewModel = viewModel else { return }
                 guard let totalPages = viewModel.comicBook?.totalPages else { return }
-                guard viewModel.currentPage < totalPages - 1 else { return }
 
                 Task { @MainActor in
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        if viewModel.isSpreadMode {
-                            viewModel.currentPage = min(totalPages - 1, viewModel.currentPage + 2)
-                        } else {
-                            viewModel.currentPage += 1
+                    if viewModel.isVerticalScroll {
+                        // In vertical scroll mode, right arrow scrolls down half a page
+                        viewModel.verticalScrollHalf(forward: true)
+                    } else {
+                        guard viewModel.currentPage < totalPages - 1 else { return }
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            if viewModel.isSpreadMode {
+                                viewModel.currentPage = min(totalPages - 1, viewModel.currentPage + 2)
+                            } else {
+                                viewModel.currentPage += 1
+                            }
                         }
                     }
                     // NOTE: Specifically NOT calling resetAutoHideTimer() or showControls()

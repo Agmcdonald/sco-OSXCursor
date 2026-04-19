@@ -13,6 +13,7 @@ struct ThumbnailGridView: View {
     let pages: [ComicPage]
     @Binding var currentPage: Int
     @Binding var isPresented: Bool
+    var isRTL: Bool = false
     
     private let columns = [
         GridItem(.adaptive(minimum: 80, maximum: 120), spacing: 16)
@@ -79,6 +80,7 @@ struct ThumbnailGridView: View {
                         }
                         .padding(Spacing.xl)
                     }
+                    .environment(\.layoutDirection, isRTL ? .rightToLeft : .leftToRight)
                     .onAppear {
                         // Scroll to current page when view appears
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -170,7 +172,8 @@ struct ThumbnailCell: View {
                         ComicPage(pageNumber: pageNum, imageData: Data(), fileName: "page\(pageNum).jpg")
                     },
                     currentPage: $currentPage,
-                    isPresented: $isPresented
+                    isPresented: $isPresented,
+                    isRTL: false
                 )
             }
         }

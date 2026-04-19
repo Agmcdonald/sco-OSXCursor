@@ -21,8 +21,15 @@ struct ReaderControlsOverlay: View {
     @Binding var isBackgroundLoading: Bool  // Show loading indicator
     @Binding var isFullScreen: Bool  // Fullscreen mode
     @Binding var isSpreadMode: Bool  // Two-page spread mode
+    var isRTL: Bool = false  // Right-to-left reading (Manga/Manhwa)
+    var isVerticalScroll: Bool = false  // Vertical scroll (webtoon) mode
+    /// Fraction of screen width for pages in vertical-scroll mode (0.3…1.0)
+    @Binding var verticalZoomScale: Double
+    @Binding var readingStyle: ReadingStyle  // Current active reading style
+    @Binding var currentComic: Comic  // Current comic for style updates
     let onUserInteraction: () -> Void  // Called when user interacts
     var onUserToggledSpread: (() -> Void)? = nil  // Called when user manually toggles spread mode
+    var onComicUpdated: ((Comic) -> Void)? = nil  // Called when comic settings change
 
     var body: some View {
         ZStack {
@@ -136,25 +143,27 @@ struct ReaderControlsOverlay: View {
                 .help("Show All Pages")
             #endif
 
-            // Spread mode toggle button
-            Button(action: {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    isSpreadMode.toggle()
+            // Spread mode toggle button (hidden in vertical scroll mode)
+            if !isVerticalScroll {
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        isSpreadMode.toggle()
+                    }
+                    onUserToggledSpread?()  // Notify parent of manual user toggle
+                    onUserInteraction()
+                }) {
+                    Image(systemName: isSpreadMode ? "rectangle.split.2x1" : "rectangle")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 44, height: 44)
+                        .background(Color.black.opacity(0.5))
+                        .clipShape(Circle())
                 }
-                onUserToggledSpread?()  // Notify parent of manual user toggle
-                onUserInteraction()
-            }) {
-                Image(systemName: isSpreadMode ? "rectangle.split.2x1" : "rectangle")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(width: 44, height: 44)
-                    .background(Color.black.opacity(0.5))
-                    .clipShape(Circle())
+                .buttonStyle(.plain)
+                #if os(macOS)
+                    .help(isSpreadMode ? "Switch to Single Page" : "Switch to Two-Page Spread")
+                #endif
             }
-            .buttonStyle(.plain)
-            #if os(macOS)
-                .help(isSpreadMode ? "Switch to Single Page" : "Switch to Two-Page Spread")
-            #endif
 
             // Fullscreen toggle button
             Button(action: {
@@ -184,14 +193,16 @@ struct ReaderControlsOverlay: View {
                 .help(isFullScreen ? "Exit Full Screen" : "Enter Full Screen")
             #endif
 
-            // Menu button
+            // Presets / Menu button
+            #if os(macOS)
+            presetsMenu
+            #else
+            // iOS: menu button opens the bottom sheet
             Button(action: {
-                #if os(iOS)
-                    withAnimation {
-                        showingMenu.toggle()
-                        controlsVisible = false
-                    }
-                #endif
+                withAnimation {
+                    showingMenu.toggle()
+                    controlsVisible = false
+                }
                 onUserInteraction()
             }) {
                 Image(systemName: "ellipsis")
@@ -202,6 +213,7 @@ struct ReaderControlsOverlay: View {
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
+            #endif
         }
         .padding(Spacing.lg)
         .background(
@@ -217,11 +229,11 @@ struct ReaderControlsOverlay: View {
     // MARK: - Bottom Bar
     private var bottomBar: some View {
         VStack(spacing: Spacing.sm) {
-            // Page slider
+            // Page slider / navigation
             HStack(spacing: Spacing.lg) {
-                // Previous button
+                // Previous button — label flips for RTL
                 Button(action: previousPage) {
-                    Image(systemName: "chevron.left")
+                    Image(systemName: isRTL ? "chevron.right" : "chevron.left")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(currentPage > 0 ? .white : .white.opacity(0.3))
                         .frame(width: 40, height: 40)
@@ -229,7 +241,7 @@ struct ReaderControlsOverlay: View {
                 .buttonStyle(.plain)
                 .disabled(currentPage == 0)
                 #if os(macOS)
-                    .help("Previous Page (←)")
+                    .help(isRTL ? "Next Page (←)" : "Previous Page (←)")
                 #endif
 
                 // Slider
@@ -243,11 +255,12 @@ struct ReaderControlsOverlay: View {
                         step: 1
                     )
                     .tint(AccentColors.primary)
+                    .environment(\.layoutDirection, isRTL ? .rightToLeft : .leftToRight)
                 }
 
-                // Next button
+                // Next button — label flips for RTL
                 Button(action: nextPage) {
-                    Image(systemName: "chevron.right")
+                    Image(systemName: isRTL ? "chevron.left" : "chevron.right")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(
                             currentPage < totalPages - 1 ? .white : .white.opacity(0.3)
@@ -257,10 +270,35 @@ struct ReaderControlsOverlay: View {
                 .buttonStyle(.plain)
                 .disabled(currentPage >= totalPages - 1)
                 #if os(macOS)
-                    .help("Next Page (→)")
+                    .help(isRTL ? "Previous Page (→)" : "Next Page (→)")
                 #endif
             }
             .padding(.horizontal, Spacing.xl)
+
+            // Zoom slider — only shown in vertical scroll mode
+            if isVerticalScroll {
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: "minus.magnifyingglass")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.7))
+                        #if os(macOS)
+                        .help("Smaller pages")
+                        #endif
+
+                    Slider(value: $verticalZoomScale, in: 0.3...1.0, step: 0.05)
+                        .tint(AccentColors.primary)
+                        .frame(maxWidth: 260)
+
+                    Image(systemName: "plus.magnifyingglass")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.7))
+                        #if os(macOS)
+                        .help("Larger pages")
+                        #endif
+                }
+                .padding(.horizontal, Spacing.xl)
+                .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .bottom)))
+            }
 
             // Inline thumbnail strip
             inlineThumbnailStrip
@@ -314,6 +352,62 @@ struct ReaderControlsOverlay: View {
             }
         }
     }
+
+    // MARK: - macOS Presets Menu
+    #if os(macOS)
+    private var presetsMenu: some View {
+        Menu {
+            // Reading Style section
+            Section("Reading Style") {
+                ForEach(ReadingStyle.allCases, id: \.self) { style in
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            readingStyle = style
+                        }
+                        // Persist per-book preference
+                        var updated = currentComic
+                        updated.readingStyle = style.rawValue
+                        updated.dateModified = Date()
+                        currentComic = updated
+                        onComicUpdated?(updated)
+                        onUserInteraction()
+                    }) {
+                        Label(style.displayName, systemImage: style.icon)
+                    }
+                    // Checkmark on the active style
+                    .badge(readingStyle == style ? "✓" : "")
+                }
+            }
+
+            Divider()
+
+            Button(action: {
+                // This triggers the InReaderSettingsView sheet via the parent
+                NotificationCenter.default.post(
+                    name: .scoOpenReaderSettings, object: nil)
+                onUserInteraction()
+            }) {
+                Label("Configure Reader…", systemImage: "slider.horizontal.3")
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "slider.horizontal.below.square.filled.and.square")
+                    .font(.system(size: 16, weight: .semibold))
+                Text("Presets")
+                    .font(.system(size: 13, weight: .semibold))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color.black.opacity(0.5))
+            .clipShape(Capsule())
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+    #endif
 
     // MARK: - Actions
     private func previousPage() {
@@ -441,6 +535,9 @@ struct InlineThumbnail: View {
         @State private var isBackgroundLoading = true
         @State private var isFullScreen = false
         @State private var isSpreadMode = false
+        @State private var readingStyle: ReadingStyle = .standard
+        @State private var sampleComic = Comic.sample()
+        @State private var verticalZoomScale: Double = 0.7
 
         var body: some View {
             ZStack {
@@ -460,6 +557,9 @@ struct InlineThumbnail: View {
                     isBackgroundLoading: $isBackgroundLoading,
                     isFullScreen: $isFullScreen,
                     isSpreadMode: $isSpreadMode,
+                    verticalZoomScale: $verticalZoomScale,
+                    readingStyle: $readingStyle,
+                    currentComic: $sampleComic,
                     onUserInteraction: { print("User interacted") }
                 )
             }
@@ -468,3 +568,4 @@ struct InlineThumbnail: View {
 
     return PreviewWrapper()
 }
+

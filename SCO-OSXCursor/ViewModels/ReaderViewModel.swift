@@ -36,8 +36,13 @@ class ReaderViewModel: ObservableObject {
     @Published var loadedPages: [Int: ComicPage] = [:]  // For lazy-loaded pages - published to update UI
     @Published var isBackgroundLoading: Bool = false  // True while pages load in background
     @Published var isSpreadMode: Bool = false  // Two-page spread view
+    @Published var readingStyle: ReadingStyle = .standard  // Current effective reading style
     @Published private(set) var isAnimatingTurn: Bool = false
     @Published private(set) var lastInteractionAt: Date = .distantPast
+
+    // Computed style helpers
+    var isVerticalScroll: Bool { readingStyle == .verticalScroll }
+    var isMangaRTL: Bool { readingStyle == .mangaRTL }
 
     private let cbzReader = CBZReader()
     private let pdfReader = PDFReader()
@@ -377,6 +382,13 @@ class ReaderViewModel: ObservableObject {
             isLazyLoaded = fullComic.isLazyLoaded
             currentComic = comic
 
+            // Apply effective reading style for this book
+            readingStyle = ReaderSettings.shared.effectiveReadingStyle(for: comic)
+            // Vertical scroll mode is inherently single-page display
+            if readingStyle == .verticalScroll {
+                isSpreadMode = false
+            }
+
             // Store for cleanup (deinit can't access MainActor properties)
             cleanupURL = fileURL
             cleanupComicID = comic.id
@@ -450,6 +462,12 @@ class ReaderViewModel: ObservableObject {
             cleanupComicID = comic.id
             cleanupTotalPages = comicBook.totalPages
 
+            // Apply effective reading style
+            readingStyle = ReaderSettings.shared.effectiveReadingStyle(for: comic)
+            if readingStyle == .verticalScroll {
+                isSpreadMode = false
+            }
+
             // Populate lazy-loaded pages cache if needed
             if comicBook.isLazyLoaded {
                 for page in comicBook.pages {
@@ -511,7 +529,8 @@ class ReaderViewModel: ObservableObject {
     }
 
     /// Centralized, debounced page turn.
-    /// `steps`: +1 for next, -1 for previous (in spread mode, each step = 2 pages)
+    /// `steps`: +1 for next, -1 for previous (in spread mode, each logical step = 2 pages).
+    /// In Manga/RTL mode the direction is inverted so "next" goes to a lower page number.
     func turn(by steps: Int) {
         guard steps != 0 else { return }
         guard let comic = comicBook else { return }
@@ -521,8 +540,11 @@ class ReaderViewModel: ObservableObject {
         let now = Date()
         guard now.timeIntervalSince(lastTurnAt) > turnCooldown else { return }
 
+        // In Manga/RTL mode, invert the step direction
+        let effectiveSteps = isMangaRTL ? -steps : steps
+
         // In spread mode, each logical step equals 2 pages
-        let pageDelta = isSpreadMode ? (steps * 2) : steps
+        let pageDelta = isSpreadMode ? (effectiveSteps * 2) : effectiveSteps
         let totalPages = comic.totalPages
         let target = clamp(currentPage + pageDelta, lower: 0, upper: max(0, totalPages - 1))
         guard target != currentPage else { return }
@@ -540,8 +562,17 @@ class ReaderViewModel: ObservableObject {
         }
 
         #if DEBUG
-            print("[ReaderViewModel] turn(by: \(steps)) -> page \(target) (spread:\(isSpreadMode))")
+            print("[ReaderViewModel] turn(by: \(steps)) -> page \(target) (spread:\(isSpreadMode), rtl:\(isMangaRTL))")
         #endif
+    }
+    
+    /// Triggered by arrow keys during vertical scroll mode to do a half-page jump
+    func verticalScrollHalf(forward: Bool) {
+        NotificationCenter.default.post(
+            name: NSNotification.Name("VerticalScrollHalfNotification"),
+            object: nil,
+            userInfo: ["forward": forward]
+        )
     }
 
     // MARK: - Lazy Loading Support

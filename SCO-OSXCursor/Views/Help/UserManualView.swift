@@ -51,7 +51,14 @@ struct UserManualView: View {
                             icon: "magnifyingglass",
                             title: "Smart Search & Filtering",
                             description:
-                                "Find comics instantly using the search bar, or filter by Publisher, Series, and Year. Use the View options to switch between Grid, List, and Publisher workflows."
+                                "Find comics instantly using the search bar, filter by Publisher, Series, and Year, or isolate books you 'Want to Read'. Use the View options to switch between Grid, List, and Publisher workflows."
+                        )
+
+                        FeatureRow(
+                            icon: "slider.horizontal.3",
+                            title: "Dynamic Cover Grid",
+                            description:
+                                "Adjust the size of the covers in your library using the zoom slider. Scale up for large artwork, or zoom out for a dense, easy-to-browse layout while keeping all metadata readable."
                         )
 
                         FeatureRow(
@@ -66,6 +73,13 @@ struct UserManualView: View {
                             title: "Home Library Folder",
                             description:
                                 "Set a Home Library folder in Settings → Home Library to have every confirmed comic automatically moved into a Publisher/Series/ folder structure. The file is also renamed to a clean format (e.g. \"Batman #001 (2025).cbz\") as part of the move."
+                        )
+
+                        FeatureRow(
+                            icon: "folder.arrow.turn.up.right",
+                            title: "Relocating Your Library",
+                            description:
+                                "If you ever need to move your comic library to a new drive or folder, use the 'Relocate Library' tool in Settings to bulk-update your file paths quickly without losing your database."
                         )
 
                         // Cloud & Network Drive warning callout
@@ -134,6 +148,13 @@ struct UserManualView: View {
                             description:
                                 "The reader automatically detects two-page spreads. On iPad, turning your device to landscape mode activates Dual-Page mode automatically (adjustable in settings)."
                         )
+
+                        FeatureRow(
+                            icon: "text.book.closed",
+                            title: "Reading Styles",
+                            description:
+                                "Enjoy your comics exactly how they were meant to be read. Set per-book Reading Styles including Standard, Manga (Right-to-Left), and Vertical Scroll directly from the Reader Settings via the gear icon."
+                        )
                     }
                 }
 
@@ -183,9 +204,9 @@ struct UserManualView: View {
 
                         FeatureRow(
                             icon: "list.star",
-                            title: "Reading List",
+                            title: "Want to Read & Currently Reading",
                             description:
-                                "Add comics to your Reading List (from the selection toolbar or context menu) to keep them accessible at the top of the Library and Dashboard."
+                                "Add comics to your 'Want to Read' list (from the selection toolbar or context menu) to keep them accessible at the top of the Library and Dashboard. Track the books you've started in the 'Currently Reading' section."
                         )
                     }
                 }
