@@ -87,21 +87,39 @@ struct ContentView: View {
         #if os(iOS)
             // iOS/iPadOS: true full-screen cover — hides system chrome completely
             .fullScreenCover(item: $libraryViewModel.readingComic) { comic in
-                ComicReaderView(comic: comic)
-                    .environmentObject(libraryViewModel)
-                    .ignoresSafeArea()                          // Art fills the entire glass
-                    .statusBarHidden(true)                      // Always hide clock/battery
-                    .persistentSystemOverlays(.hidden)          // Always hide home bar
-            }
-        #else
-            // macOS: overlay on top of the split view (preserve existing behaviour)
-            .overlay {
-                if let comic = libraryViewModel.readingComic {
+                if comic.fileType == .epub {
+                    EPUBContentView(comic: comic)
+                        .environmentObject(libraryViewModel)
+                        .ignoresSafeArea()
+                        .statusBarHidden(true)
+                        .persistentSystemOverlays(.hidden)
+                } else {
                     ComicReaderView(comic: comic)
                         .environmentObject(libraryViewModel)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .transition(.opacity)
-                        .zIndex(100)
+                        .ignoresSafeArea()                          // Art fills the entire glass
+                        .statusBarHidden(true)                      // Always hide clock/battery
+                        .persistentSystemOverlays(.hidden)          // Always hide home bar
+                }
+            }
+        #else
+            // macOS: overlay on top of the split view
+            .overlay {
+                if let comic = libraryViewModel.readingComic {
+                    Group {
+                        if comic.fileType == .epub {
+                            EPUBContentView(comic: comic)
+                                .environmentObject(libraryViewModel)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .transition(.opacity)
+                                .zIndex(100)
+                        } else {
+                            ComicReaderView(comic: comic)
+                                .environmentObject(libraryViewModel)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .transition(.opacity)
+                                .zIndex(100)
+                        }
+                    }
                 }
             }
             .animation(.easeInOut(duration: 0.25), value: libraryViewModel.readingComic == nil)
@@ -144,7 +162,7 @@ struct ContentView: View {
         case .maintenance:
             PlaceholderView(
                 title: "Maintenance",
-                subtitle: "Database and file maintenance tools will appear here",
+                subtitle: "Database and file maintenance tools will appear here in future update",
                 icon: "wrench.and.screwdriver"
             )
         case .userManual:

@@ -200,7 +200,9 @@ struct ComicReaderView: View {
                 await viewModel.onPageChanged(to: newValue)
 
                 // Update the comic in library with new progress
-                var updatedComic = comic
+                // Use currentComic (not the original `comic` let) so per-book settings
+                // like readingStyle are preserved when saving progress.
+                var updatedComic = currentComic
                 updatedComic.currentPage = newValue
 
                 // Update status based on progress
