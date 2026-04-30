@@ -351,6 +351,10 @@ class ReaderViewModel: ObservableObject {
             case .cbr:
                 reader = cbrReader
                 print("[ATTEMPT #\(currentAttempt)] Using CBRReader")
+            case .epub:
+                // EPUBs are handled by EPUBContentView, not ReaderViewModel
+                print("[ATTEMPT #\(currentAttempt)] ⚠️ EPUB reached ReaderViewModel — not supported")
+                throw ComicReaderError.invalidFormat
             }
 
             // Quick load: Just get page count first
@@ -616,7 +620,7 @@ class ReaderViewModel: ObservableObject {
                         reader = await self.pdfReader
                     case .cbr:
                         reader = await self.cbrReader
-                    default:
+                    default:  // .cbz, .epub (epub not used here in practice)
                         reader = await self.cbzReader
                     }
                     let page = try await reader.loadPage(at: pageIndex, from: fileURL)
@@ -686,7 +690,7 @@ class ReaderViewModel: ObservableObject {
                 reader = pdfReader
             case .cbr:
                 reader = cbrReader
-            default:
+            default:  // .cbz, .epub (epub not used here in practice)
                 reader = cbzReader
             }
             let page = try await reader.loadPage(at: pageIndex, from: fileURL)
