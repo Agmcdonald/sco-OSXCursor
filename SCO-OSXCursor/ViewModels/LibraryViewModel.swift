@@ -299,6 +299,7 @@ final class LibraryViewModel: ObservableObject {
         switch comic.fileType {
         case .pdf: reader = PDFReader()
         case .cbr: reader = CBRReader()
+        case .epub: reader = EPUBReader()
         default: reader = CBZReader()
         }
 
@@ -448,6 +449,7 @@ final class LibraryViewModel: ObservableObject {
                 switch fileType {
                 case .pdf: reader = PDFReader()
                 case .cbr: reader = CBRReader()
+                case .epub: reader = EPUBReader()
                 default: reader = CBZReader()
                 }
 
@@ -592,7 +594,7 @@ final class LibraryViewModel: ObservableObject {
     func importBundledComics() async {
         print("[LibraryViewModel] 📦 Scanning for bundled comics...")
 
-        let extensions = ["cbz", "pdf", "cbr"]
+        let extensions = ["cbz", "pdf", "cbr", "epub"]
         var bundledURLs: [URL] = []
 
         for ext in extensions {
@@ -705,6 +707,9 @@ final class LibraryViewModel: ObservableObject {
                     // Pre-fetch only needs access during loading; ReaderViewModel manages its own
                     if didStartAccess { fileURL.stopAccessingSecurityScopedResource() }
                 }
+
+                // EPUBs load their own chapters in EPUBContentView — skip prefetch
+                guard comic.fileType != .epub else { return }
 
                 let reader: ComicReaderProtocol
                 switch comic.fileType {

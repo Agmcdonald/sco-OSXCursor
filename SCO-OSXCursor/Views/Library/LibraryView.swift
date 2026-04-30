@@ -13,6 +13,11 @@ extension UTType {
     static var cbr: UTType {
         UTType(exportedAs: "com.rarlab.rar-archive")
     }
+
+    // epub is a well-known public UTType — use the system identifier
+    static var epub: UTType {
+        UTType(importedAs: "org.idpf.epub-container")
+    }
 }
 
 // Wrapper to make UUID work with .sheet(item:)
@@ -252,7 +257,7 @@ struct LibraryView: View {
         )
         .fileImporter(
             isPresented: $showingFilePicker,
-            allowedContentTypes: [.zip, .pdf, .cbr, UTType(filenameExtension: "cbr")!],
+            allowedContentTypes: [.zip, .pdf, .cbr, .epub, UTType(filenameExtension: "cbr")!, UTType(filenameExtension: "epub") ?? .data],
             allowsMultipleSelection: true
         ) { result in
             handleFileImport(result)

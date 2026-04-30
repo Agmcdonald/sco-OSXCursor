@@ -233,6 +233,42 @@ final class DatabaseManager {
             print("[DatabaseManager] ✅ Migration v9_reading_style complete")
         }
 
+        // Version 10: EPUB support — per-book font size preference
+        migrator.registerMigration("v10_epub_support") { db in
+            print("[DatabaseManager] 🔄 Running migration: v10_epub_support")
+            if try db.tableExists("comics") {
+                do {
+                    try db.alter(table: "comics") { t in
+                        t.add(column: "epub_font_size", .integer)
+                    }
+                    print("[DatabaseManager] ✅ Added epub_font_size column")
+                } catch {
+                    print(
+                        "[DatabaseManager] ℹ️ epub_font_size column may already exist: \(error.localizedDescription)"
+                    )
+                }
+            }
+            print("[DatabaseManager] ✅ Migration v10_epub_support complete")
+        }
+
+        // Version 11: EPUB theme — per-book theme preference
+        migrator.registerMigration("v11_epub_theme") { db in
+            print("[DatabaseManager] 🔄 Running migration: v11_epub_theme")
+            if try db.tableExists("comics") {
+                do {
+                    try db.alter(table: "comics") { t in
+                        t.add(column: "epub_theme", .text)
+                    }
+                    print("[DatabaseManager] ✅ Added epub_theme column")
+                } catch {
+                    print(
+                        "[DatabaseManager] ℹ️ epub_theme column may already exist: \(error.localizedDescription)"
+                    )
+                }
+            }
+            print("[DatabaseManager] ✅ Migration v11_epub_theme complete")
+        }
+
         return migrator
     }
 

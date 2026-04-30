@@ -22,6 +22,10 @@ struct InReaderSettingsView: View {
     @State private var selectedTransition: PageTransition?
     @State private var useDefault: Bool = true
 
+    // EPUB Theme state
+    @State private var selectedTheme: EPUBTheme?
+    @State private var useDefaultTheme: Bool = true
+
     var body: some View {
         NavigationView {
             Form {
@@ -70,6 +74,41 @@ struct InReaderSettingsView: View {
                     Text("Custom reading styles only apply to this book. Other books use the app default.")
                         .font(Typography.caption)
                         .foregroundColor(TextColors.tertiary)
+                }
+
+                // MARK: - EPUB Theme Section
+                if comic.fileType == .epub {
+                    Section {
+                        Toggle("Use App Default", isOn: $useDefaultTheme)
+                            .tint(AccentColors.primary)
+                            .onChange(of: useDefaultTheme) { _, newValue in
+                                if newValue {
+                                    selectedTheme = nil
+                                } else {
+                                    selectedTheme = settings.effectiveEPUBTheme(for: comic)
+                                }
+                            }
+
+                        if !useDefaultTheme {
+                            HStack(spacing: Spacing.md) {
+                                ForEach(EPUBTheme.allCases, id: \.self) { theme in
+                                    EPUBThemeCard(
+                                        theme: theme,
+                                        isSelected: (selectedTheme ?? settings.defaultEPUBTheme) == theme
+                                    ) {
+                                        selectedTheme = theme
+                                    }
+                                }
+                            }
+                            .padding(.top, Spacing.xs)
+                        }
+                    } header: {
+                        Text("Theme")
+                    } footer: {
+                        Text("Overrides book background and font colors. Custom themes only apply to this book.")
+                            .font(Typography.caption)
+                            .foregroundColor(TextColors.tertiary)
+                    }
                 }
 
                 // MARK: - Page Transition Section
@@ -200,6 +239,18 @@ struct InReaderSettingsView: View {
                 useDefault = true
                 selectedTransition = nil
             }
+
+            // Load EPUB theme setting
+            if comic.fileType == .epub {
+                if let themeString = comic.epubTheme,
+                   let theme = EPUBTheme(rawValue: themeString) {
+                    useDefaultTheme = false
+                    selectedTheme = theme
+                } else {
+                    useDefaultTheme = true
+                    selectedTheme = nil
+                }
+            }
         }
     }
 
@@ -219,6 +270,11 @@ struct InReaderSettingsView: View {
 
         // Save transition
         updatedComic.preferredTransition = useDefault ? nil : selectedTransition?.rawValue
+
+        // Save theme
+        if comic.fileType == .epub {
+            updatedComic.epubTheme = useDefaultTheme ? nil : selectedTheme?.rawValue
+        }
 
         updatedComic.dateModified = Date()
         comic = updatedComic
@@ -292,5 +348,43 @@ struct TransitionPreviewCard: View {
                 .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - EPUB Theme Card
+struct EPUBThemeCard: View {
+    let theme: EPUBTheme
+    let isSelected: Bool
+    let onSelect: () -> Void
+
+    var body: some View {
+        Button(action: onSelect) {
+            VStack(spacing: Spacing.sm) {
+                ZStack {
+                    Circle()
+                        .fill(Color(hex: theme.cssColors.background))
+                        .frame(width: 56, height: 56)
+                        .overlay(
+                            Circle()
+                                .strokeBorder(
+                                    isSelected ? AccentColors.primary : BorderColors.subtle,
+                                    lineWidth: isSelected ? 2 : 1
+                                )
+                        )
+
+                    Image(systemName: theme.icon)
+                        .font(.system(size: 22, weight: .medium))
+                        .foregroundColor(Color(hex: theme.cssColors.text))
+                }
+                .animation(.easeInOut(duration: 0.15), value: isSelected)
+
+                Text(theme.displayName)
+                    .font(Typography.caption)
+                    .foregroundColor(isSelected ? AccentColors.primary : TextColors.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Spacing.xs)
+        }
+        .buttonStyle(.plain)
     }
 }

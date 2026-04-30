@@ -76,7 +76,7 @@ class MetadataParser {
 
         // Remove file extension
         var working = filename.replacingOccurrences(
-            of: #"\.(cbz|cbr|pdf|zip|rar)$"#, with: "",
+            of: #"\.(cbz|cbr|pdf|epub|zip|rar)$"#, with: "",
             options: [.regularExpression, .caseInsensitive])
 
         // Convert underscores to spaces

@@ -38,6 +38,35 @@ enum ReadingStyle: String, CaseIterable, Codable {
     }
 }
 
+// MARK: - EPUB Theme
+
+enum EPUBTheme: String, CaseIterable, Codable {
+    case dark = "Dark"
+    case light = "Light"
+    case sepia = "Sepia"
+    
+    var displayName: String { rawValue }
+    
+    var icon: String {
+        switch self {
+        case .dark: return "moon.fill"
+        case .light: return "sun.max.fill"
+        case .sepia: return "leaf.fill"
+        }
+    }
+    
+    var cssColors: (background: String, text: String, accent: String) {
+        switch self {
+        case .dark:
+            return ("#1A1A1E", "#E8E6F0", "#9B8FE8")
+        case .light:
+            return ("#FFFFFF", "#1E1E26", "#6A5AE0")
+        case .sepia:
+            return ("#FBF0D9", "#5F4B32", "#D28E3D")
+        }
+    }
+}
+
 // MARK: - Page Transition
 
 enum PageTransition: String, CaseIterable, Codable {
@@ -98,6 +127,7 @@ class ReaderSettings: ObservableObject {
 
     @Published var pageTransition: PageTransition  // Global default transition
     @Published var defaultReadingStyle: ReadingStyle  // Global default reading style
+    @Published var defaultEPUBTheme: EPUBTheme        // Global default EPUB theme
     private var cancellables = Set<AnyCancellable>()
 
     private init() {
@@ -115,6 +145,13 @@ class ReaderSettings: ObservableObject {
             self.defaultReadingStyle = .standard
         }
 
+        if let saved = UserDefaults.standard.string(forKey: "defaultEPUBTheme"),
+           let theme = EPUBTheme(rawValue: saved) {
+            self.defaultEPUBTheme = theme
+        } else {
+            self.defaultEPUBTheme = .dark
+        }
+
         // Debounced save on main thread (macOS 26 safe)
         $pageTransition
             .removeDuplicates()
@@ -129,6 +166,14 @@ class ReaderSettings: ObservableObject {
             .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
             .sink { value in
                 UserDefaults.standard.set(value.rawValue, forKey: "defaultReadingStyle")
+            }
+            .store(in: &cancellables)
+
+        $defaultEPUBTheme
+            .removeDuplicates()
+            .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
+            .sink { value in
+                UserDefaults.standard.set(value.rawValue, forKey: "defaultEPUBTheme")
             }
             .store(in: &cancellables)
     }
@@ -167,6 +212,24 @@ class ReaderSettings: ObservableObject {
     /// Save per-book reading style preference
     func setPreferredReadingStyle(_ style: ReadingStyle?, for comic: inout Comic) {
         comic.readingStyle = style?.rawValue
+        comic.dateModified = Date()
+    }
+
+    // MARK: - EPUB Theme Helpers
+
+    /// Get the effective EPUB theme for a specific comic
+    func effectiveEPUBTheme(for comic: Comic?) -> EPUBTheme {
+        if let comic = comic,
+           let themeString = comic.epubTheme,
+           let theme = EPUBTheme(rawValue: themeString) {
+            return theme
+        }
+        return defaultEPUBTheme
+    }
+
+    /// Save per-book EPUB theme preference
+    func setPreferredEPUBTheme(_ theme: EPUBTheme?, for comic: inout Comic) {
+        comic.epubTheme = theme?.rawValue
         comic.dateModified = Date()
     }
 }

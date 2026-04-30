@@ -56,6 +56,8 @@ struct Comic: Identifiable, Codable {
     // MARK: - Reader Preferences
     var preferredTransition: String?  // Per-book transition override (PageTransition.rawValue)
     var readingStyle: String?         // Per-book reading style override (ReadingStyle.rawValue)
+    var epubFontSize: Int?            // Per-book EPUB font size (pt), nil = default (16pt)
+    var epubTheme: String?            // Per-book EPUB theme (EPUBTheme.rawValue)
     var contentRating: ContentRating
 
     // MARK: - File Info
@@ -97,6 +99,8 @@ struct Comic: Identifiable, Codable {
         needsAttention: Bool = false,
         preferredTransition: String? = nil,
         readingStyle: String? = nil,
+        epubFontSize: Int? = nil,
+        epubTheme: String? = nil,
         contentRating: ContentRating = .allAges,
         fileSize: Int64 = 0,
         fileType: FileType = .cbz,
@@ -132,6 +136,8 @@ struct Comic: Identifiable, Codable {
         self.needsAttention = needsAttention
         self.preferredTransition = preferredTransition
         self.readingStyle = readingStyle
+        self.epubFontSize = epubFontSize
+        self.epubTheme = epubTheme
         self.contentRating = contentRating
         self.fileSize = fileSize
         self.fileType = fileType
@@ -197,6 +203,7 @@ extension Comic {
         case cbz = "cbz"
         case cbr = "cbr"
         case pdf = "pdf"
+        case epub = "epub"
 
         var displayName: String {
             rawValue.uppercased()
@@ -206,14 +213,20 @@ extension Comic {
             switch self {
             case .cbz, .cbr: return "doc.zipper"
             case .pdf: return "doc.richtext"
+            case .epub: return "book.pages"
             }
+        }
+
+        /// True for formats whose content is text/HTML (not image pages)
+        var isTextBased: Bool {
+            self == .epub
         }
     }
 }
 
 // MARK: - Computed Properties
 extension Comic {
-    /// Display name for the comic (uses title → series → cleaned filename)
+    /// Display name for the comic/book (uses title → series → cleaned filename)
     var displayName: String {
         if let title = title, !title.isEmpty {
             return title
@@ -222,6 +235,11 @@ extension Comic {
             return series
         }
         return fileName.replacingOccurrences(of: ".\(fileType.rawValue)", with: "")
+    }
+
+    /// Human-readable label for the item type (comic vs book)
+    var mediaTypeLabel: String {
+        fileType == .epub ? "Book" : "Comic"
     }
 
     /// Full display title with issue number and year
@@ -451,6 +469,8 @@ extension Comic: FetchableRecord, PersistableRecord {
         static let needsAttention = Column("needs_attention")
         static let preferredTransition = Column("preferred_transition")
         static let readingStyle = Column("reading_style")
+        static let epubFontSize = Column("epub_font_size")
+        static let epubTheme = Column("epub_theme")
         static let contentRating = Column("content_rating")
         static let fileSize = Column("file_size")
         static let fileType = Column("file_type")
@@ -489,6 +509,8 @@ extension Comic: FetchableRecord, PersistableRecord {
         container[Columns.needsAttention] = needsAttention
         container[Columns.preferredTransition] = preferredTransition
         container[Columns.readingStyle] = readingStyle
+        container[Columns.epubFontSize] = epubFontSize
+        container[Columns.epubTheme] = epubTheme
         container[Columns.contentRating] = contentRating.rawValue
         container[Columns.fileSize] = fileSize
         container[Columns.fileType] = fileType.rawValue
@@ -552,6 +574,8 @@ extension Comic: FetchableRecord, PersistableRecord {
             needsAttention: row["needs_attention"] ?? false,
             preferredTransition: row["preferred_transition"],
             readingStyle: row["reading_style"],
+            epubFontSize: row["epub_font_size"],
+            epubTheme: row["epub_theme"],
             contentRating: ContentRating(rawValue: row["content_rating"] ?? 0) ?? .allAges,
             fileSize: fileSize,
             fileType: fileType,
@@ -565,7 +589,7 @@ extension Comic: FetchableRecord, PersistableRecord {
 extension Comic {
     /// Memoized list of known bundled files (scanned once)
     private static let knownBundledFiles: [String] = {
-        let exts = ["cbz", "pdf", "cbr"]
+        let exts = ["cbz", "pdf", "cbr", "epub"]
         return exts.flatMap { ext in
             Bundle.main.urls(forResourcesWithExtension: ext, subdirectory: nil)?
                 .map { $0.lastPathComponent } ?? []
