@@ -356,50 +356,59 @@ struct ReaderControlsOverlay: View {
     // MARK: - macOS Presets Menu
     #if os(macOS)
     private var presetsMenu: some View {
-        Menu {
-            // Reading Style section
-            Section("Reading Style") {
-                ForEach(ReadingStyle.allCases, id: \.self) { style in
-                    Button(action: {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            readingStyle = style
-                        }
-                        // Persist per-book preference
-                        var updated = currentComic
-                        updated.readingStyle = style.rawValue
-                        updated.dateModified = Date()
-                        currentComic = updated
-                        onComicUpdated?(updated)
-                        onUserInteraction()
-                    }) {
-                        Label(style.displayName, systemImage: style.icon)
-                    }
-                    // Checkmark on the active style
-                    .badge(readingStyle == style ? "✓" : "")
-                }
-            }
-
-            Divider()
-
-            Button(action: {
-                // This triggers the InReaderSettingsView sheet via the parent
-                NotificationCenter.default.post(
-                    name: .scoOpenReaderSettings, object: nil)
-                onUserInteraction()
-            }) {
-                Label("Configure Reader…", systemImage: "slider.horizontal.3")
-            }
-        } label: {
+        // ZStack keeps the custom icon visually independent of the Menu label so
+        // macOS cannot override the foreground color through its label-rendering path.
+        ZStack {
+            // Visual layer — plain SwiftUI view, always white
             Image(systemName: "slider.horizontal.3")
                 .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.white)
                 .frame(width: 44, height: 44)
                 .background(Color.black.opacity(0.5))
                 .clipShape(Circle())
+                .allowsHitTesting(false)
+
+            // Hit-test layer — transparent Menu that handles the click
+            Menu {
+                Section("Reading Style") {
+                    ForEach(ReadingStyle.allCases, id: \.self) { style in
+                        Button(action: {
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                readingStyle = style
+                            }
+                            var updated = currentComic
+                            updated.readingStyle = style.rawValue
+                            updated.dateModified = Date()
+                            currentComic = updated
+                            onComicUpdated?(updated)
+                            onUserInteraction()
+                        }) {
+                            Label(style.displayName, systemImage: style.icon)
+                        }
+                        .badge(readingStyle == style ? "✓" : "")
+                    }
+                }
+
+                Divider()
+
+                Button(action: {
+                    NotificationCenter.default.post(
+                        name: .scoOpenReaderSettings, object: nil)
+                    onUserInteraction()
+                }) {
+                    Label("Configure Reader…", systemImage: "slider.horizontal.3")
+                }
+            } label: {
+                Rectangle()
+                    .fill(.clear)
+                    .contentShape(Rectangle())
+                    .frame(width: 44, height: 44)
+            }
+            .menuStyle(.borderlessButton)
+            .frame(width: 44, height: 44)
         }
-        .menuStyle(.borderlessButton)
         .fixedSize()
-        // Force white icon — macOS Menu overrides foreground color from the label hierarchy
-        .environment(\.colorScheme, .dark)
+        .help("Reading Style & Presets")
     }
     #endif
 
