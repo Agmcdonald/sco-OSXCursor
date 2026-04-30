@@ -406,6 +406,10 @@ struct ReaderControlsOverlay: View {
             }
             .menuStyle(.borderlessButton)
             .frame(width: 44, height: 44)
+            // Propagate adaptive primary color to all items so they render
+            // correctly in both light and dark mode regardless of any static
+            // foreground color inherited from the reader's view hierarchy.
+            .foregroundStyle(Color.primary)
         }
         .fixedSize()
         .help("Reading Style & Presets")
