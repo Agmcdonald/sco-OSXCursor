@@ -31,6 +31,11 @@ struct ReaderControlsOverlay: View {
     var onUserToggledSpread: (() -> Void)? = nil  // Called when user manually toggles spread mode
     var onComicUpdated: ((Comic) -> Void)? = nil  // Called when comic settings change
 
+    /// Captured up-front so the Presets menu can reset its environment to the
+    /// actual app appearance. The HUD around it leaks white foreground colors
+    /// into native NSMenu rendering, so we have to break the menu out cleanly.
+    @Environment(\.colorScheme) private var systemColorScheme
+
     var body: some View {
         ZStack {
             // Scrim is visual only - does NOT block gestures
@@ -406,10 +411,11 @@ struct ReaderControlsOverlay: View {
             }
             .menuStyle(.borderlessButton)
             .frame(width: 44, height: 44)
-            // Propagate adaptive primary color to all items so they render
-            // correctly in both light and dark mode regardless of any static
-            // foreground color inherited from the reader's view hierarchy.
-            .foregroundStyle(Color.primary)
+            // Reset the menu's environment so the native NSMenu renders with
+            // the real app appearance and clears any white foreground that
+            // leaked in from the surrounding HUD chrome.
+            .foregroundColor(nil)
+            .environment(\.colorScheme, systemColorScheme)
         }
         .fixedSize()
         .help("Reading Style & Presets")
