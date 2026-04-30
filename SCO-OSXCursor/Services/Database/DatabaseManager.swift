@@ -534,7 +534,7 @@ extension DatabaseManager {
         guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
 
         try await dbQueue.write { db in
-            try entry.insert(db, onConflict: .ignore)
+            _ = try entry.insert(db, onConflict: .ignore)
         }
     }
 
@@ -543,7 +543,7 @@ extension DatabaseManager {
         guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
 
         try await dbQueue.write { db in
-            try entry.delete(db)
+            _ = try entry.delete(db)
         }
     }
 

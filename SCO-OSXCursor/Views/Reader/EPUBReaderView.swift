@@ -354,7 +354,7 @@ private struct EPUBWebViewHelper {
         <script>
         document.addEventListener("DOMContentLoaded", function() {
             document.querySelectorAll('*').forEach(el => {
-                el.style.setProperty('color', '\\(colors.text)', 'important');
+                el.style.setProperty('color', '\(colors.text)', 'important');
                 el.style.setProperty('background-color', 'transparent', 'important');
             });
         });
@@ -366,35 +366,35 @@ private struct EPUBWebViewHelper {
         :root { color-scheme: dark; }
         * { box-sizing: border-box; }
         html, body {
-            background-color: \\(colors.background) !important;
-            color: \\(colors.text) !important;
+            background-color: \(colors.background) !important;
+            color: \(colors.text) !important;
             font-family: -apple-system, 'Georgia', serif !important;
-            font-size: \\(fontSize)px !important;
+            font-size: \(fontSize)px !important;
             line-height: 1.75 !important;
         }
-        \\(layoutCSS)
-        p, li, div, span, td, th { font-size: inherit !important; color: \\(colors.text) !important; }
-        h1, h2, h3, h4, h5, h6 { color: \\(colors.text) !important; font-weight: 600; margin-top: 1.5em; margin-bottom: 0.5em; }
-        a { color: \\(colors.accent) !important; }
+        \(layoutCSS)
+        p, li, div, span, td, th { font-size: inherit !important; color: \(colors.text) !important; }
+        h1, h2, h3, h4, h5, h6 { color: \(colors.text) !important; font-weight: 600; margin-top: 1.5em; margin-bottom: 0.5em; }
+        a { color: \(colors.accent) !important; }
         img { border-radius: 8px; }
         blockquote {
-            border-left: 3px solid \\(colors.accent);
+            border-left: 3px solid \(colors.accent);
             margin-left: 0; padding-left: 16px;
-            color: \\(colors.text) !important; font-style: italic; opacity: 0.8;
+            color: \(colors.text) !important; font-style: italic; opacity: 0.8;
         }
-        code, pre { background: \\(theme == .dark ? "#2C2C34" : "#F0F0F0") !important; color: \\(colors.text) !important; border-radius: 4px; padding: 2px 6px; }
+        code, pre { background: \(theme == .dark ? "#2C2C34" : "#F0F0F0") !important; color: \(colors.text) !important; border-radius: 4px; padding: 2px 6px; }
         pre { padding: 12px; }
         </style>
         """
-        
-        let headInjection = "\\(css)\\n\\(js)\\n\\(stripInlineColorsJS)"
-        
+
+        let headInjection = "\(css)\n\(js)\n\(stripInlineColorsJS)"
+
         if let range = html.range(of: "</head>", options: .caseInsensitive) {
-            return html.replacingCharacters(in: range, with: "\\(headInjection)</head>")
+            return html.replacingCharacters(in: range, with: "\(headInjection)</head>")
         } else if let range = html.range(of: "<html>", options: .caseInsensitive) {
-            return html.replacingCharacters(in: range, with: "<html><head>\\(headInjection)</head>")
+            return html.replacingCharacters(in: range, with: "<html><head>\(headInjection)</head>")
         } else {
-            return "<html><head>\\(headInjection)</head><body>\\(html)</body></html>"
+            return "<html><head>\(headInjection)</head><body>\(html)</body></html>"
         }
     }
 }

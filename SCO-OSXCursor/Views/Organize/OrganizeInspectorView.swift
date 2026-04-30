@@ -139,11 +139,11 @@ struct OrganizeInspectorView: View {
                         .zIndex(1)
                     }
                 }
-                .onChange(of: series) { _ in update() }
-                .onChange(of: issueNumber) { _ in update() }
-                .onChange(of: year) { _ in update() }
-                .onChange(of: publisher) { _ in update() }
-                .onChange(of: volume) { _ in update() }
+                .onChange(of: series) { update() }
+                .onChange(of: issueNumber) { update() }
+                .onChange(of: year) { update() }
+                .onChange(of: publisher) { update() }
+                .onChange(of: volume) { update() }
 
                 DisclosureGroup("Additional Metadata", isExpanded: $isAdditionalMetadataExpanded) {
                     Group {
@@ -266,14 +266,14 @@ struct OrganizeInspectorView: View {
                     .padding(.top, 8)
                 }
                 .font(.subheadline)
-                .onChange(of: title) { _ in update() }
-                .onChange(of: writer) { _ in update() }
-                .onChange(of: artist) { _ in update() }
-                .onChange(of: coverArtist) { _ in update() }
-                .onChange(of: colorist) { _ in update() }
-                .onChange(of: inker) { _ in update() }
-                .onChange(of: editor) { _ in update() }
-                .onChange(of: summary) { _ in update() }
+                .onChange(of: title) { update() }
+                .onChange(of: writer) { update() }
+                .onChange(of: artist) { update() }
+                .onChange(of: coverArtist) { update() }
+                .onChange(of: colorist) { update() }
+                .onChange(of: inker) { update() }
+                .onChange(of: editor) { update() }
+                .onChange(of: summary) { update() }
 
                 Divider()
 

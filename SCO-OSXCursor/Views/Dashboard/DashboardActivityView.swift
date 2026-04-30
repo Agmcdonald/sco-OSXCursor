@@ -77,7 +77,7 @@ struct DashboardActivityView: View {
         .task {
             await loadActivity()
         }
-        .onChange(of: libraryViewModel.comics.count) { _ in
+        .onChange(of: libraryViewModel.comics.count) {
             Task { await loadActivity() }
         }
     }
