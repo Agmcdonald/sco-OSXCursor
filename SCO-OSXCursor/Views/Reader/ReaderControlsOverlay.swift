@@ -390,22 +390,16 @@ struct ReaderControlsOverlay: View {
                 Label("Configure Reader…", systemImage: "slider.horizontal.3")
             }
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "slider.horizontal.below.square.filled.and.square")
-                    .font(.system(size: 16, weight: .semibold))
-                Text("Presets")
-                    .font(.system(size: 13, weight: .semibold))
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
-            }
-            .foregroundColor(.white)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Color.black.opacity(0.5))
-            .clipShape(Capsule())
+            Image(systemName: "slider.horizontal.3")
+                .font(.system(size: 18, weight: .semibold))
+                .frame(width: 44, height: 44)
+                .background(Color.black.opacity(0.5))
+                .clipShape(Circle())
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
+        // Force white icon — macOS Menu overrides foreground color from the label hierarchy
+        .environment(\.colorScheme, .dark)
     }
     #endif
 
