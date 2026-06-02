@@ -6,6 +6,7 @@
 //  cover images, and metadata from the OPF package document.
 //
 
+import CommonCrypto
 import Foundation
 import SwiftUI
 import ZIPFoundation
@@ -80,23 +81,47 @@ final class EPUBReader: ComicReaderProtocol {
 
     // MARK: - Extraction
 
-    /// Extracts the EPUB ZIP into a unique temp subdirectory, returns the root URL.
-    private func extractEPUB(at url: URL) throws -> URL {
-        // Use a deterministic subfolder based on filename so repeated calls reuse the same extraction.
-        let fm = FileManager.default
-        let tmpBase = fm.temporaryDirectory
-            .appendingPathComponent("SCO_EPUB")
-            .appendingPathComponent(url.lastPathComponent.replacingOccurrences(of: ".epub", with: ""))
+    /// Serial queue that protects the check-then-extract section of `extractEPUB`
+    /// so concurrent callers cannot race on the same (or different) EPUBs.
+    private static let extractionQueue = DispatchQueue(label: "com.sco.EPUBReader.extraction")
 
-        if fm.fileExists(atPath: tmpBase.path) {
-            // Already extracted — re-use
+    /// Extracts the EPUB ZIP into a unique temp subdirectory, returns the root URL.
+    /// Uses a SHA-256 hash of the full path to avoid collisions between books with the
+    /// same filename in different directories, and serialises extraction via a private queue.
+    private func extractEPUB(at url: URL) throws -> URL {
+        try EPUBReader.extractionQueue.sync {
+            let fm = FileManager.default
+            let standardPath = url.standardizedFileURL.path
+            let hash = Self.sha256Prefix(of: standardPath)
+            let safeName = url.deletingPathExtension().lastPathComponent
+                .replacingOccurrences(of: "[^a-zA-Z0-9_-]", with: "_", options: .regularExpression)
+            let folderName = "\(safeName)_\(hash)"
+            let tmpBase = fm.temporaryDirectory
+                .appendingPathComponent("SCO_EPUB")
+                .appendingPathComponent(folderName)
+
+            if fm.fileExists(atPath: tmpBase.path) {
+                return tmpBase
+            }
+
+            do {
+                try fm.createDirectory(at: tmpBase, withIntermediateDirectories: true)
+                try fm.unzipItem(at: url, to: tmpBase)
+            } catch {
+                try? fm.removeItem(at: tmpBase)
+                throw error
+            }
+            print("[EPUBReader] Extracted EPUB to: \(tmpBase.path)")
             return tmpBase
         }
+    }
 
-        try fm.createDirectory(at: tmpBase, withIntermediateDirectories: true)
-        try fm.unzipItem(at: url, to: tmpBase)
-        print("[EPUBReader] ✅ Extracted EPUB to: \(tmpBase.path)")
-        return tmpBase
+    /// Returns the first 12 hex characters of the SHA-256 hash of the given string.
+    private static func sha256Prefix(of string: String) -> String {
+        let data = Data(string.utf8)
+        var hash = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+        _ = data.withUnsafeBytes { CC_SHA256($0.baseAddress, CC_LONG(data.count), &hash) }
+        return hash.prefix(6).map { String(format: "%02x", $0) }.joined()
     }
 
     // MARK: - OPF Location
@@ -201,6 +226,97 @@ private final class ContainerXMLParser: NSObject, XMLParserDelegate {
     }
 }
 
+// MARK: - NCX Parser
+
+/// Parses an EPUB2 NCX navigation document to extract a mapping of
+/// content href (OPF-relative) → navLabel title.
+/// Uses a stack to correctly handle nested navPoint elements (sub-chapters).
+private final class NCXParser: NSObject, XMLParserDelegate {
+    private let data: Data
+    private let ncxDirectory: URL
+    private let opfDirectory: URL
+
+    /// Per-navPoint accumulator, pushed/popped to handle nesting.
+    private struct NavPointState {
+        var src: String?
+        var label: String = ""
+        var inNavLabel: Bool = false
+        var inText: Bool = false
+    }
+
+    private var stack: [NavPointState] = []
+
+    // Result: OPF-relative href → title
+    private(set) var titles: [String: String] = [:]
+
+    init(data: Data, ncxDirectory: URL, opfDirectory: URL) {
+        self.data = data
+        self.ncxDirectory = ncxDirectory
+        self.opfDirectory = opfDirectory
+    }
+
+    func parse() -> [String: String] {
+        let parser = XMLParser(data: data)
+        parser.delegate = self
+        parser.parse()
+        return titles
+    }
+
+    func parser(_ parser: XMLParser, didStartElement elementName: String,
+                namespaceURI: String?, qualifiedName: String?,
+                attributes attributeDict: [String: String] = [:]) {
+        switch elementName {
+        case "navPoint":
+            stack.append(NavPointState())
+        case "navLabel":
+            if !stack.isEmpty { stack[stack.count - 1].inNavLabel = true }
+        case "text":
+            if !stack.isEmpty && stack[stack.count - 1].inNavLabel {
+                stack[stack.count - 1].inText = true
+                stack[stack.count - 1].label = ""
+            }
+        case "content":
+            // Strip fragment identifiers — we key on file path only
+            if let src = attributeDict["src"], !stack.isEmpty {
+                stack[stack.count - 1].src = src.components(separatedBy: "#").first
+            }
+        default:
+            break
+        }
+    }
+
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        if let last = stack.last, last.inText {
+            stack[stack.count - 1].label += string
+        }
+    }
+
+    func parser(_ parser: XMLParser, didEndElement elementName: String,
+                namespaceURI: String?, qualifiedName: String?) {
+        switch elementName {
+        case "text":
+            if !stack.isEmpty { stack[stack.count - 1].inText = false }
+        case "navLabel":
+            if !stack.isEmpty { stack[stack.count - 1].inNavLabel = false }
+        case "navPoint":
+            guard let state = stack.popLast(), let src = state.src else { break }
+            let title = state.label.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty else { break }
+
+            // Resolve the NCX-relative src to an absolute URL, then make it OPF-relative
+            let absoluteURL = ncxDirectory.appendingPathComponent(src).standardized
+            let opfRelative = absoluteURL.path.replacingOccurrences(of: opfDirectory.path + "/", with: "")
+            titles[opfRelative] = title
+
+            // Also store keyed by bare filename as a fallback for flat-structure EPUBs
+            let filename = absoluteURL.lastPathComponent
+            if titles[filename] == nil { titles[filename] = title }
+        default:
+            break
+        }
+    }
+}
+
 // MARK: - OPF Parser
 
 /// Parses the OPF package document to extract spine order, metadata, and cover reference.
@@ -236,6 +352,9 @@ private final class OPFParser: NSObject, XMLParserDelegate {
 
     func parseChapters() -> [EPUBChapter] {
         runParser()
+        // Build a href→title map from the NCX navigation document (EPUB2) if present
+        let ncxTitles = parseTOCTitles()
+
         var chapters: [EPUBChapter] = []
         for (index, idref) in spineRefs.enumerated() {
             guard let href = manifest[idref] else { continue }
@@ -244,10 +363,27 @@ private final class OPFParser: NSObject, XMLParserDelegate {
             let fileURL = opfDirectory.appendingPathComponent(decodedHref)
             guard FileManager.default.fileExists(atPath: fileURL.path) else { continue }
             let baseURL = fileURL.deletingLastPathComponent()
-            let title = navTitles[idref] ?? "Chapter \(index + 1)"
+            // NCX title keyed by the href relative to the OPF directory (strip fragment)
+            let hrefKey = decodedHref.components(separatedBy: "#").first ?? decodedHref
+            let title = ncxTitles[hrefKey] ?? navTitles[idref] ?? "Chapter \(index + 1)"
             chapters.append(EPUBChapter(index: index, title: title, fileURL: fileURL, baseURL: baseURL))
         }
         return chapters
+    }
+
+    /// Finds the NCX navigation document in the manifest and returns a mapping of
+    /// content href → display title. Returns empty dict if no NCX is present.
+    private func parseTOCTitles() -> [String: String] {
+        for (id, href) in manifest {
+            guard manifestMediaType[id] == "application/x-dtbncx+xml" else { continue }
+            let ncxURL = opfDirectory.appendingPathComponent(href)
+            guard let data = try? Data(contentsOf: ncxURL) else { continue }
+            // NCX hrefs are relative to the NCX file, which may be in a sub-directory.
+            // Normalise them back to OPF-relative paths so they match hrefKey above.
+            let ncxDir = ncxURL.deletingLastPathComponent()
+            return NCXParser(data: data, ncxDirectory: ncxDir, opfDirectory: opfDirectory).parse()
+        }
+        return [:]
     }
 
     func parseMetadata() -> ComicMetadata {

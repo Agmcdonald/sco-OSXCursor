@@ -84,8 +84,11 @@ struct InReaderSettingsView: View {
                             .onChange(of: useDefaultTheme) { _, newValue in
                                 if newValue {
                                     selectedTheme = nil
+                                    applyThemeChange()
                                 } else {
-                                    selectedTheme = settings.effectiveEPUBTheme(for: comic)
+                                    let effectiveTheme = settings.effectiveEPUBTheme(for: comic)
+                                    selectedTheme = effectiveTheme
+                                    applyThemeChange(effectiveTheme)
                                 }
                             }
 
@@ -97,6 +100,7 @@ struct InReaderSettingsView: View {
                                         isSelected: (selectedTheme ?? settings.defaultEPUBTheme) == theme
                                     ) {
                                         selectedTheme = theme
+                                        applyThemeChange(theme)
                                     }
                                 }
                             }
@@ -276,6 +280,15 @@ struct InReaderSettingsView: View {
             updatedComic.epubTheme = useDefaultTheme ? nil : selectedTheme?.rawValue
         }
 
+        updatedComic.dateModified = Date()
+        comic = updatedComic
+        onComicUpdated(updatedComic)
+    }
+
+    private func applyThemeChange(_ explicitTheme: EPUBTheme? = nil) {
+        guard comic.fileType == .epub else { return }
+        var updatedComic = comic
+        updatedComic.epubTheme = useDefaultTheme ? nil : (explicitTheme ?? selectedTheme)?.rawValue
         updatedComic.dateModified = Date()
         comic = updatedComic
         onComicUpdated(updatedComic)

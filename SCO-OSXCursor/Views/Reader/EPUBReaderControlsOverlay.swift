@@ -235,8 +235,10 @@ struct EPUBReaderControlsOverlay: View {
                             let chapter = Int(fraction * Double(totalChapters - 1) + 0.5)
                             let clamped = max(0, min(totalChapters - 1, chapter))
                             if clamped != currentChapter {
-                                currentChapter = clamped
-                                onUserInteraction()
+                                DispatchQueue.main.async {
+                                    currentChapter = clamped
+                                    onUserInteraction()
+                                }
                             }
                         }
                 )
@@ -292,7 +294,7 @@ struct EPUBReaderControlsOverlay: View {
 
     private var safeTopPadding: CGFloat {
         #if os(macOS)
-        return 0
+        return 52
         #else
         return 0  // SwiftUI safe area handles this
         #endif

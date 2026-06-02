@@ -35,7 +35,7 @@ struct EPUBContentView: View {
         EPUBReaderView(
             comic: localComic,
             currentChapter: $currentChapter,
-            totalChapters: totalChapters,
+            totalChapters: $totalChapters,
             fontSize: $fontSize,
             onClose: closeReader,
             onShowSettings: { showSettings = true }
