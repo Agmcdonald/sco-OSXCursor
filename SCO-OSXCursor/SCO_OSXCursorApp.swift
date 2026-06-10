@@ -15,6 +15,9 @@ struct SCO_OSXCursorApp: App {
         // Initialize database on app startup
         _ = DatabaseManager.shared
         print("[App] ✅ App initialization complete")
+        // Build marker — confirms which code the running binary was compiled from.
+        // If this line is missing from the console, the device is running a STALE build.
+        print("[App] 🏷️ Build: claude/optimization-pass — Stage 1.1 (lazy reader + demand thumbnails)")
     }
 
     @Environment(\.openWindow) private var openWindow
