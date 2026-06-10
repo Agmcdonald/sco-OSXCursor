@@ -47,12 +47,24 @@ struct OrganizeView: View {
                         .buttonStyle(.plain)
 
                         Button(action: {
-                            // Scan folder logic (future)
+                            // Recursively scan a folder for comic files
+                            let panel = NSOpenPanel()
+                            panel.allowsMultipleSelection = true
+                            panel.canChooseDirectories = true
+                            panel.canChooseFiles = false
+                            panel.canCreateDirectories = false
+
+                            panel.begin { response in
+                                if response == .OK {
+                                    Task {
+                                        await viewModel.addFiles(panel.urls)
+                                    }
+                                }
+                            }
                         }) {
                             Label("Scan Folder...", systemImage: "folder.badge.plus")
                         }
                         .buttonStyle(.plain)
-                        .disabled(true)
                     }
                     .padding()
                     .background(Color(NSColor.controlBackgroundColor))

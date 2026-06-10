@@ -29,8 +29,18 @@ final class OrganizeViewModel: ObservableObject {
     // Dependencies
     private let libraryViewModel: LibraryViewModel
 
+    /// Security-scoped folders the user dropped/selected. Their scope must stay
+    /// open while staged files inside them are read, renamed and imported.
+    private var activeScopedFolders: [URL] = []
+
     init(libraryViewModel: LibraryViewModel) {
         self.libraryViewModel = libraryViewModel
+    }
+
+    deinit {
+        for url in activeScopedFolders {
+            url.stopAccessingSecurityScopedResource()
+        }
     }
 
     // MARK: - Computed Properties
@@ -42,25 +52,65 @@ final class OrganizeViewModel: ObservableObject {
 
     // MARK: - File Actions
 
-    /// Add files to the staging area from URLs (e.g. Drag & Drop or Open Panel)
+    /// Add files OR folders to the staging area (Drag & Drop or Open Panel).
+    /// Folders are scanned recursively for supported comic files.
     func addFiles(_ urls: [URL]) async {
         isProcessing = true
         processingProgress = 0.0
 
-        var newComics: [StagedComic] = []
         let validExtensions = ["cbz", "cbr", "pdf"]
 
-        for (index, url) in urls.enumerated() {
-            // Filter by extension
-            let ext = url.pathExtension.lowercased()
-            if validExtensions.contains(ext) {
-                // Create StagedComic (automatically parses metadata on init)
-                let comic = StagedComic(url: url)
-                newComics.append(comic)
+        // Separate folders from files; keep folder security scopes open for
+        // the rest of the staging session so their children stay readable.
+        var scopedFolders: [URL] = []
+        for url in urls {
+            var isDirectory: ObjCBool = false
+            if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+                isDirectory.boolValue
+            {
+                if url.startAccessingSecurityScopedResource() {
+                    scopedFolders.append(url)
+                }
+            }
+        }
+        activeScopedFolders.append(contentsOf: scopedFolders)
+
+        // Expand folders recursively off the main thread
+        let fileURLs: [URL] = await Task.detached(priority: .userInitiated) {
+            var result: [URL] = []
+            let fm = FileManager.default
+
+            for url in urls {
+                var isDirectory: ObjCBool = false
+                guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory) else { continue }
+
+                if isDirectory.boolValue {
+                    if let walker = fm.enumerator(
+                        at: url,
+                        includingPropertiesForKeys: [.isRegularFileKey],
+                        options: [.skipsHiddenFiles, .skipsPackageDescendants]
+                    ) {
+                        for case let fileURL as URL in walker
+                        where validExtensions.contains(fileURL.pathExtension.lowercased()) {
+                            result.append(fileURL)
+                        }
+                    }
+                } else if validExtensions.contains(url.pathExtension.lowercased()) {
+                    result.append(url)
+                }
             }
 
-            // Update progress
-            processingProgress = Double(index + 1) / Double(urls.count)
+            return result.sorted {
+                $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent)
+                    == .orderedAscending
+            }
+        }.value
+
+        var newComics: [StagedComic] = []
+        for (index, url) in fileURLs.enumerated() {
+            // Create StagedComic (parses the filename on init)
+            newComics.append(StagedComic(url: url))
+            processingProgress = Double(index + 1) / Double(fileURLs.count)
         }
 
         // Append to list
@@ -73,6 +123,72 @@ final class OrganizeViewModel: ObservableObject {
 
         isProcessing = false
         print("[OrganizeViewModel] Added \(newComics.count) files to staging.")
+
+        // Enrich from embedded ComicInfo.xml in the background — embedded
+        // metadata beats filename guessing and raises auto-match confidence.
+        enrichFromEmbeddedMetadata(newComics)
+    }
+
+    // MARK: - Embedded Metadata Enrichment
+
+    /// Read ComicInfo.xml from staged CBZ/CBR files in the background and
+    /// merge it into any fields the filename parse couldn't fill.
+    /// Runs serially so a large folder drop doesn't open hundreds of archives
+    /// at once; each row updates in the UI as its metadata arrives.
+    private func enrichFromEmbeddedMetadata(_ comics: [StagedComic]) {
+        let targets: [(id: UUID, url: URL, ext: String)] = comics.compactMap { staged in
+            let ext = staged.originalURL.pathExtension.lowercased()
+            guard ext == "cbz" || ext == "cbr" else { return nil }
+            return (staged.id, staged.originalURL, ext)
+        }
+        guard !targets.isEmpty else { return }
+
+        Task { [weak self] in
+            for target in targets {
+                let metadata: ComicMetadata?
+                switch target.ext {
+                case "cbz": metadata = try? await CBZReader().extractComicInfo(from: target.url)
+                case "cbr": metadata = try? await CBRReader().extractComicInfo(from: target.url)
+                default: metadata = nil
+                }
+                if let metadata {
+                    self?.applyEmbeddedMetadata(metadata, to: target.id)
+                }
+            }
+        }
+    }
+
+    private func applyEmbeddedMetadata(_ m: ComicMetadata, to id: UUID) {
+        guard let index = stagedComics.firstIndex(where: { $0.id == id }) else { return }
+        var comic = stagedComics[index]
+
+        // Fill only the fields the filename parse left empty — user edits and
+        // confident filename results are never overwritten.
+        if comic.series.isEmpty, let series = m.series { comic.series = series }
+        if comic.issueNumber == nil { comic.issueNumber = m.number }
+        if comic.year == nil { comic.year = m.year }
+        if comic.publisher == nil { comic.publisher = m.publisher }
+        if comic.volume == nil { comic.volume = m.volume }
+        if comic.title == nil { comic.title = m.title }
+        if comic.writer == nil { comic.writer = m.writer }
+        if comic.artist == nil { comic.artist = m.penciller }
+        if comic.coverArtist == nil { comic.coverArtist = m.coverArtist }
+        if comic.colorist == nil { comic.colorist = m.colorist }
+        if comic.inker == nil { comic.inker = m.inker }
+        if comic.editor == nil { comic.editor = m.editor }
+        if comic.summary == nil { comic.summary = m.summary }
+
+        // Re-evaluate confidence with the enriched fields
+        if !comic.series.isEmpty, comic.issueNumber != nil, comic.year != nil,
+            comic.publisher != nil
+        {
+            comic.confidence = .high
+            comic.status = .ready
+        } else if !comic.series.isEmpty, comic.issueNumber != nil {
+            comic.confidence = max(comic.confidence, .medium)
+        }
+
+        stagedComics[index] = comic
     }
 
     // MARK: - Selection Actions
@@ -131,34 +247,46 @@ final class OrganizeViewModel: ObservableObject {
         let originalURL = current.originalURL
         var finalURL = originalURL
 
-        // 1. Rename file on disk to match the confirmed metadata
+        // 1. Rename file on disk to match the confirmed metadata.
+        //    File I/O runs off the main thread — renaming dozens of staged
+        //    files previously blocked the UI for the whole batch.
         let newFileName = current.proposedFileName
         if newFileName != originalURL.lastPathComponent {
-            let newURL = originalURL.deletingLastPathComponent().appendingPathComponent(newFileName)
+            let renamedURL: URL? = await Task.detached(priority: .userInitiated) {
+                let newURL = originalURL.deletingLastPathComponent()
+                    .appendingPathComponent(newFileName)
 
-            // Security-scoped access for rename (balanced start/stop)
-            let accessingSource = originalURL.startAccessingSecurityScopedResource()
-            let destFolderURL = newURL.deletingLastPathComponent()
-            let accessingDest = destFolderURL.startAccessingSecurityScopedResource()
+                // Security-scoped access for rename (balanced start/stop)
+                let accessingSource = originalURL.startAccessingSecurityScopedResource()
+                let destFolderURL = newURL.deletingLastPathComponent()
+                let accessingDest = destFolderURL.startAccessingSecurityScopedResource()
 
-            defer {
-                if accessingSource { originalURL.stopAccessingSecurityScopedResource() }
-                if accessingDest { destFolderURL.stopAccessingSecurityScopedResource() }
-            }
-
-            do {
-                if !FileManager.default.fileExists(atPath: newURL.path) {
-                    try FileManager.default.moveItem(at: originalURL, to: newURL)
-                    finalURL = newURL
-                    print(
-                        "[OrganizeViewModel] 📝 Renamed staged file: \(originalURL.lastPathComponent) → \(newFileName)"
-                    )
-                } else {
-                    print(
-                        "[OrganizeViewModel] ⚠️ Target file exists, skipping rename: \(newFileName)")
+                defer {
+                    if accessingSource { originalURL.stopAccessingSecurityScopedResource() }
+                    if accessingDest { destFolderURL.stopAccessingSecurityScopedResource() }
                 }
-            } catch {
-                print("[OrganizeViewModel] ❌ Rename failed: \(error)")
+
+                do {
+                    if !FileManager.default.fileExists(atPath: newURL.path) {
+                        try FileManager.default.moveItem(at: originalURL, to: newURL)
+                        return newURL
+                    } else {
+                        print(
+                            "[OrganizeViewModel] ⚠️ Target file exists, skipping rename: \(newFileName)"
+                        )
+                        return nil
+                    }
+                } catch {
+                    print("[OrganizeViewModel] ❌ Rename failed: \(error)")
+                    return nil
+                }
+            }.value
+
+            if let renamedURL {
+                finalURL = renamedURL
+                print(
+                    "[OrganizeViewModel] 📝 Renamed staged file: \(originalURL.lastPathComponent) → \(newFileName)"
+                )
             }
         }
 
@@ -231,11 +359,19 @@ final class OrganizeViewModel: ObservableObject {
         }
     }
 
-    /// Confirm all comics with "Ready" status at once
+    /// Confirm all comics with "Ready" status at once, with batch progress
     func confirmAllReady() async {
         let readyComics = stagedComics.filter { $0.status == .ready }
-        for comic in readyComics {
+        guard !readyComics.isEmpty else { return }
+
+        isProcessing = true
+        processingProgress = 0.0
+
+        for (index, comic) in readyComics.enumerated() {
             await confirmMatch(comic)
+            processingProgress = Double(index + 1) / Double(readyComics.count)
         }
+
+        isProcessing = false
     }
 }

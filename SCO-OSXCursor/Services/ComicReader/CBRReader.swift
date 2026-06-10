@@ -91,6 +91,29 @@ class CBRReader: ComicReaderProtocol {
         )
     }
 
+    // MARK: - Extract ComicInfo.xml only (no page extraction)
+    /// Lightweight metadata read used during import staging.
+    func extractComicInfo(from url: URL) async throws -> ComicMetadata? {
+        return try await Task.detached {
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer {
+                if accessing { url.stopAccessingSecurityScopedResource() }
+            }
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                throw ComicReaderError.fileNotFound
+            }
+            let archive = try Archive(fileURL: url)
+            let entries = try archive.entries()
+            guard
+                let infoEntry = entries.first(where: {
+                    ($0.fileName as NSString).lastPathComponent.lowercased() == "comicinfo.xml"
+                })
+            else { return nil }
+            let data = try archive.extract(infoEntry)
+            return MetadataParser.parseComicInfo(from: data)
+        }.value
+    }
+
     // MARK: - Extract Cover
     func extractCover(from url: URL) async throws -> Data {
         return try await Task.detached {

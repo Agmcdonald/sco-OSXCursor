@@ -47,6 +47,8 @@ The architecture is sound (MVVM, GRDB/SQLite, security-scoped bookmarks, backgro
 
 Defined together after Stages 1–2 are testable on device: tap zones, double-tap zoom behavior, page-turn feel, per-book zoom memory, EPUB typography controls. Polish lands best on top of the new lazy-loading foundation.
 
+Noted from Stage 1 testing (Andrew, June 9): fade and zoom transitions feel too fast; "slide" appears to swap instantly rather than sliding the old page out while the new page slides in (should feel closer to Panels). Tune durations and make slide a true push transition.
+
 ## Verification per stage
 
 Each stage ends with: build on macOS + iPad simulator, a short manual smoke checklist from me, and a commit. Nothing merges to `main` until you've tested.

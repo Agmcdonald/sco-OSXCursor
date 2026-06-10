@@ -106,26 +106,23 @@ struct ComicCardView: View {
         // Force portrait aspect ratio container
         GeometryReader { geometry in
             ZStack {
-                // Cover image or placeholder
-                if let coverData = comic.coverImageData {
+                // Cover image or placeholder — decoded once via the cover
+                // cache (raw NSImage/UIImage(data:) re-decoded the full bytes
+                // on every grid render)
+                if let coverData = comic.coverImageData,
+                    let cover = PageImageCache.shared.coverImage(
+                        from: coverData, cacheKey: comic.id.uuidString)
+                {
                     #if os(macOS)
-                        if let nsImage = NSImage(data: coverData) {
-                            Image(nsImage: nsImage)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: geometry.size.width, height: geometry.size.height)
-                        } else {
-                            placeholderCover
-                        }
+                        Image(nsImage: cover)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: geometry.size.width, height: geometry.size.height)
                     #else
-                        if let uiImage = UIImage(data: coverData) {
-                            Image(uiImage: uiImage)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: geometry.size.width, height: geometry.size.height)
-                        } else {
-                            placeholderCover
-                        }
+                        Image(uiImage: cover)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: geometry.size.width, height: geometry.size.height)
                     #endif
                 } else {
                     placeholderCover

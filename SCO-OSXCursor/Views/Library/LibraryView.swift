@@ -257,7 +257,7 @@ struct LibraryView: View {
         )
         .fileImporter(
             isPresented: $showingFilePicker,
-            allowedContentTypes: [.zip, .pdf, .cbr, .epub, UTType(filenameExtension: "cbr")!, UTType(filenameExtension: "epub") ?? .data],
+            allowedContentTypes: [.folder, .zip, .pdf, .cbr, .epub, UTType(filenameExtension: "cbr")!, UTType(filenameExtension: "epub") ?? .data],
             allowsMultipleSelection: true
         ) { result in
             handleFileImport(result)

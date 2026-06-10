@@ -200,54 +200,76 @@ final class LibraryViewModel: ObservableObject {
     /// sandbox access before checking, avoiding false-positive missing flags on
     /// iCloud/Downloads files that exist but aren't accessible without access start.
     func checkMissingFiles() async {
-        let fm = FileManager.default
-        var flaggedCount = 0
-
-        for i in comics.indices {
-            let comic = comics[i]
-
-            // Skip files inside the app bundle (bundled sample comics)
-            if comic.filePath.path.hasPrefix(Bundle.main.bundlePath) { continue }
-
-            // Try to start security-scoped access using the stored bookmark
-            var bookmarkURL: URL? = nil
-            if let bookmarkData = comic.bookmarkData {
-                var stale = false
-                #if os(macOS)
-                bookmarkURL = try? URL(
-                    resolvingBookmarkData: bookmarkData,
-                    options: .withSecurityScope,
-                    relativeTo: nil,
-                    bookmarkDataIsStale: &stale
-                )
-                #else
-                bookmarkURL = try? URL(
-                    resolvingBookmarkData: bookmarkData,
-                    options: [],
-                    relativeTo: nil,
-                    bookmarkDataIsStale: &stale
-                )
-                #endif
+        // Snapshot what the scan needs, then do all bookmark resolution and
+        // disk probing OFF the main actor — this previously blocked the UI
+        // at launch for the whole library.
+        struct Probe: Sendable {
+            let id: UUID
+            let bookmarkData: Data?
+            let path: String
+            let needsAttention: Bool
+        }
+        let bundlePath = Bundle.main.bundlePath
+        let probes: [Probe] = comics
+            .filter { !$0.filePath.path.hasPrefix(bundlePath) }
+            .map {
+                Probe(
+                    id: $0.id, bookmarkData: $0.bookmarkData,
+                    path: $0.filePath.path, needsAttention: $0.needsAttention)
             }
-            let accessing = bookmarkURL?.startAccessingSecurityScopedResource() ?? false
 
-            // Use the bookmark-resolved URL if available (may differ from stored path
-            // if the file was moved externally); fall back to the stored path.
-            let checkURL = bookmarkURL ?? comic.filePath
-            let exists = fm.fileExists(atPath: checkURL.path)
+        // (id, nowMissing) for every comic whose flag should change
+        let changes: [(UUID, Bool)] = await Task.detached(priority: .utility) {
+            let fm = FileManager.default
+            var result: [(UUID, Bool)] = []
 
-            if accessing { bookmarkURL?.stopAccessingSecurityScopedResource() }
+            for probe in probes {
+                var bookmarkURL: URL? = nil
+                if let bookmarkData = probe.bookmarkData {
+                    var stale = false
+                    #if os(macOS)
+                        bookmarkURL = try? URL(
+                            resolvingBookmarkData: bookmarkData,
+                            options: .withSecurityScope,
+                            relativeTo: nil,
+                            bookmarkDataIsStale: &stale
+                        )
+                    #else
+                        bookmarkURL = try? URL(
+                            resolvingBookmarkData: bookmarkData,
+                            options: [],
+                            relativeTo: nil,
+                            bookmarkDataIsStale: &stale
+                        )
+                    #endif
+                }
+                let accessing = bookmarkURL?.startAccessingSecurityScopedResource() ?? false
 
-            if !exists && !comic.needsAttention {
-                comics[i].needsAttention = true
-                try? await database.updateComic(comics[i])
+                // Bookmark-resolved URL wins (file may have moved externally)
+                let checkPath = bookmarkURL?.path ?? probe.path
+                let exists = fm.fileExists(atPath: checkPath)
+
+                if accessing { bookmarkURL?.stopAccessingSecurityScopedResource() }
+
+                if !exists && !probe.needsAttention {
+                    result.append((probe.id, true))
+                } else if exists && probe.needsAttention {
+                    result.append((probe.id, false))
+                }
+            }
+            return result
+        }.value
+
+        var flaggedCount = 0
+        for (id, missing) in changes {
+            guard let index = comics.firstIndex(where: { $0.id == id }) else { continue }
+            comics[index].needsAttention = missing
+            try? await database.updateComic(comics[index])
+            if missing {
                 flaggedCount += 1
-                print("[LibraryViewModel] ⚠️ Missing file flagged: \(comic.fileName)")
-            } else if exists && comic.needsAttention {
-                // Auto-clear: file reappeared (e.g. drive remounted / iCloud synced)
-                comics[i].needsAttention = false
-                try? await database.updateComic(comics[i])
-                print("[LibraryViewModel] ✅ Cleared missing flag: \(comic.fileName)")
+                print("[LibraryViewModel] ⚠️ Missing file flagged: \(comics[index].fileName)")
+            } else {
+                print("[LibraryViewModel] ✅ Cleared missing flag: \(comics[index].fileName)")
             }
         }
 
@@ -303,10 +325,15 @@ final class LibraryViewModel: ObservableObject {
         default: reader = CBZReader()
         }
 
-        guard let coverData = try? await reader.extractCover(from: fileURL) else {
+        guard let rawCover = try? await reader.extractCover(from: fileURL) else {
             print("[LibraryViewModel] ⚠️ Cover regeneration failed for \(comic.fileName)")
             return
         }
+
+        // Downsample for storage
+        let coverData: Data = await Task.detached(priority: .userInitiated) {
+            PageImageCache.storageCoverData(from: rawCover) ?? rawCover
+        }.value
 
         var updated = comic
         updated.coverImageData = coverData
@@ -370,11 +397,57 @@ final class LibraryViewModel: ObservableObject {
 
     // MARK: - Import Comics
 
-    func importComics(from urls: [URL]) async {
+    func importComics(from rawURLs: [URL]) async {
         await MainActor.run {
             isImporting = true
             importProgress = 0.0
         }
+
+        // Expand folders into their contained comic files (recursive).
+        // Folder security scopes stay open until the import loop finishes
+        // so child files remain readable.
+        var scopedFolders: [URL] = []
+        for url in rawURLs {
+            var isDirectory: ObjCBool = false
+            if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+                isDirectory.boolValue, url.startAccessingSecurityScopedResource()
+            {
+                scopedFolders.append(url)
+            }
+        }
+        defer {
+            for folder in scopedFolders {
+                folder.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        let urls: [URL] = await Task.detached(priority: .userInitiated) {
+            let validExtensions = ["cbz", "cbr", "pdf", "epub"]
+            let fm = FileManager.default
+            var files: [URL] = []
+            for url in rawURLs {
+                var isDirectory: ObjCBool = false
+                guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory) else { continue }
+                if isDirectory.boolValue {
+                    if let walker = fm.enumerator(
+                        at: url,
+                        includingPropertiesForKeys: [.isRegularFileKey],
+                        options: [.skipsHiddenFiles, .skipsPackageDescendants]
+                    ) {
+                        for case let fileURL as URL in walker
+                        where validExtensions.contains(fileURL.pathExtension.lowercased()) {
+                            files.append(fileURL)
+                        }
+                    }
+                } else {
+                    files.append(url)
+                }
+            }
+            return files.sorted {
+                $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent)
+                    == .orderedAscending
+            }
+        }.value
 
         let total = urls.count
         var imported = 0
@@ -463,8 +536,12 @@ final class LibraryViewModel: ObservableObject {
                     )
                 }
 
-                // Extract cover image
-                let coverData = try? await reader.extractCover(from: url)
+                // Extract cover image, downsampled for storage (~100 KB JPEG
+                // instead of a multi-MB full-resolution scan in the database)
+                let rawCover = try? await reader.extractCover(from: url)
+                let coverData: Data? = await Task.detached(priority: .userInitiated) {
+                    rawCover.flatMap { PageImageCache.storageCoverData(from: $0) } ?? rawCover
+                }.value
 
                 // Get file size
                 let fileSize =
@@ -848,8 +925,11 @@ final class LibraryViewModel: ObservableObject {
                 )
             }
 
-            // Extract cover image — also non-fatal
-            let coverData = try? await reader.extractCover(from: fileURL)
+            // Extract cover image — also non-fatal; downsampled for storage
+            let rawCover = try? await reader.extractCover(from: fileURL)
+            let coverData: Data? = await Task.detached(priority: .userInitiated) {
+                rawCover.flatMap { PageImageCache.storageCoverData(from: $0) } ?? rawCover
+            }.value
 
             // Get file size
             let fileSize =

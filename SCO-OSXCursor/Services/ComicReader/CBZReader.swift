@@ -129,6 +129,23 @@ class CBZReader: ComicReaderProtocol {
         )
     }
 
+    // MARK: - Extract ComicInfo.xml only (no page extraction)
+    /// Lightweight metadata read used during import staging — opens the
+    /// archive's central directory and pulls just ComicInfo.xml.
+    func extractComicInfo(from url: URL) async throws -> ComicMetadata? {
+        return try await Task.detached {
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer {
+                if accessing { url.stopAccessingSecurityScopedResource() }
+            }
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                throw ComicReaderError.fileNotFound
+            }
+            let archive = try Archive(url: url, accessMode: .read)
+            return try self.extractMetadata(from: archive)
+        }.value
+    }
+
     // MARK: - Extract Cover
     func extractCover(from url: URL) async throws -> Data {
         return try await Task.detached {

@@ -318,29 +318,25 @@ private struct CoverThumbnail: View {
 
     @ViewBuilder
     private func coverImage(width: CGFloat, height: CGFloat, cornerRadius: CGFloat) -> some View {
-        if let coverData = comic.coverImageData {
+        // Decoded via the shared cover cache — no per-render full decode
+        if let coverData = comic.coverImageData,
+            let cover = PageImageCache.shared.coverImage(
+                from: coverData, cacheKey: comic.id.uuidString)
+        {
             #if os(macOS)
-            if let nsImage = NSImage(data: coverData) {
-                Image(nsImage: nsImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: width, height: height)
-                    .clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-            } else {
-                placeholderCover(width: width, height: height, cornerRadius: cornerRadius)
-            }
+            Image(nsImage: cover)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: width, height: height)
+                .clipped()
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
             #else
-            if let uiImage = UIImage(data: coverData) {
-                Image(uiImage: uiImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: width, height: height)
-                    .clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-            } else {
-                placeholderCover(width: width, height: height, cornerRadius: cornerRadius)
-            }
+            Image(uiImage: cover)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: width, height: height)
+                .clipped()
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
             #endif
         } else {
             placeholderCover(width: width, height: height, cornerRadius: cornerRadius)

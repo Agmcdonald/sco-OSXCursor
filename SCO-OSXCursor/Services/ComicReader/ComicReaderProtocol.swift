@@ -220,6 +220,41 @@ final class PageImageCache {
         Self.decodeDownsampled(data, maxDimension: maxThumbnailDimension)
     }
 
+    // MARK: Library covers
+
+    /// Decoded cover for the library grid, downsampled and cached by comic ID.
+    /// Previously every grid cell re-decoded the full-resolution cover bytes
+    /// on every SwiftUI render.
+    func coverImage(from data: Data, cacheKey: String) -> PlatformImage? {
+        guard !data.isEmpty else { return nil }
+        let k = "cover|\(cacheKey)|\(data.count)" as NSString
+        if let cached = thumbnailCache.object(forKey: k) { return cached }
+        guard let decoded = Self.decodeDownsampled(data, maxDimension: 640) else { return nil }
+        thumbnailCache.setObject(decoded, forKey: k, cost: Self.cost(of: decoded))
+        return decoded
+    }
+
+    /// Downsample raw cover bytes to a storage-friendly JPEG (max 800 px).
+    /// Used at import time so the database stores ~100 KB covers instead of
+    /// multi-MB full-resolution scans.
+    static func storageCoverData(from data: Data) -> Data? {
+        guard let image = decodeDownsampled(data, maxDimension: 800) else { return nil }
+        return jpegData(from: image, quality: 0.85)
+    }
+
+    /// Platform-independent JPEG encoding.
+    static func jpegData(from image: PlatformImage, quality: CGFloat) -> Data? {
+        #if os(macOS)
+            guard let tiff = image.tiffRepresentation,
+                let rep = NSBitmapImageRep(data: tiff)
+            else { return nil }
+            return rep.representation(
+                using: .jpeg, properties: [.compressionFactor: quality])
+        #else
+            return image.jpegData(compressionQuality: quality)
+        #endif
+    }
+
     func removeAll() {
         imageCache.removeAllObjects()
         thumbnailCache.removeAllObjects()
