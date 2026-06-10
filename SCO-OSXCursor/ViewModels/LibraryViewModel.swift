@@ -881,9 +881,10 @@ final class LibraryViewModel: ObservableObject {
             comics[index] = comic
 
             Task { try? await persistComic(comic) }
+            // Update associations without inflating the import counter
             SeriesKnowledge.shared.recordImport(
                 series: comic.series, publisher: comic.publisher,
-                bookFormat: comic.bookFormat)
+                bookFormat: comic.bookFormat, countsAsImport: false)
         }
         print("[LibraryViewModel] ✏️ Bulk-edited \(ids.count) comics")
 

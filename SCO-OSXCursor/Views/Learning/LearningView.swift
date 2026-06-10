@@ -10,9 +10,22 @@
 import SwiftUI
 
 struct LearningView: View {
+    @ObservedObject var libraryViewModel: LibraryViewModel
     @ObservedObject private var knowledge = SeriesKnowledge.shared
     @State private var corrections: [CorrectionRecord] = []
     @State private var searchText = ""
+
+    /// Live count of books per series (normalized name) in the library —
+    /// shown instead of the internal learning counter, which also ticks on
+    /// corrections and would mislead (e.g. 13 books showing "21").
+    private var libraryCounts: [String: Int] {
+        var counts: [String: Int] = [:]
+        for comic in libraryViewModel.comics {
+            guard let series = comic.series, !series.isEmpty else { continue }
+            counts[SeriesKnowledgeRecord.normalize(series), default: 0] += 1
+        }
+        return counts
+    }
 
     private var filteredRecords: [SeriesKnowledgeRecord] {
         let base: [SeriesKnowledgeRecord]
@@ -26,10 +39,13 @@ struct LearningView: View {
                     || $0.aliases.contains(where: { $0.contains(query) })
             }
         }
-        // Stable display order regardless of in-memory insertion order:
-        // most-used first, then alphabetical
+        // Stable display order: most books in library first, then alphabetical
+        // (matches the count shown on each row)
+        let counts = libraryCounts
         return base.sorted {
-            if $0.useCount != $1.useCount { return $0.useCount > $1.useCount }
+            let a = counts[$0.normalizedName] ?? 0
+            let b = counts[$1.normalizedName] ?? 0
+            if a != b { return a > b }
             return $0.seriesName.localizedCaseInsensitiveCompare($1.seriesName)
                 == .orderedAscending
         }
@@ -126,7 +142,7 @@ struct LearningView: View {
                             .font(Typography.caption)
                             .foregroundColor(TextColors.secondary)
                     }
-                    Text(record.bookFormat.displayName)
+                    Text("Format: \(record.bookFormat.displayName)")
                         .font(Typography.caption)
                         .foregroundColor(TextColors.tertiary)
                 }
@@ -141,16 +157,20 @@ struct LearningView: View {
 
             Spacer()
 
-            Text("\(record.useCount)")
-                .font(Typography.caption)
-                .foregroundColor(TextColors.secondary)
-                .padding(.horizontal, Spacing.sm)
-                .padding(.vertical, 3)
-                .background(BackgroundColors.elevated)
-                .clipShape(Capsule())
-                #if os(macOS)
-                    .help("Books imported from this series")
-                #endif
+            // Books of this series actually in the library right now
+            let inLibrary = libraryCounts[record.normalizedName] ?? 0
+            VStack(spacing: 1) {
+                Text("\(inLibrary)")
+                    .font(Typography.bodySmall.weight(.semibold))
+                    .foregroundColor(TextColors.primary)
+                Text("in library")
+                    .font(Typography.caption)
+                    .foregroundColor(TextColors.tertiary)
+            }
+            .padding(.horizontal, Spacing.sm)
+            .padding(.vertical, 3)
+            .background(BackgroundColors.elevated)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .padding(.vertical, 2)
     }
@@ -206,5 +226,5 @@ struct LearningView: View {
 
 // MARK: - Preview
 #Preview {
-    LearningView()
+    LearningView(libraryViewModel: LibraryViewModel(database: DatabaseManager.shared))
 }

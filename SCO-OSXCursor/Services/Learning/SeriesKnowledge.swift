@@ -161,14 +161,20 @@ final class SeriesKnowledge: ObservableObject {
     // MARK: - Learning
 
     /// Record a confirmed import — series → publisher/format association.
-    func recordImport(series: String?, publisher: String?, bookFormat: Comic.BookFormat) {
+    /// - Parameter countsAsImport: false for re-learning events (bulk edits,
+    ///   metadata corrections) that should update associations WITHOUT
+    ///   inflating the import counter.
+    func recordImport(
+        series: String?, publisher: String?, bookFormat: Comic.BookFormat,
+        countsAsImport: Bool = true
+    ) {
         guard let series, !series.trimmingCharacters(in: .whitespaces).isEmpty else { return }
         let normalized = SeriesKnowledgeRecord.normalize(series)
         let cleanPublisher = publisher?.isEmpty == false ? publisher : nil
 
         if let i = indexByNormalized[normalized] {
             var record = records[i]
-            record.useCount += 1
+            if countsAsImport { record.useCount += 1 }
             record.lastUsed = Date()
             if let cleanPublisher { record.publisher = cleanPublisher }
             // Only flip format away from .issue once we see evidence — keeps a

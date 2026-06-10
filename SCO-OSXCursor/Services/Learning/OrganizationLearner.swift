@@ -162,7 +162,8 @@ class OrganizationLearner {
             SeriesKnowledge.shared.recordImport(
                 series: correctedSeries ?? comic.series,
                 publisher: correctedPublisher ?? comic.publisher,
-                bookFormat: comic.bookFormat
+                bookFormat: comic.bookFormat,
+                countsAsImport: false  // correction, not a new import
             )
         }
 

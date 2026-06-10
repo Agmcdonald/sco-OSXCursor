@@ -152,7 +152,7 @@ struct ContentView: View {
         case .organize:
             OrganizeView(viewModel: organizeViewModel)
         case .learning:
-            LearningView()
+            LearningView(libraryViewModel: libraryViewModel)
         case .knowledge:
             KnowledgeView(libraryViewModel: libraryViewModel)
         case .maintenance:
