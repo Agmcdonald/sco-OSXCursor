@@ -55,6 +55,8 @@ struct LibraryView: View {
     @State private var isSelectionMode = false
     @State private var selectedComics: Set<Comic.ID> = []
     @State private var showingBulkEdit = false
+    /// Anchor for shift-click / "Select Range to Here" range selection
+    @State private var selectionAnchorID: Comic.ID?
     @State private var showingFilePicker = false
     @State private var importedFileURLs: [URL] = []
     @State private var isDropTargeted = false
@@ -1116,7 +1118,7 @@ struct LibraryView: View {
                                 }
                                 .onTapGesture(count: 1) {
                                     if isSelectionMode {
-                                        toggleSelection(for: comic.id)
+                                        handleSelectionTap(comic)
                                     } else {
                                         focusedComic = comic
                                     }
@@ -1124,13 +1126,21 @@ struct LibraryView: View {
                                 #else
                                 .onTapGesture {
                                     if isSelectionMode {
-                                        toggleSelection(for: comic.id)
+                                        handleSelectionTap(comic)
                                     } else {
                                         openReader(for: comic)
                                     }
                                 }
                                 #endif
                                 .contextMenu {
+                                    // Range selection without a keyboard (iPad):
+                                    // tap one book, long-press another, select the span
+                                    if isSelectionMode {
+                                        Button(action: { selectRange(to: comic) }) {
+                                            Label("Select Range to Here", systemImage: "checklist")
+                                        }
+                                    }
+
                                     Button(action: { openReader(for: comic) }) {
                                         Label("Read", systemImage: "book.fill")
                                     }
@@ -1228,7 +1238,7 @@ struct LibraryView: View {
                                 }
                                 .onTapGesture(count: 1) {
                                     if isSelectionMode {
-                                        toggleSelection(for: comic.id)
+                                        handleSelectionTap(comic)
                                     } else {
                                         focusedComic = comic
                                     }
@@ -1236,13 +1246,21 @@ struct LibraryView: View {
                                 #else
                                 .onTapGesture {
                                     if isSelectionMode {
-                                        toggleSelection(for: comic.id)
+                                        handleSelectionTap(comic)
                                     } else {
                                         openReader(for: comic)
                                     }
                                 }
                                 #endif
                                 .contextMenu {
+                                    // Range selection without a keyboard (iPad):
+                                    // tap one book, long-press another, select the span
+                                    if isSelectionMode {
+                                        Button(action: { selectRange(to: comic) }) {
+                                            Label("Select Range to Here", systemImage: "checklist")
+                                        }
+                                    }
+
                                     Button(action: { openReader(for: comic) }) {
                                         Label("Read", systemImage: "book.fill")
                                     }
@@ -1510,7 +1528,7 @@ struct LibraryView: View {
                                 }
                                 .onTapGesture(count: 1) {
                                     if isSelectionMode {
-                                        toggleSelection(for: comic.id)
+                                        handleSelectionTap(comic)
                                     } else {
                                         focusedComic = comic
                                     }
@@ -1518,13 +1536,20 @@ struct LibraryView: View {
                                 #else
                                 .onTapGesture {
                                     if isSelectionMode {
-                                        toggleSelection(for: comic.id)
+                                        handleSelectionTap(comic)
                                     } else {
                                         openReader(for: comic)
                                     }
                                 }
                                 #endif
                             .contextMenu {
+                                // Range selection without a keyboard (iPad)
+                                if isSelectionMode {
+                                    Button(action: { selectRange(to: comic) }) {
+                                        Label("Select Range to Here", systemImage: "checklist")
+                                    }
+                                }
+
                                 Button(action: { openReader(for: comic) }) {
                                     Label("Read", systemImage: "book.fill")
                                 }
@@ -1648,6 +1673,38 @@ struct LibraryView: View {
         } else {
             selectedComics.insert(id)
         }
+    }
+
+    /// Selection-mode tap with shift-click range support (macOS).
+    /// Plain click toggles and sets the anchor; shift-click selects everything
+    /// between the anchor and the clicked book in the current display order.
+    private func handleSelectionTap(_ comic: Comic) {
+        #if os(macOS)
+            if NSEvent.modifierFlags.contains(.shift) {
+                selectRange(to: comic)
+                return
+            }
+        #endif
+        toggleSelection(for: comic.id)
+        selectionAnchorID = comic.id
+    }
+
+    /// Select every book between the last anchor and `comic` (inclusive),
+    /// in the current filter/sort order. Used by shift-click (macOS) and the
+    /// "Select Range to Here" context-menu action (iPad).
+    private func selectRange(to comic: Comic) {
+        let ordered = filteredAndSortedComics
+        guard let anchorID = selectionAnchorID,
+            let anchorIndex = ordered.firstIndex(where: { $0.id == anchorID }),
+            let targetIndex = ordered.firstIndex(where: { $0.id == comic.id })
+        else {
+            toggleSelection(for: comic.id)
+            selectionAnchorID = comic.id
+            return
+        }
+        let range = min(anchorIndex, targetIndex)...max(anchorIndex, targetIndex)
+        selectedComics.formUnion(ordered[range].map(\.id))
+        // Keep the anchor — repeated shift-clicks extend from the same origin
     }
 
     private func markAsReadSelectedComics() {
