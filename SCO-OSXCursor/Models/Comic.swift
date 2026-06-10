@@ -26,6 +26,9 @@ struct Comic: Identifiable, Codable {
     var issueNumber: String?
     var volume: Int?
     var year: Int?
+    /// What kind of book this file is (single issue, one-shot/OGN, collected
+    /// volume). Drives clean-naming and import-readiness rules.
+    var bookFormat: BookFormat
 
     // MARK: - Additional Metadata
     var writer: String?
@@ -80,6 +83,7 @@ struct Comic: Identifiable, Codable {
         issueNumber: String? = nil,
         volume: Int? = nil,
         year: Int? = nil,
+        bookFormat: BookFormat = .issue,
         writer: String? = nil,
         artist: String? = nil,
         coverArtist: String? = nil,
@@ -117,6 +121,7 @@ struct Comic: Identifiable, Codable {
         self.issueNumber = issueNumber
         self.volume = volume
         self.year = year
+        self.bookFormat = bookFormat
         self.writer = writer
         self.artist = artist
         self.coverArtist = coverArtist
@@ -197,6 +202,43 @@ extension Comic {
     }
 }
 
+// MARK: - Book Format Enum
+extension Comic {
+    /// What kind of book a file represents. A "volume" here means a collected
+    /// edition / manga volume (Series Vol. 03), distinct from the `volume`
+    /// integer on issues which disambiguates relaunched runs (Iron Man v3 #1).
+    enum BookFormat: String, Codable, CaseIterable {
+        case issue = "issue"
+        case oneShot = "one_shot"
+        case volume = "volume"
+
+        var displayName: String {
+            switch self {
+            case .issue: return "Issue"
+            case .oneShot: return "One-Shot"
+            case .volume: return "Volume"
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .issue: return "number"
+            case .oneShot: return "book.closed"
+            case .volume: return "books.vertical"
+            }
+        }
+
+        /// Heuristic detection from parsed filename metadata:
+        /// an issue number means a single issue; a volume number without an
+        /// issue means a collected/manga volume; neither means a one-shot/OGN.
+        static func detect(issueNumber: String?, volume: Int?) -> BookFormat {
+            if let issueNumber, !issueNumber.isEmpty { return .issue }
+            if volume != nil { return .volume }
+            return .oneShot
+        }
+    }
+}
+
 // MARK: - File Type Enum
 extension Comic {
     enum FileType: String, Codable, CaseIterable {
@@ -260,7 +302,10 @@ extension Comic {
     }
 
     /// Clean filename built from parsed metadata (for display and renaming).
-    /// Format: "Series Name #001 (2025).cbz"
+    /// Format depends on the book's format:
+    ///   issue    → "Series Name V2 #001 (2025).cbz"
+    ///   one-shot → "Series Name (2025).cbz"
+    ///   volume   → "Series Name Vol. 03 (2025).cbz"
     var cleanFileName: String {
         var parts: [String] = []
 
@@ -276,18 +321,29 @@ extension Comic {
         }
         parts.append(baseName)
 
-        // Volume
-        if let volume = volume {
-            parts.append("V\(volume)")
-        }
+        switch bookFormat {
+        case .issue:
+            // Run/volume disambiguator (Iron Man v3)
+            if let volume = volume {
+                parts.append("V\(volume)")
+            }
+            if let issueNumber = issueNumber, !issueNumber.isEmpty {
+                // Only add '#' prefix if issue number starts with a digit
+                if issueNumber.prefix(1).allSatisfy(\.isNumber) {
+                    parts.append("#\(issueNumber)")
+                } else {
+                    parts.append(issueNumber)
+                }
+            }
 
-        // Issue number
-        if let issueNumber = issueNumber, !issueNumber.isEmpty {
-            // Only add '#' prefix if issue number starts with a digit
-            if issueNumber.prefix(1).allSatisfy(\.isNumber) {
-                parts.append("#\(issueNumber)")
-            } else {
-                parts.append(issueNumber)
+        case .oneShot:
+            // Self-contained book: just "Series (Year)"
+            break
+
+        case .volume:
+            // Collected edition / manga volume
+            if let volume = volume {
+                parts.append(String(format: "Vol. %02d", volume))
             }
         }
 
@@ -450,6 +506,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         static let issueNumber = Column("issue_number")
         static let volume = Column("volume")
         static let year = Column("year")
+        static let bookFormat = Column("book_format")
         static let writer = Column("writer")
         static let artist = Column("artist")
         static let coverArtist = Column("cover_artist")
@@ -489,6 +546,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         container[Columns.issueNumber] = issueNumber
         container[Columns.volume] = volume
         container[Columns.year] = year
+        container[Columns.bookFormat] = bookFormat.rawValue
         container[Columns.writer] = writer
         container[Columns.artist] = artist
         container[Columns.coverArtist] = coverArtist
@@ -553,6 +611,7 @@ extension Comic: FetchableRecord, PersistableRecord {
             issueNumber: row["issue_number"],
             volume: row["volume"],
             year: row["year"],
+            bookFormat: BookFormat(rawValue: row["book_format"] ?? "issue") ?? .issue,
             writer: row["writer"],
             artist: row["artist"],
             coverArtist: row["cover_artist"],

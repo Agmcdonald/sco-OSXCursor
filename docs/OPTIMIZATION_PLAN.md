@@ -49,6 +49,19 @@ Defined together after Stages 1–2 are testable on device: tap zones, double-ta
 
 Noted from Stage 1 testing (Andrew, June 9): fade and zoom transitions feel too fast; "slide" appears to swap instantly rather than sliding the old page out while the new page slides in (should feel closer to Panels). Tune durations and make slide a true push transition.
 
+## Backlog (from Stage 2 testing, June 9)
+
+- **Book format** (DONE in Stage 2.2): issue / one-shot / volume field with
+  auto-detection; one-shots named `Series (Year)`, volumes `Series Vol. NN (Year)`.
+- **Folder-context parsing**: most files have no ComicInfo.xml — when importing
+  from folders, use parent folder names (publisher/series) as parsing hints.
+  Fold into Stage 3 alongside knowledge-base matching.
+- **Longbox / folder browse view**: a shelf-style browse of the library by
+  publisher → series boxes, iPad first, then Mac.
+- **Mac ↔ iPad transfer**: send books (with their metadata) between devices;
+  pairs with the long-term "remote access to your own library" vision. iPad
+  stays the lighter reading/metadata app; Mac owns file organization.
+
 ## Verification per stage
 
 Each stage ends with: build on macOS + iPad simulator, a short manual smoke checklist from me, and a commit. Nothing merges to `main` until you've tested.

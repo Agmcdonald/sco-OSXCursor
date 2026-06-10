@@ -178,15 +178,13 @@ final class OrganizeViewModel: ObservableObject {
         if comic.editor == nil { comic.editor = m.editor }
         if comic.summary == nil { comic.summary = m.summary }
 
+        // Embedded metadata may reveal the real format (e.g. an issue number
+        // appeared, or a volume number for a collected edition)
+        comic.bookFormat = Comic.BookFormat.detect(
+            issueNumber: comic.issueNumber, volume: comic.volume)
+
         // Re-evaluate confidence with the enriched fields
-        if !comic.series.isEmpty, comic.issueNumber != nil, comic.year != nil,
-            comic.publisher != nil
-        {
-            comic.confidence = .high
-            comic.status = .ready
-        } else if !comic.series.isEmpty, comic.issueNumber != nil {
-            comic.confidence = max(comic.confidence, .medium)
-        }
+        comic.reevaluate(userEdited: false)
 
         stagedComics[index] = comic
     }
@@ -206,6 +204,7 @@ final class OrganizeViewModel: ObservableObject {
     /// Update metadata for a staged comic
     func updateMetadata(
         id: UUID, series: String, issue: String, year: Int, publisher: String, volume: Int?,
+        bookFormat: Comic.BookFormat,
         title: String?, writer: String?, artist: String?, coverArtist: String?, colorist: String?,
         inker: String?, editor: String?, summary: String?
     ) {
@@ -213,10 +212,11 @@ final class OrganizeViewModel: ObservableObject {
 
         var comic = stagedComics[index]
         comic.series = series
-        comic.issueNumber = issue
-        comic.year = year
-        comic.publisher = publisher
+        comic.issueNumber = issue.isEmpty ? nil : issue
+        comic.year = year > 0 ? year : nil
+        comic.publisher = publisher.isEmpty ? nil : publisher
         comic.volume = volume
+        comic.bookFormat = bookFormat
         comic.title = title
         comic.writer = writer
         comic.artist = artist
@@ -226,10 +226,8 @@ final class OrganizeViewModel: ObservableObject {
         comic.editor = editor
         comic.summary = summary
 
-        // Re-evaluate status
-        if !series.isEmpty && !issue.isEmpty {
-            comic.status = .ready
-        }
+        // Re-evaluate status with format-aware rules
+        comic.reevaluate(userEdited: true)
 
         stagedComics[index] = comic
     }
@@ -298,6 +296,7 @@ final class OrganizeViewModel: ObservableObject {
             issueNumber: current.issueNumber,
             volume: current.volume,
             year: current.year,
+            bookFormat: current.bookFormat,
             publisher: current.publisher,
             title: current.title,
             writer: current.writer,

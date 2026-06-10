@@ -251,6 +251,23 @@ final class DatabaseManager {
             print("[DatabaseManager] ✅ Migration v10_epub_support complete")
         }
 
+        migrator.registerMigration("v11_book_format") { db in
+            print("[DatabaseManager] 🔄 Running migration: v11_book_format")
+            if try db.tableExists("comics") {
+                do {
+                    try db.alter(table: "comics") { t in
+                        t.add(column: "book_format", .text).notNull().defaults(to: "issue")
+                    }
+                    print("[DatabaseManager] ✅ Added book_format column")
+                } catch {
+                    print(
+                        "[DatabaseManager] ℹ️ book_format column may already exist: \(error.localizedDescription)"
+                    )
+                }
+            }
+            print("[DatabaseManager] ✅ Migration v11_book_format complete")
+        }
+
         return migrator
     }
 

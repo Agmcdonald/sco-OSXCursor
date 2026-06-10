@@ -18,6 +18,7 @@ struct OrganizeInspectorView: View {
     @State private var year: Int
     @State private var publisher: String
     @State private var volume: Int?
+    @State private var bookFormat: Comic.BookFormat
 
     // Optional additional metadata
     @State private var title: String
@@ -42,6 +43,7 @@ struct OrganizeInspectorView: View {
         _year = State(initialValue: comic.year ?? 0)
         _publisher = State(initialValue: comic.publisher ?? "")
         _volume = State(initialValue: comic.volume)
+        _bookFormat = State(initialValue: comic.bookFormat)
         _title = State(initialValue: comic.title ?? "")
         _writer = State(initialValue: comic.writer ?? "")
         _artist = State(initialValue: comic.artist ?? "")
@@ -79,6 +81,21 @@ struct OrganizeInspectorView: View {
 
                 // Form Fields
                 Group {
+                    // Book Format — issue, one-shot/OGN, or collected volume.
+                    // Determines which fields are required and the clean name.
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Format")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Picker("Format", selection: $bookFormat) {
+                            ForEach(Comic.BookFormat.allCases, id: \.self) { format in
+                                Text(format.displayName).tag(format)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                    }
+
                     // Series
                     VStack(alignment: .leading, spacing: 4) {  // Spacing.xs -> 4
                         Text("Series")
@@ -144,6 +161,7 @@ struct OrganizeInspectorView: View {
                 .onChange(of: year) { _ in update() }
                 .onChange(of: publisher) { _ in update() }
                 .onChange(of: volume) { _ in update() }
+                .onChange(of: bookFormat) { _ in update() }
 
                 DisclosureGroup("Additional Metadata", isExpanded: $isAdditionalMetadataExpanded) {
                     Group {
@@ -286,7 +304,7 @@ struct OrganizeInspectorView: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(series.isEmpty || issueNumber.isEmpty || publisher.isEmpty)
+                    .disabled(!canImport)
                 }
                 .frame(maxWidth: .infinity)
 
@@ -304,6 +322,18 @@ struct OrganizeInspectorView: View {
         }
     }
 
+    /// Format-aware import gate: issues need an issue number, one-shots a
+    /// year, volumes a volume number. Publisher is always required so the
+    /// file can be sorted into the library structure.
+    private var canImport: Bool {
+        guard !series.isEmpty, !publisher.isEmpty else { return false }
+        switch bookFormat {
+        case .issue: return !issueNumber.isEmpty
+        case .oneShot: return year > 0
+        case .volume: return volume != nil
+        }
+    }
+
     private func update() {
         Task { @MainActor in
             viewModel.updateMetadata(
@@ -313,6 +343,7 @@ struct OrganizeInspectorView: View {
                 year: year,
                 publisher: publisher,
                 volume: volume,
+                bookFormat: bookFormat,
                 title: title.isEmpty ? nil : title,
                 writer: writer.isEmpty ? nil : writer,
                 artist: artist.isEmpty ? nil : artist,

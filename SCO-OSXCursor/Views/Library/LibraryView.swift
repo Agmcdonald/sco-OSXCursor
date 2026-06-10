@@ -738,7 +738,10 @@ struct LibraryView: View {
                         }
                         .buttonStyle(.plain)
 
-                        // Add Comics (Organize) button
+                        // Add Comics (Organize) button — macOS only: it routes
+                        // to the Organize tab, which doesn't exist on iPad
+                        // (Quick Add is the iPad import path).
+                        #if os(macOS)
                         Button(action: {
                             onAddComicsOrganize?()
                         }) {
@@ -754,6 +757,7 @@ struct LibraryView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
                         .buttonStyle(.plain)
+                        #endif
                     }
                 }
             }

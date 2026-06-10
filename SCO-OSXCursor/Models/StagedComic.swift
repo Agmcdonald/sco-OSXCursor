@@ -52,6 +52,8 @@ struct StagedComic: Identifiable, Equatable {
     var issueNumber: String?
     var volume: Int?
     var year: Int?
+    /// Issue / one-shot / collected volume — auto-detected, user-editable
+    var bookFormat: Comic.BookFormat = .issue
     var publisher: String?
     var format: String?  // "Digital", "Scan", etc.
     var title: String?
@@ -88,16 +90,43 @@ struct StagedComic: Identifiable, Equatable {
         self.coverArtist = metadata.coverArtist
         self.summary = metadata.summary
 
+        // Detect what kind of book this is from the parsed metadata
+        self.bookFormat = Comic.BookFormat.detect(
+            issueNumber: self.issueNumber, volume: self.volume)
+
         // Calculate initial confidence
-        if !self.series.isEmpty && self.issueNumber != nil && self.year != nil
-            && self.publisher != nil
-        {
-            self.confidence = .high
-            self.status = .ready
-        } else if !self.series.isEmpty && self.issueNumber != nil {
-            self.confidence = .medium
-        } else {
-            self.confidence = .low
+        reevaluate(userEdited: false)
+    }
+
+    /// Recompute confidence and Ready status using format-aware rules.
+    /// - Issues need series + issue number (one-shots and volumes don't have one).
+    /// - One-shots need series + year.
+    /// - Volumes need series + volume number.
+    /// Auto-parsed books only become Ready at HIGH confidence; user-edited
+    /// books become Ready once the core fields are filled.
+    mutating func reevaluate(userEdited: Bool) {
+        let hasSeries = !series.isEmpty
+        let core: Bool  // minimum fields for this format
+        let full: Bool  // high confidence
+
+        switch bookFormat {
+        case .issue:
+            core = hasSeries && (issueNumber?.isEmpty == false)
+            full = core && year != nil && publisher != nil
+        case .oneShot:
+            core = hasSeries && year != nil
+            full = core && publisher != nil
+        case .volume:
+            core = hasSeries && volume != nil
+            full = core && year != nil && publisher != nil
+        }
+
+        confidence = full ? .high : (core ? .medium : .low)
+
+        if full || (userEdited && core) {
+            status = .ready
+        } else if !core {
+            status = .pending
         }
     }
 
@@ -111,12 +140,23 @@ struct StagedComic: Identifiable, Equatable {
             return originalFileName  // Fallback if no series
         }
 
-        if let vol = volume {
-            parts.append("V\(vol)")
-        }
+        switch bookFormat {
+        case .issue:
+            if let vol = volume {
+                parts.append("V\(vol)")
+            }
+            if let issue = issueNumber, !issue.isEmpty {
+                parts.append("#\(issue)")
+            }
 
-        if let issue = issueNumber, !issue.isEmpty {
-            parts.append("#\(issue)")
+        case .oneShot:
+            // Self-contained book: "Series (Year)"
+            break
+
+        case .volume:
+            if let vol = volume {
+                parts.append(String(format: "Vol. %02d", vol))
+            }
         }
 
         if let y = year {

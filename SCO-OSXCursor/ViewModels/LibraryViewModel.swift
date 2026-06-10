@@ -560,6 +560,8 @@ final class LibraryViewModel: ObservableObject {
                     issueNumber: filenameMetadata.number,
                     volume: filenameMetadata.volume,
                     year: filenameMetadata.year,
+                    bookFormat: Comic.BookFormat.detect(
+                        issueNumber: filenameMetadata.number, volume: filenameMetadata.volume),
                     writer: filenameMetadata.writer,
                     artist: filenameMetadata.penciller,
                     coverArtist: filenameMetadata.coverArtist,
@@ -846,6 +848,7 @@ final class LibraryViewModel: ObservableObject {
     /// and uses the originalURL for security-scoped access.
     func importStagedComic(
         series: String, issueNumber: String?, volume: Int?, year: Int?,
+        bookFormat: Comic.BookFormat = .issue,
         publisher: String?, title: String?, writer: String?, artist: String?,
         coverArtist: String?, colorist: String?, inker: String?, editor: String?,
         summary: String?, originalURL: URL, fileURL: URL
@@ -948,6 +951,7 @@ final class LibraryViewModel: ObservableObject {
                 issueNumber: issueNumber,
                 volume: volume,
                 year: year,
+                bookFormat: bookFormat,
                 writer: writer,
                 artist: artist,
                 coverArtist: coverArtist,
