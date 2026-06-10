@@ -296,18 +296,31 @@ final class OrganizeViewModel: ObservableObject {
 
     /// Apply non-nil fields to all staged comics in `ids`, then re-evaluate
     /// their readiness. Used by the bulk-edit sheet on checked items.
-    func bulkUpdate(
-        ids: Set<UUID>, series: String?, publisher: String?, year: Int?,
-        bookFormat: Comic.BookFormat?
-    ) {
+    func bulkUpdate(ids: Set<UUID>, values: BulkEditValues) {
         for index in stagedComics.indices where ids.contains(stagedComics[index].id) {
-            if let series, !series.isEmpty { stagedComics[index].series = series }
-            if let publisher, !publisher.isEmpty { stagedComics[index].publisher = publisher }
-            if let year { stagedComics[index].year = year }
-            if let bookFormat { stagedComics[index].bookFormat = bookFormat }
-            stagedComics[index].reevaluate(userEdited: true)
+            var comic = stagedComics[index]
+            if let series = values.series { comic.series = series }
+            if let publisher = values.publisher { comic.publisher = publisher }
+            if let year = values.year { comic.year = year }
+            if let volume = values.volume { comic.volume = volume }
+            if let bookFormat = values.bookFormat { comic.bookFormat = bookFormat }
+            if let title = values.title { comic.title = title }
+            if let writer = values.writer { comic.writer = writer }
+            if let artist = values.artist { comic.artist = artist }
+            if let coverArtist = values.coverArtist { comic.coverArtist = coverArtist }
+            if let colorist = values.colorist { comic.colorist = colorist }
+            if let inker = values.inker { comic.inker = inker }
+            if let editor = values.editor { comic.editor = editor }
+            if let summary = values.summary { comic.summary = summary }
+            comic.reevaluate(userEdited: true)
+            stagedComics[index] = comic
         }
         print("[OrganizeViewModel] ✏️ Bulk-updated \(ids.count) staged comics")
+    }
+
+    /// Check or uncheck every staged comic (quick selection for bulk edit)
+    func setAllChecked(_ checked: Bool) {
+        checkedComicIDs = checked ? Set(stagedComics.map(\.id)) : []
     }
 
     // MARK: - Confirm / Commit

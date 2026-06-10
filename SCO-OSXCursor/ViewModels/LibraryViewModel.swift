@@ -798,16 +798,23 @@ final class LibraryViewModel: ObservableObject {
 
     /// Apply non-nil fields to all library comics in `ids`, persist, and
     /// teach the learning system the resulting associations.
-    func bulkEdit(
-        ids: Set<UUID>, series: String?, publisher: String?, year: Int?,
-        bookFormat: Comic.BookFormat?
-    ) {
+    func bulkEdit(ids: Set<UUID>, values: BulkEditValues) {
         for index in comics.indices where ids.contains(comics[index].id) {
             var comic = comics[index]
-            if let series, !series.isEmpty { comic.series = series }
-            if let publisher, !publisher.isEmpty { comic.publisher = publisher }
-            if let year { comic.year = year }
-            if let bookFormat { comic.bookFormat = bookFormat }
+            if let series = values.series { comic.series = series }
+            if let publisher = values.publisher { comic.publisher = publisher }
+            if let year = values.year { comic.year = year }
+            if let volume = values.volume { comic.volume = volume }
+            if let bookFormat = values.bookFormat { comic.bookFormat = bookFormat }
+            if let title = values.title { comic.title = title }
+            if let writer = values.writer { comic.writer = writer }
+            if let artist = values.artist { comic.artist = artist }
+            if let coverArtist = values.coverArtist { comic.coverArtist = coverArtist }
+            if let colorist = values.colorist { comic.colorist = colorist }
+            if let inker = values.inker { comic.inker = inker }
+            if let editor = values.editor { comic.editor = editor }
+            if let summary = values.summary { comic.summary = summary }
+            if let contentRating = values.contentRating { comic.contentRating = contentRating }
             comic.dateModified = Date()
             comics[index] = comic
 

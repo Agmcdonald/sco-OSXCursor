@@ -124,6 +124,17 @@ struct OrganizeView: View {
                     if !viewModel.stagedComics.isEmpty {
                         Divider()
                         HStack {
+                            // Quick selection: check/uncheck everything at once
+                            Button(action: {
+                                viewModel.setAllChecked(
+                                    viewModel.checkedComicIDs.count < viewModel.stagedComics.count)
+                            }) {
+                                Label(
+                                    viewModel.checkedComicIDs.count < viewModel.stagedComics.count
+                                        ? "Check All" : "Uncheck All",
+                                    systemImage: "checklist")
+                            }
+
                             // Bulk edit the CHECKED items (set year/publisher/etc. once)
                             Button(action: {
                                 showingBulkEdit = true
@@ -181,12 +192,11 @@ struct OrganizeView: View {
                 }
             }
             .sheet(isPresented: $showingBulkEdit) {
-                BulkEditSheet(itemCount: viewModel.checkedComicIDs.count) {
-                    series, publisher, year, format in
-                    viewModel.bulkUpdate(
-                        ids: viewModel.checkedComicIDs,
-                        series: series, publisher: publisher, year: year, bookFormat: format
-                    )
+                BulkEditSheet(
+                    itemCount: viewModel.checkedComicIDs.count,
+                    showsContentRating: false
+                ) { values in
+                    viewModel.bulkUpdate(ids: viewModel.checkedComicIDs, values: values)
                 }
             }
         #else

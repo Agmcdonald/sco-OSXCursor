@@ -264,11 +264,8 @@ struct LibraryView: View {
             handleFileImport(result)
         }
         .sheet(isPresented: $showingBulkEdit) {
-            BulkEditSheet(itemCount: selectedComics.count) { series, publisher, year, format in
-                viewModel.bulkEdit(
-                    ids: selectedComics,
-                    series: series, publisher: publisher, year: year, bookFormat: format
-                )
+            BulkEditSheet(itemCount: selectedComics.count) { values in
+                viewModel.bulkEdit(ids: selectedComics, values: values)
                 isSelectionMode = false
                 selectedComics.removeAll()
             }
@@ -621,6 +618,30 @@ struct LibraryView: View {
                         Text("\(selectedComics.count) selected")
                             .font(Typography.body)
                             .foregroundColor(TextColors.secondary)
+
+                        // Select All / Deselect All — operates on the current
+                        // filter/search results, so "search a series → Select
+                        // All → Edit Fields" fixes hundreds in three clicks
+                        Button(action: {
+                            let visibleIDs = Set(filteredAndSortedComics.map(\.id))
+                            if selectedComics.count < visibleIDs.count {
+                                selectedComics = visibleIDs
+                            } else {
+                                selectedComics.removeAll()
+                            }
+                        }) {
+                            Text(
+                                selectedComics.count < filteredAndSortedComics.count
+                                    ? "Select All" : "Deselect All"
+                            )
+                            .font(Typography.bodySmall)
+                            .foregroundColor(AccentColors.primary)
+                            .padding(.horizontal, Spacing.md)
+                            .padding(.vertical, Spacing.sm)
+                            .background(AccentColors.primary.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
 
                         // Mark as Read button
                         Button(action: {
