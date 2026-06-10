@@ -48,7 +48,16 @@ Implemented (June 10):
 - Learning tab is now a real view: learned series (searchable, with aliases
   and use counts, context-menu Forget) + recent corrections.
 
-## Stage 4 — Code health
+## Stage 4 — Code health — PARTIALLY DONE (June 10)
+
+Done: warning sweep (Swift-6 async-iterator errors, deprecated onChange,
+Text '+', discarded results, unused vars), BookFormat/StagedComic/
+SeriesKnowledgeRecord unit tests added, 11 stale status docs archived to
+docs/archive. REMAINING: split LibraryView.swift (~2,400 lines) into
+components; EPUBReaderView dead-CSS block needs a real review; migrate
+prints to os.Logger.
+
+## Stage 4 — original scope
 
 - Split `LibraryView.swift` into focused components; slim `LibraryViewModel`.
 - Unit tests for `MetadataParser`, `PublisherDetector`, `OrganizationLearner`, `StagedComic.proposedFileName`.
@@ -60,6 +69,12 @@ Implemented (June 10):
 Defined together after Stages 1–2 are testable on device: tap zones, double-tap zoom behavior, page-turn feel, per-book zoom memory, EPUB typography controls. Polish lands best on top of the new lazy-loading foundation.
 
 Noted from Stage 1 testing (Andrew, June 9): fade and zoom transitions feel too fast; "slide" appears to swap instantly rather than sliding the old page out while the new page slides in (should feel closer to Panels). Tune durations and make slide a true push transition.
+
+DONE (June 10): slide is a true spring push (the .animation(nil) on the
+transitioning view was suppressing it); fade/zoom retimed to 0.35s; zoom
+made asymmetric (incoming grows, outgoing expands+fades). Remaining Stage 5
+candidates: tap-zone tuning, per-book zoom memory, EPUB typography, page-curl
+refinement — define with Andrew on-device.
 
 ## Backlog (from Stage 2 testing, June 9)
 
