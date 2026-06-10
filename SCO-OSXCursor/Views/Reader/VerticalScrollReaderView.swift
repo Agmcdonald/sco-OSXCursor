@@ -19,6 +19,10 @@ struct VerticalScrollReaderView: View {
     /// Column width as a fraction of the available screen width (0.3 … 1.0).
     /// 0.7 closely matches the comfortable proportions of standard single-page mode.
     @Binding var zoomScale: Double
+    /// Known aspect ratios (height/width) per page index — keeps placeholder
+    /// cells at their real height so the scroll position doesn't jump when
+    /// pages load in or are evicted.
+    var pageAspects: [Int: CGFloat] = [:]
 
     // Gesture state callbacks for container tap guard
     var onBeginDragging: () -> Void = {}
@@ -124,34 +128,38 @@ struct VerticalScrollReaderView: View {
 
     @ViewBuilder
     private func pageCell(page: ComicPage, index: Int, columnWidth: CGFloat) -> some View {
+        // Use the remembered aspect ratio when available so placeholder and
+        // loaded cells have the SAME height — otherwise the strip reflows and
+        // the scroll position jumps as pages stream in.
+        let knownAspect = pageAspects[index]
+
         Group {
             if let image = page.image {
-                #if os(macOS)
-                let nsImage = image as NSImage
-                let aspectRatio = nsImage.size.width > 0
-                    ? nsImage.size.height / nsImage.size.width
+                let imageAspect = image.size.width > 0
+                    ? image.size.height / image.size.width
                     : 1.5
-                Image(nsImage: nsImage)
+                let aspectRatio = knownAspect ?? imageAspect
+
+                #if os(macOS)
+                Image(nsImage: image)
                     .resizable()
                     .scaledToFit()
                     .frame(width: columnWidth, height: columnWidth * aspectRatio)
                     .padding(.vertical, 4)
                 #else
-                let uiImage = image as UIImage
-                let aspectRatio = uiImage.size.width > 0
-                    ? uiImage.size.height / uiImage.size.width
-                    : 1.5
-                Image(uiImage: uiImage)
+                Image(uiImage: image)
                     .resizable()
                     .scaledToFit()
                     .frame(width: columnWidth, height: columnWidth * aspectRatio)
                     .padding(.vertical, 4)
                 #endif
             } else {
-                // Placeholder for loading pages
+                // Placeholder for loading pages — sized with the real aspect
+                // ratio when we know it
                 Rectangle()
                     .fill(Color.white.opacity(0.05))
-                    .frame(width: columnWidth, height: columnWidth * 1.5)
+                    .frame(width: columnWidth, height: columnWidth * (knownAspect ?? 1.5))
+                    .padding(.vertical, 4)
                     .overlay(
                         ProgressView()
                             .tint(.white.opacity(0.4))

@@ -34,7 +34,13 @@ class ReaderViewModel: ObservableObject {
     @Published var loadingProgress: Double = 0.0
     @Published var errorMessage: String?
     @Published var loadedPages: [Int: ComicPage] = [:]  // For lazy-loaded pages - published to update UI
-    @Published var isBackgroundLoading: Bool = false  // True while pages load in background
+    @Published var isBackgroundLoading: Bool = false  // True while the CURRENT page is still loading
+    /// Aspect ratios (height/width) of pages we've seen, kept across eviction.
+    /// Stabilizes vertical-scroll layout and spread pairing for unloaded pages.
+    @Published private(set) var pageAspects: [Int: CGFloat] = [:]
+    /// Bumped whenever a new filmstrip/grid thumbnail becomes available.
+    @Published private(set) var thumbnailVersion: Int = 0
+    private var thumbnailRequestsInFlight: Set<Int> = []
     @Published var isSpreadMode: Bool = false  // Two-page spread view
     @Published var readingStyle: ReadingStyle = .standard  // Current effective reading style
     @Published private(set) var isAnimatingTurn: Bool = false
@@ -406,6 +412,7 @@ class ReaderViewModel: ObservableObject {
             if fullComic.isLazyLoaded {
                 for page in fullComic.pages {
                     loadedPages[page.pageNumber - 1] = page
+                    recordPageMetadata(page, at: page.pageNumber - 1)
                 }
             }
 
@@ -473,6 +480,7 @@ class ReaderViewModel: ObservableObject {
             if comicBook.isLazyLoaded {
                 for page in comicBook.pages {
                     loadedPages[page.pageNumber - 1] = page
+                    recordPageMetadata(page, at: page.pageNumber - 1)
                 }
             }
 
@@ -623,27 +631,37 @@ class ReaderViewModel: ObservableObject {
         guard total > 0 else { return }
         let center = max(0, min(index, total - 1))
 
+        // Vertical scroll keeps a larger window — many pages are visible at
+        // once and fast fling-scrolling outruns a small one.
+        let ahead = isVerticalScroll ? 10 : prefetchAhead
+        let behind = isVerticalScroll ? 4 : prefetchBehind
+        let retain = isVerticalScroll ? 24 : retainRadius
+
         // 1. Evict pages outside the retain window.
         //    (allPages falls back to the book's eager initial pages for low
         //    indices, and PageImageCache keeps decoded bitmaps independently.)
-        let keepLower = max(0, center - retainRadius)
-        let keepUpper = min(total - 1, center + retainRadius)
+        let keepLower = max(0, center - retain)
+        let keepUpper = min(total - 1, center + retain)
         for key in loadedPages.keys where key < keepLower || key > keepUpper {
             loadedPages.removeValue(forKey: key)
         }
 
         // 2. Build the fetch list: current page first, then ahead, then behind.
-        let ahead = (center...min(total - 1, center + prefetchAhead))
-        let behind = stride(from: center - 1, through: max(0, center - prefetchBehind), by: -1)
+        let aheadRange = (center...min(total - 1, center + ahead))
+        let behindRange = stride(from: center - 1, through: max(0, center - behind), by: -1)
         var targets: [Int] = []
-        for i in ahead where loadedPages[i] == nil { targets.append(i) }
-        for i in behind where loadedPages[i] == nil { targets.append(i) }
+        for i in aheadRange where loadedPages[i] == nil { targets.append(i) }
+        for i in behindRange where loadedPages[i] == nil { targets.append(i) }
 
         guard !targets.isEmpty else { return }
 
         // 3. Replace any in-flight prefetch with one for the new window.
+        //    The "Loading pages..." indicator only shows when the page the
+        //    user is LOOKING AT is missing — silent prefetch otherwise.
         backgroundLoadTask?.cancel()
-        isBackgroundLoading = true
+        if loadedPages[center] == nil {
+            isBackgroundLoading = true
+        }
         let fileType = comic.fileType
 
         backgroundLoadTask = Task { [weak self] in
@@ -666,15 +684,87 @@ class ReaderViewModel: ObservableObject {
             let page = try await reader(for: fileType).loadPage(at: pageIndex, from: fileURL)
             guard !Task.isCancelled else { return }
             loadedPages[pageIndex] = page
+            recordPageMetadata(page, at: pageIndex)
 
-            // Pre-decode off-main so the first render of this page is instant
-            Task.detached(priority: .utility) {
+            // The page the user is looking at just arrived — drop the indicator
+            if pageIndex == currentPage {
+                isBackgroundLoading = false
+            }
+
+            // Pre-decode off-main so the first render of this page is instant,
+            // and bank a filmstrip thumbnail while we still have the bytes.
+            let bookPath = fileURL.path
+            Task.detached(priority: .utility) { [weak self] in
                 PageImageCache.shared.warm(page)
+                if PageImageCache.shared.cachedThumbnail(bookPath: bookPath, pageIndex: pageIndex) == nil,
+                    let thumb = PageImageCache.shared.makeThumbnail(from: page.imageData)
+                {
+                    PageImageCache.shared.storeThumbnail(thumb, bookPath: bookPath, pageIndex: pageIndex)
+                    await MainActor.run { self?.thumbnailVersion += 1 }
+                }
             }
         } catch {
             #if DEBUG
                 print("[ReaderViewModel] ⚠️ Prefetch failed for page \(pageIndex + 1): \(error)")
             #endif
+        }
+    }
+
+    /// Remember lightweight page facts (aspect ratio) that survive eviction.
+    private func recordPageMetadata(_ page: ComicPage, at pageIndex: Int) {
+        guard pageAspects[pageIndex] == nil,
+            let size = page.pixelSize, size.width > 0
+        else { return }
+        pageAspects[pageIndex] = size.height / size.width
+    }
+
+    // MARK: - Filmstrip / Grid Thumbnails (demand-loaded)
+    //
+    // Thumbnails are independent of the reading window: any page's thumbnail
+    // can be requested (e.g. by a visible filmstrip cell), is generated once
+    // from the archive in the background, and stays cached after the page's
+    // raw data is evicted.
+
+    /// Cached thumbnail for a page, if one has been generated.
+    func cachedThumbnail(at pageIndex: Int) -> PlatformImage? {
+        guard let url = resolvedURL else { return nil }
+        return PageImageCache.shared.cachedThumbnail(bookPath: url.path, pageIndex: pageIndex)
+    }
+
+    /// Request thumbnail generation for a page (no-op if cached or in flight).
+    func requestThumbnail(at pageIndex: Int) {
+        guard let url = resolvedURL, let comic = currentComic, isLazyLoaded else { return }
+        guard !thumbnailRequestsInFlight.contains(pageIndex) else { return }
+        guard PageImageCache.shared.cachedThumbnail(bookPath: url.path, pageIndex: pageIndex) == nil
+        else { return }
+
+        thumbnailRequestsInFlight.insert(pageIndex)
+        let fileType = comic.fileType
+        let bookPath = url.path
+
+        Task { [weak self] in
+            // If the page data is already in the window, use it; otherwise
+            // extract just this page from the archive.
+            var data: Data? = await MainActor.run { self?.loadedPages[pageIndex]?.imageData }
+            if data == nil || data?.isEmpty == true {
+                data = try? await self?.reader(for: fileType)
+                    .loadPage(at: pageIndex, from: url).imageData
+            }
+
+            if let data, !data.isEmpty {
+                let thumb = await Task.detached(priority: .utility) {
+                    PageImageCache.shared.makeThumbnail(from: data)
+                }.value
+                if let thumb {
+                    PageImageCache.shared.storeThumbnail(
+                        thumb, bookPath: bookPath, pageIndex: pageIndex)
+                }
+            }
+
+            await MainActor.run {
+                self?.thumbnailRequestsInFlight.remove(pageIndex)
+                self?.thumbnailVersion += 1
+            }
         }
     }
 
@@ -778,13 +868,18 @@ class ReaderViewModel: ObservableObject {
     }
 
     /// Check if a page is wide (likely a double-page spread).
-    /// Uses header-only pixel dimensions (no bitmap decode) — previously this
-    /// decoded every page image during spread layout on each render.
+    /// Uses remembered aspect ratios (stable across page-data eviction) so
+    /// spread pairing doesn't shift as pages load and unload; falls back to a
+    /// header-only pixel-size read for pages we haven't recorded yet.
     private func isWidePageAtIndex(_ index: Int, in pages: [ComicPage]) -> Bool {
         guard index < pages.count else { return false }
-        guard let size = pages[index].pixelSize, size.height > 0 else { return false }
 
-        // If aspect ratio > 1.5, it's likely a wide spread
+        if let aspect = pageAspects[index] {
+            // aspect = height/width; wide spread when width/height > 1.5
+            return aspect > 0 && (1.0 / aspect) > 1.5
+        }
+
+        guard let size = pages[index].pixelSize, size.height > 0 else { return false }
         return (size.width / size.height) > 1.5
     }
 

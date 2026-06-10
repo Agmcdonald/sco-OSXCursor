@@ -14,6 +14,10 @@ struct ThumbnailGridView: View {
     @Binding var currentPage: Int
     @Binding var isPresented: Bool
     var isRTL: Bool = false
+    /// Thumbnail from the book-wide cache (works even when page data is evicted)
+    var thumbnailForPage: ((Int) -> PlatformImage?)? = nil
+    /// Ask the view model to generate a thumbnail for a page index
+    var requestThumbnail: ((Int) -> Void)? = nil
     
     private let columns = [
         GridItem(.adaptive(minimum: 80, maximum: 120), spacing: 16)
@@ -67,7 +71,9 @@ struct ThumbnailGridView: View {
                                 ThumbnailCell(
                                     page: page,
                                     pageNumber: index + 1,
-                                    isCurrentPage: index == currentPage
+                                    isCurrentPage: index == currentPage,
+                                    externalThumbnail: thumbnailForPage?(index),
+                                    onVisible: { requestThumbnail?(index) }
                                 )
                                 .onTapGesture {
                                     withAnimation {
@@ -106,12 +112,20 @@ struct ThumbnailCell: View {
     let page: ComicPage
     let pageNumber: Int
     let isCurrentPage: Bool
-    
+    /// Thumbnail from the book-wide cache (works even when page data is evicted)
+    var externalThumbnail: PlatformImage? = nil
+    /// Called when the cell becomes visible, to request thumbnail generation
+    var onVisible: () -> Void = {}
+
+    private var displayImage: PlatformImage? {
+        externalThumbnail ?? page.thumbnailImage
+    }
+
     var body: some View {
         VStack(spacing: 8) {
             // Thumbnail image (small downsampled decode — not the full page bitmap)
             ZStack {
-                if let image = page.thumbnailImage {
+                if let image = displayImage {
                     #if os(macOS)
                     Image(nsImage: image)
                         .resizable()
@@ -154,6 +168,11 @@ struct ThumbnailCell: View {
         }
         .scaleEffect(isCurrentPage ? 1.05 : 1.0)
         .animation(.easeInOut(duration: 0.2), value: isCurrentPage)
+        .onAppear {
+            if displayImage == nil {
+                onVisible()
+            }
+        }
     }
 }
 

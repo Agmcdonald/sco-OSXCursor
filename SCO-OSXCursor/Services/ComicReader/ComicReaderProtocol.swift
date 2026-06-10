@@ -123,7 +123,7 @@ final class PageImageCache {
             maxPageDimension = 2600
             imageCache.totalCostLimit = 160 * 1024 * 1024  // 160 MB
         #endif
-        thumbnailCache.totalCostLimit = 32 * 1024 * 1024
+        thumbnailCache.totalCostLimit = 64 * 1024 * 1024
         sizeCache.countLimit = 4096
     }
 
@@ -193,6 +193,31 @@ final class PageImageCache {
         let k = key(for: page)
         guard imageCache.object(forKey: k) == nil else { return }
         _ = image(for: page)
+    }
+
+    // MARK: Book-keyed thumbnails (for filmstrip / All Pages grid)
+    //
+    // These survive page-data eviction: once a page's thumbnail has been
+    // generated, it stays available (until NSCache evicts it) even after the
+    // raw page data leaves the reading window. Keyed by book path + page index
+    // so they never need the page bytes to look up.
+
+    private func bookKey(_ bookPath: String, _ pageIndex: Int) -> NSString {
+        "\(bookPath)#\(pageIndex)" as NSString
+    }
+
+    func cachedThumbnail(bookPath: String, pageIndex: Int) -> PlatformImage? {
+        thumbnailCache.object(forKey: bookKey(bookPath, pageIndex))
+    }
+
+    func storeThumbnail(_ image: PlatformImage, bookPath: String, pageIndex: Int) {
+        thumbnailCache.setObject(
+            image, forKey: bookKey(bookPath, pageIndex), cost: Self.cost(of: image))
+    }
+
+    /// Decode a small thumbnail directly from raw image bytes.
+    func makeThumbnail(from data: Data) -> PlatformImage? {
+        Self.decodeDownsampled(data, maxDimension: maxThumbnailDimension)
     }
 
     func removeAll() {

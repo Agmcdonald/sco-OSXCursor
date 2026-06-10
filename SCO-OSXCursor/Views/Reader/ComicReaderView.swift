@@ -301,6 +301,7 @@ struct ComicReaderView: View {
                         pages: viewModel.allPages,
                         currentPage: $viewModel.currentPage,
                         zoomScale: $verticalZoomScale,
+                        pageAspects: viewModel.pageAspects,
                         onBeginDragging: beginDragging,
                         onEndDragging: endDragging,
                         onBeginPinching: beginPinching,
@@ -407,7 +408,9 @@ struct ComicReaderView: View {
                             viewModel.isSpreadMode = false
                         }
                     }
-                }
+                },
+                thumbnailForPage: { viewModel.cachedThumbnail(at: $0) },
+                requestThumbnail: { viewModel.requestThumbnail(at: $0) }
             )
 
             // Thumbnail grid overlay
@@ -416,7 +419,9 @@ struct ComicReaderView: View {
                     pages: viewModel.allPages,
                     currentPage: $viewModel.currentPage,
                     isPresented: $showingThumbnails,
-                    isRTL: viewModel.isMangaRTL
+                    isRTL: viewModel.isMangaRTL,
+                    thumbnailForPage: { viewModel.cachedThumbnail(at: $0) },
+                    requestThumbnail: { viewModel.requestThumbnail(at: $0) }
                 )
                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
                 .zIndex(1000)

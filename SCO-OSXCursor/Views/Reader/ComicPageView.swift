@@ -129,7 +129,8 @@ struct ComicPageView: View {
                             )
                         }
                 } else {
-                    // Fallback if image can't be loaded
+                    // Fallback while the page loads — keep the swipe gesture
+                    // attached so page turns still work on unloaded pages
                     VStack(spacing: Spacing.lg) {
                         ProgressView()
                             .scaleEffect(1.5)
@@ -140,6 +141,9 @@ struct ComicPageView: View {
                             .foregroundColor(TextColors.secondary)
                             .padding(.top, Spacing.md)
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .highPriorityGesture(unifiedDragGesture(geo: geo))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

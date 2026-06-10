@@ -30,6 +30,10 @@ struct ReaderControlsOverlay: View {
     let onUserInteraction: () -> Void  // Called when user interacts
     var onUserToggledSpread: (() -> Void)? = nil  // Called when user manually toggles spread mode
     var onComicUpdated: ((Comic) -> Void)? = nil  // Called when comic settings change
+    /// Cached thumbnail lookup for a page index (filmstrip). Nil → use page data.
+    var thumbnailForPage: ((Int) -> PlatformImage?)? = nil
+    /// Ask the view model to generate a thumbnail for a page index.
+    var requestThumbnail: ((Int) -> Void)? = nil
 
     var body: some View {
         ZStack {
@@ -99,21 +103,15 @@ struct ReaderControlsOverlay: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
 
-                // Loading badge (only for PDFs during background loading)
+                // Loading badge — compact spinner only, so it never widens the
+                // title capsule and pushes the trailing buttons off-screen.
                 if isBackgroundLoading {
-                    HStack(spacing: 6) {
-                        ProgressView()
-                            .scaleEffect(0.7)
-                            .tint(.white)
-
-                        Text("Loading pages...")
-                            .font(Typography.caption)
-                            .foregroundColor(.white.opacity(0.9))
-                    }
-                    .padding(.horizontal, Spacing.md)
-                    .padding(.vertical, 6)
-                    .background(AccentColors.primary.opacity(0.8))
-                    .clipShape(Capsule())
+                    ProgressView()
+                        .scaleEffect(0.7)
+                        .tint(.white)
+                        #if os(macOS)
+                            .help("Loading current page…")
+                        #endif
                 }
             }
             .padding(.horizontal, Spacing.lg)
@@ -323,12 +321,17 @@ struct ReaderControlsOverlay: View {
     private var inlineThumbnailStrip: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
+                // LazyHStack: only visible cells are built (previously every
+                // page in the book got a cell — and an image decode — the
+                // moment the HUD appeared, freezing large books).
+                LazyHStack(spacing: 12) {
                     ForEach(Array(pages.enumerated()), id: \.element.id) { index, page in
                         InlineThumbnail(
                             page: page,
                             pageNumber: index + 1,
-                            isCurrentPage: index == currentPage
+                            isCurrentPage: index == currentPage,
+                            externalThumbnail: thumbnailForPage?(index),
+                            onVisible: { requestThumbnail?(index) }
                         )
                         .onTapGesture {
                             withAnimation {
@@ -478,12 +481,20 @@ struct InlineThumbnail: View {
     let page: ComicPage
     let pageNumber: Int
     let isCurrentPage: Bool
+    /// Thumbnail from the book-wide cache (works even when page data is evicted)
+    var externalThumbnail: PlatformImage? = nil
+    /// Called when the cell becomes visible, to request thumbnail generation
+    var onVisible: () -> Void = {}
+
+    private var displayImage: PlatformImage? {
+        externalThumbnail ?? page.thumbnailImage
+    }
 
     var body: some View {
         VStack(spacing: 4) {
-            // Thumbnail image
+            // Thumbnail image (small downsampled decode — never the full page)
             ZStack {
-                if let image = page.image {
+                if let image = displayImage {
                     #if os(macOS)
                         Image(nsImage: image)
                             .resizable()
@@ -522,6 +533,11 @@ struct InlineThumbnail: View {
         .scaleEffect(isCurrentPage ? 1.1 : 1.0)
         .opacity(isCurrentPage ? 1.0 : 0.7)
         .animation(.easeInOut(duration: 0.2), value: isCurrentPage)
+        .onAppear {
+            if displayImage == nil {
+                onVisible()
+            }
+        }
     }
 }
 
