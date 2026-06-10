@@ -154,7 +154,7 @@ struct ContentView: View {
         case .learning:
             LearningView()
         case .knowledge:
-            KnowledgeView()
+            KnowledgeView(libraryViewModel: libraryViewModel)
         case .maintenance:
             PlaceholderView(
                 title: "Maintenance",

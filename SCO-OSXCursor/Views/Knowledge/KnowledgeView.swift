@@ -8,9 +8,11 @@
 import SwiftUI
 
 struct KnowledgeView: View {
+    @ObservedObject var libraryViewModel: LibraryViewModel
     @StateObject private var viewModel = KnowledgeViewModel()
     @State private var isShowingAddSheet = false
     @State private var newEntryName = ""
+    @State private var selectedEntry: KnowledgeEntry?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -35,9 +37,20 @@ struct KnowledgeView: View {
                                     .foregroundColor(TextColors.primary)
                                 Spacer()
                             }
+                            .padding(.vertical, 2)
+                            .padding(.horizontal, Spacing.sm)
+                            .background(
+                                selectedEntry?.id == entry.id && selectedEntry?.type == entry.type
+                                    ? AccentColors.primary.opacity(0.15) : Color.clear
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
                             .contentShape(Rectangle())
+                            .onTapGesture {
+                                selectedEntry = entry
+                            }
                             .contextMenu {
                                 Button(role: .destructive) {
+                                    if selectedEntry == entry { selectedEntry = nil }
                                     viewModel.deleteEntry(entry)
                                 } label: {
                                     Label("Delete", systemImage: "trash")
@@ -48,14 +61,20 @@ struct KnowledgeView: View {
                     }
                     .frame(minWidth: 250, maxWidth: 350)
 
-                    // Detail / Placeholder (Future expansion: stats, related comics)
-                    VStack {
-                        Text("Select an item to view usage statistics")
-                            .font(Typography.body)
-                            .foregroundColor(TextColors.secondary)
+                    // Detail: live stats aggregated from the library
+                    if let entry = selectedEntry {
+                        KnowledgeDetailView(entry: entry, comics: libraryViewModel.comics)
+                            .id("\(entry.type.rawValue)-\(entry.normalizedName)")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        VStack {
+                            Text("Select an item to view usage statistics")
+                                .font(Typography.body)
+                                .foregroundColor(TextColors.secondary)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(BackgroundColors.primary)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(BackgroundColors.primary)
                 }
             #else
                 VStack(spacing: 0) {
@@ -68,8 +87,14 @@ struct KnowledgeView: View {
                                 .font(Typography.body)
                                 .foregroundColor(TextColors.primary)
                             Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12))
+                                .foregroundColor(TextColors.tertiary)
                         }
                         .contentShape(Rectangle())
+                        .onTapGesture {
+                            selectedEntry = entry
+                        }
                         .contextMenu {
                             Button(role: .destructive) {
                                 viewModel.deleteEntry(entry)
@@ -79,6 +104,9 @@ struct KnowledgeView: View {
                         }
                     }
                     .listStyle(.plain)
+                }
+                .sheet(item: $selectedEntry) { entry in
+                    KnowledgeDetailView(entry: entry, comics: libraryViewModel.comics)
                 }
             #endif
         }
