@@ -141,6 +141,14 @@ struct ComicReaderView: View {
         .simultaneousGesture(
             DragGesture(minimumDistance: 16)
                 .onChanged { value in
+                    // Never hijack drags while an overlay (All Pages grid, menu)
+                    // is open — its scroll view needs vertical drags.
+                    guard !showingThumbnails, !showingMenu else { return }
+                    // In vertical-scroll mode, downward drags SCROLL BACKWARD —
+                    // only allow dismissal when the pull starts near the top edge.
+                    if viewModel.isVerticalScroll {
+                        guard value.startLocation.y < 120 else { return }
+                    }
                     // Only activate when gesture is clearly vertical downward
                     guard value.translation.height > 0,
                           value.translation.height > abs(value.translation.width) * 1.2

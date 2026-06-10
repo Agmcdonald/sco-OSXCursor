@@ -230,6 +230,11 @@ final class PageImageCache {
 
     /// Decode image data with ImageIO, downsampling to `maxDimension` if larger.
     /// Never upscales. Produces a fully-decoded bitmap (no deferred decompression).
+    ///
+    /// ImageIO's budget limits the LONGEST side, which would crush the short
+    /// side of very tall webtoon strips (e.g. 1600x20000 → 208x2600, badly
+    /// pixelated). For extreme aspect ratios the budget is raised so the
+    /// SHORT side keeps usable resolution, with a hard cap on the long side.
     private static func decodeDownsampled(_ data: Data, maxDimension: CGFloat) -> PlatformImage? {
         guard !data.isEmpty,
             let source = CGImageSourceCreateWithData(
@@ -237,11 +242,34 @@ final class PageImageCache {
                 [kCGImageSourceShouldCache: false] as CFDictionary)
         else { return nil }
 
+        var budget = maxDimension
+
+        // Aspect-aware budget for full-page decodes (skip for small thumbnails)
+        if maxDimension > 1000,
+            let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
+            let w = props[kCGImagePropertyPixelWidth as String] as? NSNumber,
+            let h = props[kCGImagePropertyPixelHeight as String] as? NSNumber
+        {
+            let width = CGFloat(truncating: w)
+            let height = CGFloat(truncating: h)
+            let longSide = max(width, height)
+            let shortSide = min(width, height)
+            if shortSide > 0 {
+                let ratio = longSide / shortSide
+                if ratio > 2.0 {
+                    // Keep the short side around 55% of the normal budget,
+                    // cap the long side at 12k px (memory / GPU texture limits)
+                    let shortTarget = maxDimension * 0.55
+                    budget = min(longSide, min(shortTarget * ratio, 12000))
+                }
+            }
+        }
+
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
             kCGImageSourceShouldCacheImmediately: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxDimension,
+            kCGImageSourceThumbnailMaxPixelSize: budget,
         ]
 
         guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)

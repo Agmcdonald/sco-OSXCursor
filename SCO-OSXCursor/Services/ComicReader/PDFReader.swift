@@ -211,84 +211,64 @@ class PDFReader: ComicReaderProtocol {
     // MARK: - Helper Methods
     
     /// Render PDF page to image data.
-    /// Encodes as JPEG (quality 0.85) — roughly 10x smaller and much faster
-    /// than the previous PNG encoding for photographic/comic page content.
+    ///
+    /// Uses PDFKit's `thumbnail(of:for:)`, which respects the page's /Rotate
+    /// entry and renders right-side-up on BOTH platforms. (The previous manual
+    /// Core Graphics path flipped EVERY landscape page on iOS as a workaround,
+    /// which turned correctly-oriented pages upside down.)
+    /// Encodes as JPEG (quality 0.85) — ~10x smaller and faster than PNG.
     private func renderPageToImageData(_ page: PDFPage) -> Data {
         let pageBounds = page.bounds(for: .mediaBox)
+        let rotation = abs(page.rotation % 360)
 
-        #if os(macOS)
-        // macOS rendering
-        let scale: CGFloat = 2.0 // Fixed 2x for performance
-        let scaledSize = CGSize(
-            width: pageBounds.width * scale,
-            height: pageBounds.height * scale
-        )
-        
-        let image = NSImage(size: scaledSize)
-        image.lockFocus()
-        
-        // Set up context
-        if let context = NSGraphicsContext.current?.cgContext {
-            context.saveGState()
-            
-            // White background
-            context.setFillColor(NSColor.white.cgColor)
-            context.fill(CGRect(origin: .zero, size: scaledSize))
-            
-            // Scale and render
-            context.scaleBy(x: scale, y: scale)
-            page.draw(with: .mediaBox, to: context)
-            
-            context.restoreGState()
+        // Account for page rotation when computing the target pixel size
+        let baseSize = (rotation == 90 || rotation == 270)
+            ? CGSize(width: pageBounds.height, height: pageBounds.width)
+            : pageBounds.size
+
+        let scale: CGFloat = 2.0
+        var targetSize = CGSize(width: baseSize.width * scale, height: baseSize.height * scale)
+
+        // Cap the long side — very tall pages (webtoon-style PDFs) would
+        // otherwise produce enormous bitmaps
+        let maxLongSide: CGFloat = 8000
+        let longSide = max(targetSize.width, targetSize.height)
+        if longSide > maxLongSide {
+            let factor = maxLongSide / longSide
+            targetSize = CGSize(
+                width: targetSize.width * factor, height: targetSize.height * factor)
         }
-        
-        image.unlockFocus()
-        
-        // Convert to JPEG data
-        if let tiffData = image.tiffRepresentation,
+
+        let rendered = page.thumbnail(of: targetSize, for: .mediaBox)
+
+        // Composite onto white before JPEG encoding (JPEG has no alpha —
+        // transparent PDF backgrounds would otherwise turn black)
+        #if os(macOS)
+        let composited = NSImage(size: rendered.size)
+        composited.lockFocus()
+        NSColor.white.setFill()
+        NSRect(origin: .zero, size: rendered.size).fill()
+        rendered.draw(
+            in: NSRect(origin: .zero, size: rendered.size),
+            from: .zero, operation: .sourceOver, fraction: 1.0)
+        composited.unlockFocus()
+
+        if let tiffData = composited.tiffRepresentation,
            let bitmapImage = NSBitmapImageRep(data: tiffData),
            let jpegData = bitmapImage.representation(
                using: .jpeg, properties: [.compressionFactor: 0.85]) {
             return jpegData
         }
-
         return Data()
-        
+
         #else
-        // iOS/iPadOS rendering
-        let scale: CGFloat = 2.0 // Fixed 2x for performance (not device scale)
-        
-        let scaledSize = CGSize(
-            width: pageBounds.width * scale,
-            height: pageBounds.height * scale
-        )
-        
-        let renderer = UIGraphicsImageRenderer(size: scaledSize)
-        let image = renderer.image { context in
-            // White background
+        let renderer = UIGraphicsImageRenderer(size: rendered.size)
+        let composited = renderer.image { context in
             UIColor.white.setFill()
-            context.fill(CGRect(origin: .zero, size: scaledSize))
-            
-            // Save state
-            context.cgContext.saveGState()
-            
-            // iOS PDFKit renders some PDFs upside down (macOS handles this automatically)
-            // Flip vertically only (not horizontally) to fix upside-down landscape PDFs
-            if pageBounds.width > pageBounds.height {
-                // Landscape page - flip vertically only
-                // Translate to bottom, scale Y by -1, translate back
-                context.cgContext.translateBy(x: 0, y: scaledSize.height)
-                context.cgContext.scaleBy(x: 1.0, y: -1.0)
-            }
-            
-            // Scale and render
-            context.cgContext.scaleBy(x: scale, y: scale)
-            page.draw(with: .mediaBox, to: context.cgContext)
-            
-            context.cgContext.restoreGState()
+            context.fill(CGRect(origin: .zero, size: rendered.size))
+            rendered.draw(in: CGRect(origin: .zero, size: rendered.size))
         }
-        
-        return image.jpegData(compressionQuality: 0.85) ?? Data()
+        return composited.jpegData(compressionQuality: 0.85) ?? Data()
         #endif
     }
     

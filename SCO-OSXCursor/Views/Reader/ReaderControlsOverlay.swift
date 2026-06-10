@@ -407,8 +407,11 @@ struct ReaderControlsOverlay: View {
             .background(Color.black.opacity(0.5))
             .clipShape(Capsule())
         }
-        .menuStyle(.borderlessButton)
+        // .borderlessButton is deprecated and renders an INVISIBLE label on
+        // recent macOS — plain button style keeps the custom capsule visible.
+        .buttonStyle(.plain)
         .fixedSize()
+        .help("Reading style & reader settings")
     }
     #endif
 
