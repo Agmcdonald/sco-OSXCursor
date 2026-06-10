@@ -58,6 +58,10 @@ Noted from Stage 1 testing (Andrew, June 9): fade and zoom transitions feel too 
   Fold into Stage 3 alongside knowledge-base matching.
 - **Longbox / folder browse view**: a shelf-style browse of the library by
   publisher → series boxes, iPad first, then Mac.
+- **Library grid sizing & alignment** (Andrew, June 9): user-adjustable cover
+  size (e.g. 4-across), and uniform card heights — covers aligned in level
+  rows regardless of title length, titles below, consistent row spacing at
+  every size.
 - **Mac ↔ iPad transfer**: send books (with their metadata) between devices;
   pairs with the long-term "remote access to your own library" vision. iPad
   stays the lighter reading/metadata app; Mac owns file organization.

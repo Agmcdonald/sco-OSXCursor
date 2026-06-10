@@ -404,15 +404,21 @@ final class LibraryViewModel: ObservableObject {
         }
 
         // Expand folders into their contained comic files (recursive).
-        // Folder security scopes stay open until the import loop finishes
-        // so child files remain readable.
+        //
+        // IMPORTANT (iOS sandbox): security-scoped access must be started
+        // BEFORE any file-system call — even fileExists() returns false on an
+        // unscoped picker URL. Folder scopes stay open until the import loop
+        // finishes so child files remain readable.
         var scopedFolders: [URL] = []
         for url in rawURLs {
+            let accessing = url.startAccessingSecurityScopedResource()
             var isDirectory: ObjCBool = false
-            if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
-                isDirectory.boolValue, url.startAccessingSecurityScopedResource()
-            {
-                scopedFolders.append(url)
+            let exists = FileManager.default.fileExists(
+                atPath: url.path, isDirectory: &isDirectory)
+            if accessing && exists && isDirectory.boolValue {
+                scopedFolders.append(url)  // keep scope open for enumeration + import
+            } else if accessing {
+                url.stopAccessingSecurityScopedResource()
             }
         }
         defer {
@@ -426,8 +432,20 @@ final class LibraryViewModel: ObservableObject {
             let fm = FileManager.default
             var files: [URL] = []
             for url in rawURLs {
+                // Per-URL scope for the stat/enumeration (balanced; folder
+                // scopes opened above remain active independently)
+                let accessing = url.startAccessingSecurityScopedResource()
+                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+
                 var isDirectory: ObjCBool = false
-                guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory) else { continue }
+                guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+                    // Couldn't stat — if it looks like a comic file, let the
+                    // import loop try it with its own security scope
+                    if validExtensions.contains(url.pathExtension.lowercased()) {
+                        files.append(url)
+                    }
+                    continue
+                }
                 if isDirectory.boolValue {
                     if let walker = fm.enumerator(
                         at: url,

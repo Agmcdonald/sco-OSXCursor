@@ -62,15 +62,20 @@ final class OrganizeViewModel: ObservableObject {
 
         // Separate folders from files; keep folder security scopes open for
         // the rest of the staging session so their children stay readable.
+        //
+        // IMPORTANT (iOS sandbox): start security-scoped access BEFORE any
+        // file-system call — even fileExists() returns false on an unscoped
+        // picker URL.
         var scopedFolders: [URL] = []
         for url in urls {
+            let accessing = url.startAccessingSecurityScopedResource()
             var isDirectory: ObjCBool = false
-            if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
-                isDirectory.boolValue
-            {
-                if url.startAccessingSecurityScopedResource() {
-                    scopedFolders.append(url)
-                }
+            let exists = FileManager.default.fileExists(
+                atPath: url.path, isDirectory: &isDirectory)
+            if accessing && exists && isDirectory.boolValue {
+                scopedFolders.append(url)
+            } else if accessing {
+                url.stopAccessingSecurityScopedResource()
             }
         }
         activeScopedFolders.append(contentsOf: scopedFolders)
@@ -81,8 +86,20 @@ final class OrganizeViewModel: ObservableObject {
             let fm = FileManager.default
 
             for url in urls {
+                // Per-URL scope for the stat/enumeration (balanced; folder
+                // scopes opened above remain active independently)
+                let accessing = url.startAccessingSecurityScopedResource()
+                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+
                 var isDirectory: ObjCBool = false
-                guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory) else { continue }
+                guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+                    // Couldn't stat — if it looks like a comic file, stage it
+                    // anyway; downstream file ops use their own scopes
+                    if validExtensions.contains(url.pathExtension.lowercased()) {
+                        result.append(url)
+                    }
+                    continue
+                }
 
                 if isDirectory.boolValue {
                     if let walker = fm.enumerator(
