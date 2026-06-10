@@ -65,6 +65,12 @@ struct KnowledgeDetailView: View {
         return min == max ? "\(min)" : "\(min)–\(max)"
     }
 
+    private var totalSizeLabel: String? {
+        let total = matches.reduce(Int64(0)) { $0 + $1.fileSize }
+        guard total > 0 else { return nil }
+        return ByteCountFormatter.string(fromByteCount: total, countStyle: .file)
+    }
+
     private var publishers: [String] {
         distinct(matches.compactMap(\.publisher))
     }
@@ -161,6 +167,9 @@ struct KnowledgeDetailView: View {
                         if entry.type != .series {
                             statChip("\(seriesBreakdown.count)", label: "Series")
                         }
+                        if let totalSizeLabel {
+                            statChip(totalSizeLabel, label: "On Disk")
+                        }
                     }
 
                     // Roles (creators only)
@@ -223,6 +232,34 @@ struct KnowledgeDetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(BackgroundColors.primary)
+    }
+
+    // MARK: - Book Labels
+
+    /// "Series #Issue (Year)" — series omitted on a series page (it's the title)
+    private func bookLabel(_ comic: Comic) -> String {
+        var parts: [String] = []
+        if entry.type != .series, let series = comic.series, !series.isEmpty {
+            parts.append(series)
+        }
+        if let issue = comic.issueNumber, !issue.isEmpty {
+            parts.append(issue.prefix(1).allSatisfy(\.isNumber) ? "#\(issue)" : issue)
+        }
+        if let year = comic.year {
+            parts.append("(\(year))")
+        }
+        if parts.isEmpty {
+            return comic.displayName
+        }
+        return parts.joined(separator: " ")
+    }
+
+    /// " — Storyline Title" when a storyline exists and isn't just the series name
+    private func storylineSuffix(_ comic: Comic) -> String {
+        guard let title = comic.title, !title.isEmpty,
+            title.lowercased() != (comic.series ?? "").lowercased()
+        else { return "" }
+        return " — \(title)"
     }
 
     // MARK: - Components
@@ -288,7 +325,12 @@ struct KnowledgeDetailView: View {
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(comic.displayTitle)
+                // Series-first label, storyline title appended:
+                // "Absolute Superman #018 (2026) — Reign Of The Supermen"
+                // (inside a series page the series name is implied: "#018 (2026) — …")
+                (Text(bookLabel(comic))
+                    + Text(storylineSuffix(comic))
+                    .foregroundColor(AccentColors.primary))
                     .font(Typography.bodySmall)
                     .foregroundColor(TextColors.primary)
                     .lineLimit(1)
@@ -302,6 +344,14 @@ struct KnowledgeDetailView: View {
                     Text(comic.bookFormat.displayName)
                         .font(Typography.caption)
                         .foregroundColor(TextColors.tertiary)
+                    if comic.fileSize > 0 {
+                        Text(
+                            ByteCountFormatter.string(
+                                fromByteCount: comic.fileSize, countStyle: .file)
+                        )
+                        .font(Typography.caption)
+                        .foregroundColor(TextColors.tertiary)
+                    }
                 }
             }
 

@@ -76,6 +76,7 @@ struct LibraryView: View {
         case publisher = "Publisher"
         case year = "Publication Year"
         case rating = "Rating"
+        case fileSize = "File Size"
 
         var icon: String {
             switch self {
@@ -85,6 +86,7 @@ struct LibraryView: View {
             case .publisher: return "building.2"
             case .year: return "calendar"
             case .rating: return "star"
+            case .fileSize: return "externaldrive"
             }
         }
     }
@@ -152,6 +154,8 @@ struct LibraryView: View {
             result.sort { ($0.year ?? 0) > ($1.year ?? 0) }
         case .rating:
             result.sort { ($0.rating ?? 0) > ($1.rating ?? 0) }
+        case .fileSize:
+            result.sort { $0.fileSize > $1.fileSize }
         }
 
         return result
