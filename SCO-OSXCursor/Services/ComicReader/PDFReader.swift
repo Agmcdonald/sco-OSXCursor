@@ -128,8 +128,6 @@ class PDFReader: ComicReaderProtocol {
     }
 
     private func _loadPage(at index: Int, from url: URL) throws -> ComicPage {
-        print("    [PDFReader] loadPage() - Loading page \(index + 1)")
-        
         // Load PDF document
         guard let pdfDocument = PDFDocument(url: url) else {
             throw ComicReaderError.invalidFormat
@@ -142,9 +140,7 @@ class PDFReader: ComicReaderProtocol {
         
         // Render to image
         let imageData = renderPageToImageData(pdfPage)
-        
-        print("    [PDFReader] ✅ Loaded page \(index + 1) (\(imageData.count) bytes)")
-        
+
         return ComicPage(
             pageNumber: index + 1,
             imageData: imageData,
@@ -214,14 +210,12 @@ class PDFReader: ComicReaderProtocol {
     
     // MARK: - Helper Methods
     
-    /// Render PDF page to image data
+    /// Render PDF page to image data.
+    /// Encodes as JPEG (quality 0.85) — roughly 10x smaller and much faster
+    /// than the previous PNG encoding for photographic/comic page content.
     private func renderPageToImageData(_ page: PDFPage) -> Data {
         let pageBounds = page.bounds(for: .mediaBox)
-        let rotation = page.rotation
-        
-        print("    [PDFReader] Page rotation: \(rotation)°")
-        print("    [PDFReader] Page bounds: \(pageBounds)")
-        
+
         #if os(macOS)
         // macOS rendering
         let scale: CGFloat = 2.0 // Fixed 2x for performance
@@ -250,13 +244,14 @@ class PDFReader: ComicReaderProtocol {
         
         image.unlockFocus()
         
-        // Convert to PNG data
+        // Convert to JPEG data
         if let tiffData = image.tiffRepresentation,
            let bitmapImage = NSBitmapImageRep(data: tiffData),
-           let pngData = bitmapImage.representation(using: .png, properties: [:]) {
-            return pngData
+           let jpegData = bitmapImage.representation(
+               using: .jpeg, properties: [.compressionFactor: 0.85]) {
+            return jpegData
         }
-        
+
         return Data()
         
         #else
@@ -281,7 +276,6 @@ class PDFReader: ComicReaderProtocol {
             // Flip vertically only (not horizontally) to fix upside-down landscape PDFs
             if pageBounds.width > pageBounds.height {
                 // Landscape page - flip vertically only
-                print("    [PDFReader] Landscape page detected, flipping vertically")
                 // Translate to bottom, scale Y by -1, translate back
                 context.cgContext.translateBy(x: 0, y: scaledSize.height)
                 context.cgContext.scaleBy(x: 1.0, y: -1.0)
@@ -294,7 +288,7 @@ class PDFReader: ComicReaderProtocol {
             context.cgContext.restoreGState()
         }
         
-        return image.pngData() ?? Data()
+        return image.jpegData(compressionQuality: 0.85) ?? Data()
         #endif
     }
     

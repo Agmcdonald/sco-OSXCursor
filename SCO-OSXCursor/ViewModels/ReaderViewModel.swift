@@ -71,6 +71,14 @@ class ReaderViewModel: ObservableObject {
     // MARK: - Notifications
     static let bookmarkRefreshedNotification = Notification.Name("ReaderViewModelBookmarkRefreshed")
 
+    // MARK: - Prefetch Window Tuning
+    /// Pages loaded ahead of the current page (reading direction)
+    private let prefetchAhead = 6
+    /// Pages kept loaded behind the current page
+    private let prefetchBehind = 2
+    /// Pages retained in memory on either side of the current page before eviction
+    private let retainRadius = 12
+
     init() {
         // Observe page changes and save progress
         $currentPage
@@ -78,6 +86,14 @@ class ReaderViewModel: ObservableObject {
             .debounce(for: .seconds(0.5), scheduler: RunLoop.main)  // Wait 0.5s after page change
             .sink { [weak self] newPage in
                 self?.saveCurrentProgress()
+            }
+            .store(in: &cancellables)
+
+        // Keep a window of pages loaded around the reading position
+        $currentPage
+            .removeDuplicates()
+            .sink { [weak self] newPage in
+                self?.schedulePrefetch(around: newPage)
             }
             .store(in: &cancellables)
     }
@@ -357,27 +373,15 @@ class ReaderViewModel: ObservableObject {
                 throw ComicReaderError.invalidFormat
             }
 
-            // Quick load: Just get page count first
-            print(
-                "[ATTEMPT #\(currentAttempt)] [\(Date().timeIntervalSince1970)] Calling getPageCount()..."
-            )
-            loadingProgress = 0.1
-            let pageCount = try await reader.getPageCount(from: fileURL)
-            print(
-                "[ATTEMPT #\(currentAttempt)] [\(Date().timeIntervalSince1970)] getPageCount() SUCCESS: \(pageCount) pages"
-            )
-
-            loadingProgress = 0.3
-
-            // Load only the first page to show immediately
-            print(
-                "[ATTEMPT #\(currentAttempt)] [\(Date().timeIntervalSince1970)] Calling reader.loadComic()..."
-            )
+            // Open the book — readers extract only the first few pages eagerly,
+            // so this returns quickly even for very large archives.
+            loadingProgress = 0.2
             let fullComic = try await reader.loadComic(from: fileURL)
-            print(
-                "[ATTEMPT #\(currentAttempt)] [\(Date().timeIntervalSince1970)] reader.loadComic() SUCCESS"
-            )
-            print("[ATTEMPT #\(currentAttempt)] Loaded \(fullComic.totalPages) pages")
+            #if DEBUG
+                print(
+                    "[ATTEMPT #\(currentAttempt)] reader.loadComic() SUCCESS — \(fullComic.totalPages) pages"
+                )
+            #endif
 
             loadingProgress = 1.0
 
@@ -403,24 +407,17 @@ class ReaderViewModel: ObservableObject {
                 for page in fullComic.pages {
                     loadedPages[page.pageNumber - 1] = page
                 }
-                print(
-                    "[ATTEMPT #\(currentAttempt)] Lazy-loaded comic: \(loadedPages.count) pages cached, \(fullComic.totalPages) total"
-                )
-
-                // Start background loading of ALL remaining pages
-                startBackgroundLoading(
-                    fileURL: fileURL, totalPages: fullComic.totalPages, fileType: comic.fileType)
             }
 
             // Start from saved progress or beginning
             if let savedProgress = progressTracker.loadProgress(for: comic.id) {
                 currentPage = savedProgress.currentPage
-                print(
-                    "[ATTEMPT #\(currentAttempt)] 📖 Restored saved progress: Page \(savedProgress.currentPage + 1)"
-                )
             } else {
                 currentPage = comic.currentPage
             }
+
+            // Begin loading the window of pages around the reading position
+            schedulePrefetch(around: currentPage)
 
             let endTime = Date().timeIntervalSince1970
             print(
@@ -479,6 +476,16 @@ class ReaderViewModel: ObservableObject {
                 }
             }
 
+            // Resolve our own security-scoped access for lazy page loads.
+            // (LibraryViewModel's prefetch released its access when it finished,
+            // so without this, on-demand page loads would fail for user files.)
+            if let url = try? resolveFileURL(from: comic) {
+                resolvedURL = url
+                cleanupURL = url
+            } else {
+                resolvedURL = comicBook.sourceURL
+            }
+
             // Restore saved progress
             if let savedProgress = progressTracker.loadProgress(for: comic.id) {
                 currentPage = savedProgress.currentPage
@@ -486,7 +493,12 @@ class ReaderViewModel: ObservableObject {
                 currentPage = comic.currentPage
             }
 
-            print("[ReaderViewModel] ⚡ Accepted pre-fetched comic — no spinner shown")
+            // Begin loading the window of pages around the reading position
+            schedulePrefetch(around: currentPage)
+
+            #if DEBUG
+                print("[ReaderViewModel] ⚡ Accepted pre-fetched comic — no spinner shown")
+            #endif
         }
     #endif
 
@@ -538,7 +550,9 @@ class ReaderViewModel: ObservableObject {
     func turn(by steps: Int) {
         guard steps != 0 else { return }
         guard let comic = comicBook else { return }
-        guard !isLoading, !isBackgroundLoading else { return }
+        // Note: background prefetching must NOT block page turns — unloaded
+        // pages show a spinner and fill in via ensurePageLoaded.
+        guard !isLoading else { return }
         guard !isAnimatingTurn else { return }
 
         let now = Date()
@@ -579,126 +593,115 @@ class ReaderViewModel: ObservableObject {
         )
     }
 
-    // MARK: - Lazy Loading Support
+    // MARK: - Lazy Loading Support (Windowed Prefetch)
+    //
+    // Instead of loading every page of the book into memory in the background
+    // (which cost hundreds of MB for large books and competed with foreground
+    // page turns), we keep a sliding window of pages loaded around the current
+    // reading position. Pages far outside the window are evicted; decoded
+    // bitmaps are cached separately in PageImageCache (cost-capped, auto-purged
+    // under memory pressure).
 
-    /// Start background loading of all remaining pages
-    private func startBackgroundLoading(fileURL: URL, totalPages: Int, fileType: Comic.FileType) {
-        print(
-            "[ReaderViewModel] 🚀 Starting background loading of remaining \(totalPages - loadedPages.count) pages"
-        )
+    /// Reader instance for a given file type
+    private func reader(for fileType: Comic.FileType) -> ComicReaderProtocol {
+        switch fileType {
+        case .pdf: return pdfReader
+        case .cbr: return cbrReader
+        default: return cbzReader  // .cbz (.epub never reaches ReaderViewModel)
+        }
+    }
 
-        // Set loading state
-        isBackgroundLoading = true
+    /// Load the window of pages around `index` and evict pages far outside it.
+    private func schedulePrefetch(around index: Int) {
+        guard isLazyLoaded,
+            let book = comicBook,
+            let fileURL = resolvedURL,
+            let comic = currentComic
+        else { return }
 
-        // Cancel any existing task
+        let total = book.totalPages
+        guard total > 0 else { return }
+        let center = max(0, min(index, total - 1))
+
+        // 1. Evict pages outside the retain window.
+        //    (allPages falls back to the book's eager initial pages for low
+        //    indices, and PageImageCache keeps decoded bitmaps independently.)
+        let keepLower = max(0, center - retainRadius)
+        let keepUpper = min(total - 1, center + retainRadius)
+        for key in loadedPages.keys where key < keepLower || key > keepUpper {
+            loadedPages.removeValue(forKey: key)
+        }
+
+        // 2. Build the fetch list: current page first, then ahead, then behind.
+        let ahead = (center...min(total - 1, center + prefetchAhead))
+        let behind = stride(from: center - 1, through: max(0, center - prefetchBehind), by: -1)
+        var targets: [Int] = []
+        for i in ahead where loadedPages[i] == nil { targets.append(i) }
+        for i in behind where loadedPages[i] == nil { targets.append(i) }
+
+        guard !targets.isEmpty else { return }
+
+        // 3. Replace any in-flight prefetch with one for the new window.
         backgroundLoadTask?.cancel()
+        isBackgroundLoading = true
+        let fileType = comic.fileType
 
-        // Start new background task
-        backgroundLoadTask = Task.detached(priority: .background) { [weak self] in
-            guard let self = self else { return }
-
-            // Load pages sequentially in background
-            for pageIndex in 0..<totalPages {
-                // Check if task was cancelled
-                if Task.isCancelled {
-                    print("[ReaderViewModel] ⚠️ Background loading cancelled")
-                    return
-                }
-
-                // Skip if already loaded
-                await MainActor.run {
-                    if self.loadedPages[pageIndex] != nil {
-                        return
-                    }
-                }
-
-                // Load this page
-                do {
-                    let reader: ComicReaderProtocol
-                    switch fileType {
-                    case .pdf:
-                        reader = await self.pdfReader
-                    case .cbr:
-                        reader = await self.cbrReader
-                    default:  // .cbz, .epub (epub not used here in practice)
-                        reader = await self.cbzReader
-                    }
-                    let page = try await reader.loadPage(at: pageIndex, from: fileURL)
-
-                    // Update on main actor
-                    await MainActor.run {
-                        self.loadedPages[pageIndex] = page
-
-                        // Log progress every 5 pages
-                        if (pageIndex + 1) % 5 == 0 {
-                            print(
-                                "[ReaderViewModel] 📦 Background loaded \(self.loadedPages.count)/\(totalPages) pages"
-                            )
-                        }
-                    }
-                } catch {
-                    print(
-                        "[ReaderViewModel] ⚠️ Background load failed for page \(pageIndex + 1): \(error)"
-                    )
-                    // Continue with next page
-                }
+        backgroundLoadTask = Task { [weak self] in
+            for pageIndex in targets {
+                guard !Task.isCancelled else { return }
+                await self?.loadPageIfNeeded(pageIndex, fileURL: fileURL, fileType: fileType)
             }
-
-            await MainActor.run {
-                print(
-                    "[ReaderViewModel] ✅ Background loading complete! All \(totalPages) pages loaded"
-                )
-                self.isBackgroundLoading = false
+            await MainActor.run { [weak self] in
+                self?.isBackgroundLoading = false
             }
+        }
+    }
+
+    /// Load a single page into the window cache (no-op if already present),
+    /// then warm its decoded bitmap off the main thread.
+    private func loadPageIfNeeded(_ pageIndex: Int, fileURL: URL, fileType: Comic.FileType) async {
+        guard loadedPages[pageIndex] == nil else { return }
+
+        do {
+            let page = try await reader(for: fileType).loadPage(at: pageIndex, from: fileURL)
+            guard !Task.isCancelled else { return }
+            loadedPages[pageIndex] = page
+
+            // Pre-decode off-main so the first render of this page is instant
+            Task.detached(priority: .utility) {
+                PageImageCache.shared.warm(page)
+            }
+        } catch {
+            #if DEBUG
+                print("[ReaderViewModel] ⚠️ Prefetch failed for page \(pageIndex + 1): \(error)")
+            #endif
         }
     }
 
     /// Called when page changes (via swipe or button)
     func onPageChanged(to pageIndex: Int) async {
-        print("[ReaderViewModel] 📄 onPageChanged to page \(pageIndex + 1)")
         guard isLazyLoaded else { return }
 
-        // If page isn't loaded yet, wait for it (shouldn't happen often with background loading)
+        // If page isn't loaded yet, fetch it immediately (the prefetch window
+        // normally stays ahead of the reader, so this is a rare fallback)
         if loadedPages[pageIndex] == nil {
-            print("[ReaderViewModel] ⏳ Waiting for page \(pageIndex + 1) to load...")
             await ensurePageLoaded(pageIndex)
         }
     }
 
     private func ensurePageLoaded(_ pageIndex: Int) async {
-        print("[ReaderViewModel] 🔍 ensurePageLoaded(\(pageIndex + 1)) called")
-
-        // Check if page is already loaded
-        guard loadedPages[pageIndex] == nil else {
-            print("[ReaderViewModel] Page \(pageIndex + 1) already loaded")
-            return
-        }
+        guard loadedPages[pageIndex] == nil else { return }
 
         guard let comic = currentComic,
             let fileURL = resolvedURL
         else {
-            print("[ReaderViewModel] ⚠️ Missing comic or URL for lazy loading")
+            #if DEBUG
+                print("[ReaderViewModel] ⚠️ Missing comic or URL for lazy loading")
+            #endif
             return
         }
 
-        print("[ReaderViewModel] Loading page \(pageIndex + 1) in background...")
-
-        do {
-            let reader: ComicReaderProtocol
-            switch comic.fileType {
-            case .pdf:
-                reader = pdfReader
-            case .cbr:
-                reader = cbrReader
-            default:  // .cbz, .epub (epub not used here in practice)
-                reader = cbzReader
-            }
-            let page = try await reader.loadPage(at: pageIndex, from: fileURL)
-            loadedPages[pageIndex] = page
-            print("[ReaderViewModel] ✅ Page \(pageIndex + 1) loaded successfully")
-        } catch {
-            print("[ReaderViewModel] ❌ Failed to load page \(pageIndex + 1): \(error)")
-        }
+        await loadPageIfNeeded(pageIndex, fileURL: fileURL, fileType: comic.fileType)
     }
 
     // MARK: - Page Access (for Lazy Loading)
@@ -774,18 +777,12 @@ class ReaderViewModel: ObservableObject {
         return spreads
     }
 
-    /// Check if a page is wide (likely a double-page spread)
+    /// Check if a page is wide (likely a double-page spread).
+    /// Uses header-only pixel dimensions (no bitmap decode) — previously this
+    /// decoded every page image during spread layout on each render.
     private func isWidePageAtIndex(_ index: Int, in pages: [ComicPage]) -> Bool {
         guard index < pages.count else { return false }
-        let page = pages[index]
-
-        guard let image = page.image else { return false }
-
-        #if os(macOS)
-            let size = image.size
-        #else
-            let size = image.size
-        #endif
+        guard let size = pages[index].pixelSize, size.height > 0 else { return false }
 
         // If aspect ratio > 1.5, it's likely a wide spread
         return (size.width / size.height) > 1.5

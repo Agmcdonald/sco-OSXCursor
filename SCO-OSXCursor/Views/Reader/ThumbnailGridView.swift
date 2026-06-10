@@ -109,9 +109,9 @@ struct ThumbnailCell: View {
     
     var body: some View {
         VStack(spacing: 8) {
-            // Thumbnail image
+            // Thumbnail image (small downsampled decode — not the full page bitmap)
             ZStack {
-                if let image = page.image {
+                if let image = page.thumbnailImage {
                     #if os(macOS)
                     Image(nsImage: image)
                         .resizable()

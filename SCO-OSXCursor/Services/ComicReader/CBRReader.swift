@@ -27,106 +27,68 @@ class CBRReader: ComicReaderProtocol {
         }.value
     }
 
+    /// Number of pages extracted eagerly so the reader can render instantly.
+    /// Remaining pages load on demand via `loadPage(at:)` (windowed prefetch).
+    private let initialPageCount = 3
+
     private func _loadComic(from url: URL) throws -> ComicBook {
-        let startTime = Date().timeIntervalSince1970
-        print("    [CBRReader] loadComic() ENTRY at \(startTime)")
-        print("    [CBRReader] URL: \(url.path)")
-
         // Verify file exists (security access is already held by ReaderViewModel)
-        print("    [CBRReader] Checking if file exists...")
-        let fileExists = FileManager.default.fileExists(atPath: url.path)
-        print("    [CBRReader] File exists: \(fileExists)")
-
-        guard fileExists else {
-            print("    [CBRReader] ❌ ERROR: File not found")
+        guard FileManager.default.fileExists(atPath: url.path) else {
             throw ComicReaderError.fileNotFound
         }
 
-        // Get file attributes
-        do {
-            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
-            let fileSize = attributes[.size] as? Int64 ?? 0
-            print("    [CBRReader] File size: \(fileSize) bytes")
-        } catch {
-            print("    [CBRReader] ⚠️ Could not get file attributes: \(error)")
-        }
-
         // Open RAR archive
-        print("    [CBRReader] Attempting to open RAR archive...")
         let archive: Archive
         do {
             archive = try Archive(fileURL: url)
         } catch {
-            print("    [CBRReader] ❌ Failed to open RAR archive: \(error)")
+            #if DEBUG
+                print("[CBRReader] ❌ Failed to open RAR archive: \(error)")
+            #endif
             throw ComicReaderError.invalidFormat
         }
-        print("    [CBRReader] ✅ Archive opened successfully")
 
-        // Get image entries
-        print("    [CBRReader] Extracting image entries...")
-        let entries: [Entry]
-        do {
-            entries = try archive.entries()
-        } catch {
-            print("    [CBRReader] ❌ Failed to list entries: \(error)")
-            throw ComicReaderError.extractionFailed
-        }
+        let sortedEntries = try sortedImageEntries(from: archive)
 
-        let imageEntries = entries.filter { entry in
-            let pathExtension = (entry.fileName as NSString).pathExtension.lowercased()
-            return imageExtensions.contains(pathExtension) && !entry.fileName.hasPrefix("__MACOSX")
-        }
-        print("    [CBRReader] Found \(imageEntries.count) image entries")
-
-        guard !imageEntries.isEmpty else {
-            print("    [CBRReader] ❌ ERROR: No images found in archive")
+        guard !sortedEntries.isEmpty else {
             throw ComicReaderError.noImages
         }
 
-        // Sort entries naturally (1, 2, 3, 10, 11, not 1, 10, 11, 2, 3)
-        print("    [CBRReader] Sorting entries naturally...")
-        let sortedEntries = imageEntries.sorted { entry1, entry2 in
-            entry1.fileName.localizedStandardCompare(entry2.fileName) == .orderedAscending
-        }
-        print("    [CBRReader] First entry: \(sortedEntries.first?.fileName ?? "none")")
-
-        // Extract images
-        print("    [CBRReader] Extracting \(sortedEntries.count) pages...")
-        var pages: [ComicPage] = []
-        for (index, entry) in sortedEntries.enumerated() {
+        // Extract only the initial window of pages — the rest stream in lazily
+        var initialPages: [ComicPage] = []
+        for (index, entry) in sortedEntries.prefix(initialPageCount).enumerated() {
             do {
                 let imageData = try archive.extract(entry)
-
-                let page = ComicPage(
-                    pageNumber: index + 1,
-                    imageData: imageData,
-                    fileName: entry.fileName
-                )
-                pages.append(page)
-
-                if index == 0 {
-                    print("    [CBRReader] ✅ Extracted first page (\(imageData.count) bytes)")
-                }
+                initialPages.append(
+                    ComicPage(
+                        pageNumber: index + 1,
+                        imageData: imageData,
+                        fileName: entry.fileName
+                    ))
             } catch {
-                print("    [CBRReader] ⚠️ Failed to extract page \(entry.fileName): \(error)")
-                // Continue with other pages
+                #if DEBUG
+                    print("[CBRReader] ⚠️ Failed to extract page \(entry.fileName): \(error)")
+                #endif
                 continue
             }
         }
 
-        print("    [CBRReader] Successfully extracted \(pages.count) pages")
-
-        guard !pages.isEmpty else {
-            print("    [CBRReader] ❌ ERROR: No pages extracted")
+        guard !initialPages.isEmpty else {
             throw ComicReaderError.extractionFailed
         }
 
-        let endTime = Date().timeIntervalSince1970
-        print(
-            "    [CBRReader] ✅ loadComic() SUCCESS - Time: \(String(format: "%.3f", endTime - startTime))s"
-        )
+        #if DEBUG
+            print(
+                "[CBRReader] ✅ Opened \(url.lastPathComponent): \(sortedEntries.count) pages (\(initialPages.count) eager)"
+            )
+        #endif
 
-        return ComicBook(sourceURL: url, pages: pages, metadata: nil)
+        return ComicBook(
+            sourceURL: url,
+            totalPages: sortedEntries.count,
+            initialPages: initialPages,
+            metadata: nil
+        )
     }
 
     // MARK: - Extract Cover
@@ -152,21 +114,7 @@ class CBRReader: ComicReaderProtocol {
         }
 
         let archive = try Archive(fileURL: url)
-        let entries = try archive.entries()
-
-        let imageEntries = entries.filter { entry in
-            let pathExtension = (entry.fileName as NSString).pathExtension.lowercased()
-            return imageExtensions.contains(pathExtension) && !entry.fileName.hasPrefix("__MACOSX")
-        }
-
-        guard !imageEntries.isEmpty else {
-            throw ComicReaderError.noImages
-        }
-
-        // Sort and get first image
-        let sortedEntries = imageEntries.sorted { entry1, entry2 in
-            entry1.fileName.localizedStandardCompare(entry2.fileName) == .orderedAscending
-        }
+        let sortedEntries = try sortedImageEntries(from: archive)
 
         guard let firstEntry = sortedEntries.first else {
             throw ComicReaderError.noImages
@@ -191,13 +139,7 @@ class CBRReader: ComicReaderProtocol {
         }
 
         let archive = try Archive(fileURL: url)
-        let entries = try archive.entries()
-
-        let imageEntries = entries.filter { entry in
-            let pathExtension = (entry.fileName as NSString).pathExtension.lowercased()
-            return imageExtensions.contains(pathExtension) && !entry.fileName.hasPrefix("__MACOSX")
-        }
-        return imageEntries.count
+        return try sortedImageEntries(from: archive).count
     }
 
     // MARK: - Load Single Page
@@ -214,16 +156,7 @@ class CBRReader: ComicReaderProtocol {
         }
 
         let archive = try Archive(fileURL: url)
-        let entries = try archive.entries()
-
-        let imageEntries = entries.filter { entry in
-            let pathExtension = (entry.fileName as NSString).pathExtension.lowercased()
-            return imageExtensions.contains(pathExtension) && !entry.fileName.hasPrefix("__MACOSX")
-        }
-
-        let sortedEntries = imageEntries.sorted { entry1, entry2 in
-            entry1.fileName.localizedStandardCompare(entry2.fileName) == .orderedAscending
-        }
+        let sortedEntries = try sortedImageEntries(from: archive)
 
         guard index >= 0 && index < sortedEntries.count else {
             throw ComicReaderError.extractionFailed
@@ -237,5 +170,26 @@ class CBRReader: ComicReaderProtocol {
             imageData: imageData,
             fileName: entry.fileName
         )
+    }
+
+    // MARK: - Helper Methods
+
+    /// All image entries from the archive, naturally sorted (1, 2, 10 — not 1, 10, 2).
+    private func sortedImageEntries(from archive: Archive) throws -> [Entry] {
+        let entries: [Entry]
+        do {
+            entries = try archive.entries()
+        } catch {
+            throw ComicReaderError.extractionFailed
+        }
+
+        let imageEntries = entries.filter { entry in
+            let pathExtension = (entry.fileName as NSString).pathExtension.lowercased()
+            return imageExtensions.contains(pathExtension) && !entry.fileName.hasPrefix("__MACOSX")
+        }
+
+        return imageEntries.sorted { entry1, entry2 in
+            entry1.fileName.localizedStandardCompare(entry2.fileName) == .orderedAscending
+        }
     }
 }
