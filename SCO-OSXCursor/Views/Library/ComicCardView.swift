@@ -88,6 +88,11 @@ struct ComicCardView: View {
         .padding(Spacing.md)
         .background(BackgroundColors.elevated)
         .clipShape(RoundedRectangle(cornerRadius: 12))
+        // CRITICAL: .clipped()/.clipShape only clip DRAWING — the cover's
+        // aspect-fill overflow stays tappable outside the card, so taps on a
+        // card could open the NEIGHBORING comic (whichever rendered later).
+        // contentShape bounds hit-testing to the visible card.
+        .contentShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
                 .stroke(
