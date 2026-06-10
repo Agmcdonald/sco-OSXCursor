@@ -23,7 +23,12 @@ struct PagedReaderView: View {
     var onEndPinching: () -> Void = {}
     
     @State private var transitionDirection: Edge = .trailing
-    
+    /// The page actually rendered. Updated inside withAnimation AFTER the
+    /// transition direction is set, so insert/remove transitions fire with
+    /// the right direction — binding identity straight to currentPage (with
+    /// .animation(nil) on the view) made page changes swap instantly.
+    @State private var displayedIndex: Int = 0
+
     // Computed effective transition (per-book or global default)
     private var effectiveTransition: PageTransition {
         settings.effectiveTransition(for: comic)
@@ -54,13 +59,13 @@ struct PagedReaderView: View {
     private var standardPageView: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            
+
             // GUARD: Prevent crash if pages array is empty during reload
             if pages.isEmpty {
                 Color.clear.ignoresSafeArea()
             } else {
-                let safeIndex = min(max(currentPage, 0), pages.count - 1)
-                
+                let safeIndex = min(max(displayedIndex, 0), pages.count - 1)
+
                 ComicPageView(
                     page: pages[safeIndex],
                     onSwipeLeft: {
@@ -88,31 +93,29 @@ struct PagedReaderView: View {
                 )
                 .background(Color.black)
                 .id(safeIndex)
-                .zIndex(Double(safeIndex))
-                .clipped()
                 .transition(effectiveTransition.transition(for: transitionDirection))
-                .animation(nil, value: currentPage)
             }
         }
-        .animation(effectiveTransition.animation(), value: currentPage)
+        .clipped()
+        .onAppear {
+            displayedIndex = currentPage
+        }
         .onChange(of: currentPage) { oldValue, newValue in
             // Required for macOS 26/iOS 20 - prevents double-fire
             guard newValue != oldValue else {
                 debugLog("[\(platform)][PagedReaderView] ⚠️ Double-fire guard triggered")
                 return
             }
-            
-            let transition = effectiveTransition
+
             debugLog("[\(platform)][PagedReaderView] 📄 Page changed: \(oldValue) → \(newValue)")
-            debugLog("[\(platform)][PagedReaderView] 🎬 Transition: \(transition.rawValue)")
-            debugLog("[\(platform)][PagedReaderView] ⏱️ Animation: \(transition.animation())")
-            
+
+            // 1. Set the direction FIRST (unanimated)…
             transitionDirection = newValue > oldValue ? .trailing : .leading
-            
-            withTransaction(Transaction(animation: effectiveTransition.animation())) {
-                withAnimation(effectiveTransition.animation()) {
-                    _ = newValue
-                }
+
+            // 2. …then swap the displayed page inside the animation, so the
+            //    outgoing page slides out while the incoming page slides in.
+            withAnimation(effectiveTransition.animation()) {
+                displayedIndex = newValue
             }
         }
     }

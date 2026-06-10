@@ -23,6 +23,9 @@ struct SpreadReaderView: View {
     var onEndPinching: () -> Void = {}
 
     @State private var transitionDirection: Edge = .trailing
+    /// The spread actually rendered — swapped inside withAnimation after the
+    /// direction is set (see PagedReaderView.displayedIndex for rationale)
+    @State private var displayedIndex: Int = 0
 
     // Computed effective transition (per-book or global default)
     private var effectiveTransition: PageTransition {
@@ -59,7 +62,7 @@ struct SpreadReaderView: View {
             if spreads.isEmpty {
                 Color.clear.ignoresSafeArea()
             } else {
-                let safeIndex = min(max(currentSpreadIndex, 0), spreads.count - 1)
+                let safeIndex = min(max(displayedIndex, 0), spreads.count - 1)
 
                 SpreadView(
                     spread: spreads[safeIndex],
@@ -88,13 +91,13 @@ struct SpreadReaderView: View {
                 )
                 .background(Color.black)
                 .id(safeIndex)
-                .zIndex(Double(safeIndex))
-                .clipped()
                 .transition(effectiveTransition.transition(for: transitionDirection))
-                .animation(nil, value: safeIndex)
             }
         }
-        .animation(effectiveTransition.animation(), value: currentSpreadIndex)
+        .clipped()
+        .onAppear {
+            displayedIndex = currentSpreadIndex
+        }
         .onChange(of: currentSpreadIndex) { oldValue, newValue in
             // Required for macOS 26/iOS 20
             guard newValue != oldValue else {
@@ -102,16 +105,15 @@ struct SpreadReaderView: View {
                 return
             }
 
-            let transition = effectiveTransition
             debugLog("[\(platform)][SpreadReaderView] 📄 Spread changed: \(oldValue) → \(newValue)")
-            debugLog("[\(platform)][SpreadReaderView] 🎬 Transition: \(transition.rawValue)")
-            debugLog("[\(platform)][SpreadReaderView] ⏱️ Animation: \(transition.animation())")
 
-            // Async to prevent desync during rapid keyboard navigation
+            // 1. Direction FIRST (unanimated)…
+            transitionDirection = newValue > oldValue ? .trailing : .leading
+
+            // 2. …then swap the displayed spread inside the animation so the
+            //    outgoing spread slides out while the incoming slides in.
             withAnimation(effectiveTransition.animation()) {
-                DispatchQueue.main.async {
-                    transitionDirection = newValue > oldValue ? .trailing : .leading
-                }
+                displayedIndex = newValue
             }
         }
     }

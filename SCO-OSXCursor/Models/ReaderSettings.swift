@@ -91,6 +91,8 @@ enum PageTransition: String, CaseIterable, Codable {
     func transition(for direction: Edge) -> AnyTransition {
         switch self {
         case .slide:
+            // True push: the new page slides in from `direction` while the
+            // old page slides out the opposite edge — both move together.
             return .asymmetric(
                 insertion: .move(edge: direction),
                 removal: .move(edge: direction == .trailing ? .leading : .trailing)
@@ -98,24 +100,26 @@ enum PageTransition: String, CaseIterable, Codable {
         case .fade:
             return .opacity
         case .zoom:
-            return .scale.combined(with: .opacity)
+            // Incoming page grows in; outgoing page expands slightly past
+            // full size as it fades — a gentle depth cue instead of a blink
+            return .asymmetric(
+                insertion: .scale(scale: 0.94).combined(with: .opacity),
+                removal: .scale(scale: 1.04).combined(with: .opacity)
+            )
         case .none:
             return .identity
         }
     }
-    
+
     func animation() -> Animation {
-        #if os(macOS)
-        let baseDuration = 0.25  // Faster on macOS for performance
-        #else
-        let baseDuration = 0.3
-        #endif
-        
         switch self {
-        case .slide, .zoom:
-            return .easeInOut(duration: baseDuration)
+        case .slide:
+            // Spring reads as a physical page push (Panels-like)
+            return .spring(response: 0.38, dampingFraction: 0.86)
+        case .zoom:
+            return .easeInOut(duration: 0.35)
         case .fade:
-            return .easeInOut(duration: 0.2)
+            return .easeInOut(duration: 0.35)
         case .none:
             return .linear(duration: 0.05)
         }
