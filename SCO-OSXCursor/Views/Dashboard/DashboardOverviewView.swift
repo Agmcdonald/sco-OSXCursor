@@ -138,7 +138,7 @@ struct DashboardOverviewView: View {
                 .onAppear {
                     calculateStats()
                 }
-                .onChange(of: libraryViewModel.comics) { _ in
+                .onChange(of: libraryViewModel.comics) { _, _ in
                     calculateStats()
                 }
             }

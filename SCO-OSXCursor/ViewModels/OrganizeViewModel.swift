@@ -80,47 +80,11 @@ final class OrganizeViewModel: ObservableObject {
         }
         activeScopedFolders.append(contentsOf: scopedFolders)
 
-        // Expand folders recursively off the main thread
+        // Expand folders recursively off the main thread.
+        // (Synchronous helper — DirectoryEnumerator iteration is unavailable
+        // in async contexts under Swift 6.)
         let fileURLs: [URL] = await Task.detached(priority: .userInitiated) {
-            var result: [URL] = []
-            let fm = FileManager.default
-
-            for url in urls {
-                // Per-URL scope for the stat/enumeration (balanced; folder
-                // scopes opened above remain active independently)
-                let accessing = url.startAccessingSecurityScopedResource()
-                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-
-                var isDirectory: ObjCBool = false
-                guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
-                    // Couldn't stat — if it looks like a comic file, stage it
-                    // anyway; downstream file ops use their own scopes
-                    if validExtensions.contains(url.pathExtension.lowercased()) {
-                        result.append(url)
-                    }
-                    continue
-                }
-
-                if isDirectory.boolValue {
-                    if let walker = fm.enumerator(
-                        at: url,
-                        includingPropertiesForKeys: [.isRegularFileKey],
-                        options: [.skipsHiddenFiles, .skipsPackageDescendants]
-                    ) {
-                        for case let fileURL as URL in walker
-                        where validExtensions.contains(fileURL.pathExtension.lowercased()) {
-                            result.append(fileURL)
-                        }
-                    }
-                } else if validExtensions.contains(url.pathExtension.lowercased()) {
-                    result.append(url)
-                }
-            }
-
-            return result.sorted {
-                $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent)
-                    == .orderedAscending
-            }
+            Self.expandComicFileURLs(urls, validExtensions: validExtensions)
         }.value
 
         // Make sure learned knowledge is available before matching
@@ -150,6 +114,53 @@ final class OrganizeViewModel: ObservableObject {
         // Enrich from embedded ComicInfo.xml in the background — embedded
         // metadata beats filename guessing and raises auto-match confidence.
         enrichFromEmbeddedMetadata(newComics)
+    }
+
+    /// Recursively expand file/folder URLs into the comic files they contain.
+    /// Synchronous on purpose: FileManager.DirectoryEnumerator can't be
+    /// iterated from async contexts in the Swift 6 language mode.
+    nonisolated static func expandComicFileURLs(
+        _ urls: [URL], validExtensions: [String]
+    ) -> [URL] {
+        var result: [URL] = []
+        let fm = FileManager.default
+
+        for url in urls {
+            // Per-URL scope for the stat/enumeration (balanced; folder
+            // scopes opened by the caller remain active independently)
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+
+            var isDirectory: ObjCBool = false
+            guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+                // Couldn't stat — if it looks like a comic file, keep it;
+                // downstream file ops use their own scopes
+                if validExtensions.contains(url.pathExtension.lowercased()) {
+                    result.append(url)
+                }
+                continue
+            }
+
+            if isDirectory.boolValue {
+                if let walker = fm.enumerator(
+                    at: url,
+                    includingPropertiesForKeys: [.isRegularFileKey],
+                    options: [.skipsHiddenFiles, .skipsPackageDescendants]
+                ) {
+                    for case let fileURL as URL in walker
+                    where validExtensions.contains(fileURL.pathExtension.lowercased()) {
+                        result.append(fileURL)
+                    }
+                }
+            } else if validExtensions.contains(url.pathExtension.lowercased()) {
+                result.append(url)
+            }
+        }
+
+        return result.sorted {
+            $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent)
+                == .orderedAscending
+        }
     }
 
     // MARK: - Learned Knowledge Application

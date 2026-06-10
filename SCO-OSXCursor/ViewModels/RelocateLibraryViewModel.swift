@@ -130,7 +130,6 @@ final class RelocateLibraryViewModel: ObservableObject {
         notFoundCount = 0
         errors = []
 
-        let fm = FileManager.default
         let total = Double(previews.count)
         guard total > 0 else {
             // Nothing to do — just update Settings with the new root

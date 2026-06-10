@@ -587,7 +587,7 @@ extension DatabaseManager {
         guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
 
         try await dbQueue.write { db in
-            try entry.delete(db)
+            _ = try entry.delete(db)
         }
     }
 
@@ -811,8 +811,7 @@ extension DatabaseManager {
     func logCorrection(_ record: CorrectionRecord) async throws {
         guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
         try await dbQueue.write { db in
-            var mutable = record
-            try mutable.insert(db)
+            try record.insert(db)
         }
     }
 
@@ -870,7 +869,7 @@ extension DatabaseManager {
     func pruneActivity(olderThan date: Date) async throws {
         guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
 
-        try await dbQueue.write { db in
+        _ = try await dbQueue.write { db in
             try ActivityEvent
                 .filter(ActivityEvent.Columns.timestamp < date)
                 .deleteAll(db)

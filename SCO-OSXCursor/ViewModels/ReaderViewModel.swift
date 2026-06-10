@@ -696,12 +696,16 @@ class ReaderViewModel: ObservableObject {
             let bookPath = fileURL.path
             Task.detached(priority: .utility) { [weak self] in
                 PageImageCache.shared.warm(page)
-                if PageImageCache.shared.cachedThumbnail(bookPath: bookPath, pageIndex: pageIndex) == nil,
+                guard
+                    PageImageCache.shared.cachedThumbnail(
+                        bookPath: bookPath, pageIndex: pageIndex) == nil,
                     let thumb = PageImageCache.shared.makeThumbnail(from: page.imageData)
-                {
-                    PageImageCache.shared.storeThumbnail(thumb, bookPath: bookPath, pageIndex: pageIndex)
-                    await MainActor.run { self?.thumbnailVersion += 1 }
-                }
+                else { return }
+                PageImageCache.shared.storeThumbnail(
+                    thumb, bookPath: bookPath, pageIndex: pageIndex)
+                // Bind strongly before crossing into the MainActor closure
+                guard let self else { return }
+                await MainActor.run { self.thumbnailVersion += 1 }
             }
         } catch {
             #if DEBUG

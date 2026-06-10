@@ -38,11 +38,11 @@ struct AutocompleteTextField: View {
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(BorderColors.subtle, lineWidth: 1)
             )
-            .onChange(of: text) { newValue in
+            .onChange(of: text) { _, newValue in
                 guard isFocused else { return }
                 performDebouncedSearch(query: newValue)
             }
-            .onChange(of: isFocused) { focused in
+            .onChange(of: isFocused) { _, focused in
                 if !focused {
                     // Delay hiding to allow tap on suggestion
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {

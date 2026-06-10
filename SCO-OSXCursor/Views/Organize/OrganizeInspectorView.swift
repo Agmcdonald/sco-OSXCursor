@@ -156,12 +156,12 @@ struct OrganizeInspectorView: View {
                         .zIndex(1)
                     }
                 }
-                .onChange(of: series) { _ in update() }
-                .onChange(of: issueNumber) { _ in update() }
-                .onChange(of: year) { _ in update() }
-                .onChange(of: publisher) { _ in update() }
-                .onChange(of: volume) { _ in update() }
-                .onChange(of: bookFormat) { _ in update() }
+                .onChange(of: series) { _, _ in update() }
+                .onChange(of: issueNumber) { _, _ in update() }
+                .onChange(of: year) { _, _ in update() }
+                .onChange(of: publisher) { _, _ in update() }
+                .onChange(of: volume) { _, _ in update() }
+                .onChange(of: bookFormat) { _, _ in update() }
 
                 DisclosureGroup("Additional Metadata", isExpanded: $isAdditionalMetadataExpanded) {
                     Group {
@@ -284,14 +284,14 @@ struct OrganizeInspectorView: View {
                     .padding(.top, 8)
                 }
                 .font(.subheadline)
-                .onChange(of: title) { _ in update() }
-                .onChange(of: writer) { _ in update() }
-                .onChange(of: artist) { _ in update() }
-                .onChange(of: coverArtist) { _ in update() }
-                .onChange(of: colorist) { _ in update() }
-                .onChange(of: inker) { _ in update() }
-                .onChange(of: editor) { _ in update() }
-                .onChange(of: summary) { _ in update() }
+                .onChange(of: title) { _, _ in update() }
+                .onChange(of: writer) { _, _ in update() }
+                .onChange(of: artist) { _, _ in update() }
+                .onChange(of: coverArtist) { _, _ in update() }
+                .onChange(of: colorist) { _, _ in update() }
+                .onChange(of: inker) { _, _ in update() }
+                .onChange(of: editor) { _, _ in update() }
+                .onChange(of: summary) { _, _ in update() }
 
                 Divider()
 

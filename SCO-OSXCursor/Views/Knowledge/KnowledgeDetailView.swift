@@ -328,12 +328,12 @@ struct KnowledgeDetailView: View {
                 // Series-first label, storyline title appended:
                 // "Absolute Superman #018 (2026) — Reign Of The Supermen"
                 // (inside a series page the series name is implied: "#018 (2026) — …")
-                (Text(bookLabel(comic))
-                    + Text(storylineSuffix(comic))
-                    .foregroundColor(AccentColors.primary))
-                    .font(Typography.bodySmall)
-                    .foregroundColor(TextColors.primary)
-                    .lineLimit(1)
+                Text(
+                    "\(bookLabel(comic))\(Text(storylineSuffix(comic)).foregroundColor(AccentColors.primary))"
+                )
+                .font(Typography.bodySmall)
+                .foregroundColor(TextColors.primary)
+                .lineLimit(1)
 
                 HStack(spacing: Spacing.sm) {
                     if entry.type != .publisher, let publisher = comic.publisher {

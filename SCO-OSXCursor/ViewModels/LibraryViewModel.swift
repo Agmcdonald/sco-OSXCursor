@@ -446,44 +446,11 @@ final class LibraryViewModel: ObservableObject {
             }
         }
 
+        // (Synchronous helper — DirectoryEnumerator iteration is unavailable
+        // in async contexts under Swift 6.)
         let urls: [URL] = await Task.detached(priority: .userInitiated) {
-            let validExtensions = ["cbz", "cbr", "pdf", "epub"]
-            let fm = FileManager.default
-            var files: [URL] = []
-            for url in rawURLs {
-                // Per-URL scope for the stat/enumeration (balanced; folder
-                // scopes opened above remain active independently)
-                let accessing = url.startAccessingSecurityScopedResource()
-                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-
-                var isDirectory: ObjCBool = false
-                guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
-                    // Couldn't stat — if it looks like a comic file, let the
-                    // import loop try it with its own security scope
-                    if validExtensions.contains(url.pathExtension.lowercased()) {
-                        files.append(url)
-                    }
-                    continue
-                }
-                if isDirectory.boolValue {
-                    if let walker = fm.enumerator(
-                        at: url,
-                        includingPropertiesForKeys: [.isRegularFileKey],
-                        options: [.skipsHiddenFiles, .skipsPackageDescendants]
-                    ) {
-                        for case let fileURL as URL in walker
-                        where validExtensions.contains(fileURL.pathExtension.lowercased()) {
-                            files.append(fileURL)
-                        }
-                    }
-                } else {
-                    files.append(url)
-                }
-            }
-            return files.sorted {
-                $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent)
-                    == .orderedAscending
-            }
+            OrganizeViewModel.expandComicFileURLs(
+                rawURLs, validExtensions: ["cbz", "cbr", "pdf", "epub"])
         }.value
 
         let total = urls.count
