@@ -54,6 +54,7 @@ struct LibraryView: View {
     @State private var showingFilters = false
     @State private var isSelectionMode = false
     @State private var selectedComics: Set<Comic.ID> = []
+    @State private var showingBulkEdit = false
     @State private var showingFilePicker = false
     @State private var importedFileURLs: [URL] = []
     @State private var isDropTargeted = false
@@ -261,6 +262,16 @@ struct LibraryView: View {
             allowsMultipleSelection: true
         ) { result in
             handleFileImport(result)
+        }
+        .sheet(isPresented: $showingBulkEdit) {
+            BulkEditSheet(itemCount: selectedComics.count) { series, publisher, year, format in
+                viewModel.bulkEdit(
+                    ids: selectedComics,
+                    series: series, publisher: publisher, year: year, bookFormat: format
+                )
+                isSelectionMode = false
+                selectedComics.removeAll()
+            }
         }
         .alert("Delete Comics", isPresented: $showingDeleteConfirmation) {
             Button("Cancel", role: .cancel) {}
@@ -620,6 +631,32 @@ struct LibraryView: View {
                             HStack(spacing: Spacing.xs) {
                                 Image(systemName: "checkmark.circle")
                                 Text("Mark as Read")
+                                    .font(Typography.bodySmall)
+                            }
+                            .foregroundColor(
+                                selectedComics.isEmpty ? TextColors.tertiary : AccentColors.primary
+                            )
+                            .padding(.horizontal, Spacing.md)
+                            .padding(.vertical, Spacing.sm)
+                            .background(
+                                selectedComics.isEmpty
+                                    ? BackgroundColors.elevated : AccentColors.primary.opacity(0.1)
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(selectedComics.isEmpty)
+
+                        // Bulk Edit button — set series/publisher/year/format
+                        // on every selected book at once
+                        Button(action: {
+                            if !selectedComics.isEmpty {
+                                showingBulkEdit = true
+                            }
+                        }) {
+                            HStack(spacing: Spacing.xs) {
+                                Image(systemName: "square.and.pencil")
+                                Text("Edit Fields")
                                     .font(Typography.bodySmall)
                             }
                             .foregroundColor(

@@ -15,12 +15,23 @@ struct LearningView: View {
     @State private var searchText = ""
 
     private var filteredRecords: [SeriesKnowledgeRecord] {
-        guard !searchText.isEmpty else { return knowledge.records }
-        let query = searchText.lowercased()
-        return knowledge.records.filter {
-            $0.seriesName.lowercased().contains(query)
-                || ($0.publisher?.lowercased().contains(query) ?? false)
-                || $0.aliases.contains(where: { $0.contains(query) })
+        let base: [SeriesKnowledgeRecord]
+        if searchText.isEmpty {
+            base = knowledge.records
+        } else {
+            let query = searchText.lowercased()
+            base = knowledge.records.filter {
+                $0.seriesName.lowercased().contains(query)
+                    || ($0.publisher?.lowercased().contains(query) ?? false)
+                    || $0.aliases.contains(where: { $0.contains(query) })
+            }
+        }
+        // Stable display order regardless of in-memory insertion order:
+        // most-used first, then alphabetical
+        return base.sorted {
+            if $0.useCount != $1.useCount { return $0.useCount > $1.useCount }
+            return $0.seriesName.localizedCaseInsensitiveCompare($1.seriesName)
+                == .orderedAscending
         }
     }
 
@@ -53,7 +64,10 @@ struct LearningView: View {
                         .foregroundColor(TextColors.tertiary)
                     }
 
-                    ForEach(filteredRecords) { record in
+                    // Stable identity via normalizedName — records learned
+                    // during this session have no DB id yet, and nil/duplicate
+                    // ForEach ids scrambled row placement
+                    ForEach(filteredRecords, id: \.normalizedName) { record in
                         seriesRow(record)
                             .contextMenu {
                                 Button(role: .destructive) {
@@ -72,7 +86,7 @@ struct LearningView: View {
                             .foregroundColor(TextColors.tertiary)
                     }
 
-                    ForEach(corrections) { correction in
+                    ForEach(Array(corrections.enumerated()), id: \.offset) { _, correction in
                         correctionRow(correction)
                     }
                 }

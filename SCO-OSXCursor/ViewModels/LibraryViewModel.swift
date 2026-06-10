@@ -794,6 +794,31 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Bulk Edit
+
+    /// Apply non-nil fields to all library comics in `ids`, persist, and
+    /// teach the learning system the resulting associations.
+    func bulkEdit(
+        ids: Set<UUID>, series: String?, publisher: String?, year: Int?,
+        bookFormat: Comic.BookFormat?
+    ) {
+        for index in comics.indices where ids.contains(comics[index].id) {
+            var comic = comics[index]
+            if let series, !series.isEmpty { comic.series = series }
+            if let publisher, !publisher.isEmpty { comic.publisher = publisher }
+            if let year { comic.year = year }
+            if let bookFormat { comic.bookFormat = bookFormat }
+            comic.dateModified = Date()
+            comics[index] = comic
+
+            Task { try? await persistComic(comic) }
+            SeriesKnowledge.shared.recordImport(
+                series: comic.series, publisher: comic.publisher,
+                bookFormat: comic.bookFormat)
+        }
+        print("[LibraryViewModel] ✏️ Bulk-edited \(ids.count) comics")
+    }
+
     // MARK: - Pre-fetching (iOS only)
 
     #if os(iOS)

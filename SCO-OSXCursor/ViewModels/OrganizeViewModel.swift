@@ -292,6 +292,24 @@ final class OrganizeViewModel: ObservableObject {
         stagedComics[index] = comic
     }
 
+    // MARK: - Bulk Edit
+
+    /// Apply non-nil fields to all staged comics in `ids`, then re-evaluate
+    /// their readiness. Used by the bulk-edit sheet on checked items.
+    func bulkUpdate(
+        ids: Set<UUID>, series: String?, publisher: String?, year: Int?,
+        bookFormat: Comic.BookFormat?
+    ) {
+        for index in stagedComics.indices where ids.contains(stagedComics[index].id) {
+            if let series, !series.isEmpty { stagedComics[index].series = series }
+            if let publisher, !publisher.isEmpty { stagedComics[index].publisher = publisher }
+            if let year { stagedComics[index].year = year }
+            if let bookFormat { stagedComics[index].bookFormat = bookFormat }
+            stagedComics[index].reevaluate(userEdited: true)
+        }
+        print("[OrganizeViewModel] ✏️ Bulk-updated \(ids.count) staged comics")
+    }
+
     // MARK: - Confirm / Commit
 
     /// Confirm match for a single staged comic: Rename file & Add to Library

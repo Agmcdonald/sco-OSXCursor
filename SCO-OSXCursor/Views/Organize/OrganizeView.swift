@@ -10,6 +10,7 @@ import UniformTypeIdentifiers
 
 struct OrganizeView: View {
     @ObservedObject var viewModel: OrganizeViewModel
+    @State private var showingBulkEdit = false
 
     var body: some View {
         #if os(macOS)
@@ -123,6 +124,16 @@ struct OrganizeView: View {
                     if !viewModel.stagedComics.isEmpty {
                         Divider()
                         HStack {
+                            // Bulk edit the CHECKED items (set year/publisher/etc. once)
+                            Button(action: {
+                                showingBulkEdit = true
+                            }) {
+                                Label(
+                                    "Edit \(viewModel.checkedComicIDs.count) Checked…",
+                                    systemImage: "square.and.pencil")
+                            }
+                            .disabled(viewModel.checkedComicIDs.isEmpty)
+
                             Spacer()
                             Button(action: {
                                 Task {
@@ -167,6 +178,15 @@ struct OrganizeView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(Color(NSColor.textBackgroundColor))
+                }
+            }
+            .sheet(isPresented: $showingBulkEdit) {
+                BulkEditSheet(itemCount: viewModel.checkedComicIDs.count) {
+                    series, publisher, year, format in
+                    viewModel.bulkUpdate(
+                        ids: viewModel.checkedComicIDs,
+                        series: series, publisher: publisher, year: year, bookFormat: format
+                    )
                 }
             }
         #else
