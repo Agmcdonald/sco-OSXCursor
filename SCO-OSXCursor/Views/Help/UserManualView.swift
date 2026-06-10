@@ -108,10 +108,105 @@ struct UserManualView: View {
                         )
 
                         FeatureRow(
-                            icon: "brain.head.profile",
-                            title: "Adaptive Learning",
+                            icon: "checklist",
+                            title: "Selecting Many Books at Once",
                             description:
-                                "The app learns from your manual edits! If you correct a comic's metadata, SCO recognizes the filename pattern and uses it to automatically match future imports from the same series."
+                                "Enter selection mode with the Select button. 'Select All' grabs everything matching your current search or filter — search a series first to target it precisely. On Mac, shift-click selects every book between your last click and the new one. On iPad, tap one book, then long-press another and choose 'Select Range to Here'."
+                        )
+
+                        FeatureRow(
+                            icon: "square.and.pencil",
+                            title: "Bulk Editing",
+                            description:
+                                "With books selected, press 'Edit Fields' to change any metadata — series, publisher, year, format, credits, summary — on all of them at once. Fields you leave empty are untouched. In Organize, check staged files and use 'Edit Checked' the same way."
+                        )
+
+                        FeatureRow(
+                            icon: "arrow.triangle.branch",
+                            title: "Corrections Re-File Your Books",
+                            description:
+                                "When you correct a publisher, series, year, or format, books inside your Home Library are automatically moved to the right folder and renamed — and folders left empty by the move (like a misspelled publisher) are cleaned up."
+                        )
+
+                        FeatureRow(
+                            icon: "externaldrive",
+                            title: "Sort by File Size",
+                            description:
+                                "The sort menu includes File Size (largest first) — perfect for finding which books are taking up the most disk space."
+                        )
+                    }
+                }
+
+                // 1b. Importing Section
+                ManualSection(
+                    title: "Importing Comics",
+                    icon: "square.and.arrow.down",
+                    description: "From messy filenames to a clean, organized library."
+                ) {
+                    VStack(alignment: .leading, spacing: Spacing.xl) {
+                        FeatureRow(
+                            icon: "plus",
+                            title: "Quick Add (Mac & iPad)",
+                            description:
+                                "Quick Add imports files straight into the library. It accepts folders too: on iPad, navigate INTO a folder in the Files picker and tap 'Open' — every comic inside (including subfolders) is imported."
+                        )
+
+                        FeatureRow(
+                            icon: "folder.badge.plus",
+                            title: "Organize & Scan Folder (Mac)",
+                            description:
+                                "The Organize tab stages files before import so you can review what was detected. 'Scan Folder…' pulls in an entire folder tree. Files with embedded ComicInfo.xml fill in automatically; the rest are parsed from their filenames and folder names."
+                        )
+
+                        FeatureRow(
+                            icon: "number",
+                            title: "Book Formats: Issue, One-Shot, Volume",
+                            description:
+                                "Every book has a format. Issues need an issue number ('Series #012 (1994)'). One-shots and graphic novels don't — they're named 'Series (Year)'. Collected editions and manga become Volumes ('Series Vol. 03 (Year)'). The format is auto-detected and can be changed with the picker in Organize's File Details."
+                        )
+
+                        FeatureRow(
+                            icon: "checkmark.circle.fill",
+                            title: "Ready vs. Pending",
+                            description:
+                                "Books the app is confident about are marked Ready and can be imported in one batch with 'Apply All Ready'. Pending books just need a missing field — fill it in the inspector, or check several and bulk-edit them."
+                        )
+                    }
+                }
+
+                // 1c. Knowledge & Learning
+                ManualSection(
+                    title: "Knowledge & Learning",
+                    icon: "brain.head.profile",
+                    description: "The app gets smarter with every book you confirm."
+                ) {
+                    VStack(alignment: .leading, spacing: Spacing.xl) {
+                        FeatureRow(
+                            icon: "graduationcap",
+                            title: "It Learns From Corrections",
+                            description:
+                                "Confirming an import teaches the app that series' publisher and format. If you correct a parsed name (say 'ASM' to 'Amazing Spider-Man'), the old name becomes an alias — the next file with that name identifies itself automatically. Folder names help too: a file inside 'Marvel Comics/Amazing Spider-Man/' inherits both."
+                        )
+
+                        FeatureRow(
+                            icon: "brain.head.profile",
+                            title: "The Learning Tab",
+                            description:
+                                "See everything the app has learned: each known series with its publisher, format, aliases, and how many books you own — plus the history of your corrections. Right-click a series and 'Forget This Series' if it learned something wrong."
+                        )
+
+                        FeatureRow(
+                            icon: "book.closed",
+                            title: "Knowledge Base Deep-Dive",
+                            description:
+                                "In the Knowledge tab, select any series, publisher, writer, or artist to see live stats from your library: book counts, year ranges, contributors, disk usage, and every related book. Pick a writer to see everything they've worked on."
+                        )
+
+                        FeatureRow(
+                            icon: "sparkles",
+                            title: "Suggestions Stay Clean",
+                            description:
+                                "Autocomplete suggestions come from your library. When a correction leaves an old name (like a misspelled publisher) with no books, it's removed from suggestions automatically. You can also delete any entry manually in the Knowledge tab."
                         )
                     }
                 }
@@ -153,7 +248,21 @@ struct UserManualView: View {
                             icon: "text.book.closed",
                             title: "Reading Styles",
                             description:
-                                "Enjoy your comics exactly how they were meant to be read. Set per-book Reading Styles including Standard, Manga (Right-to-Left), and Vertical Scroll directly from the Reader Settings via the gear icon."
+                                "Enjoy your comics exactly how they were meant to be read. Set per-book Reading Styles including Standard, Manga (Right-to-Left), and Vertical Scroll — on Mac via the Presets menu in the reader's top bar, on iPad via the '…' menu."
+                        )
+
+                        FeatureRow(
+                            icon: "hand.draw",
+                            title: "Closing the Reader (iPad)",
+                            description:
+                                "Swipe down to close the book. In Vertical Scroll mode, swiping down scrolls backward through the strip instead — pull down from the very top edge of the screen to close, or use the X button."
+                        )
+
+                        FeatureRow(
+                            icon: "square.grid.3x3",
+                            title: "All Pages Grid",
+                            description:
+                                "Open the grid icon in the reader's top bar to see thumbnails of every page and jump anywhere instantly. Thumbnails load on demand, so even very large books open the grid without delay."
                         )
                     }
                 }
