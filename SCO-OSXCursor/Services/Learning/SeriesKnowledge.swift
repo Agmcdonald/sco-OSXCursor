@@ -13,6 +13,7 @@
 //  series_knowledge / correction_history tables.
 //
 
+import Combine
 import Foundation
 
 @MainActor

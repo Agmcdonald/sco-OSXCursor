@@ -744,11 +744,9 @@ extension DatabaseManager {
     }
 }
 
-// MARK: - Database Helpers
+// MARK: - Series Knowledge (Learning System)
 
-extension Database {
-    /// Returns true if `table` contains a column named `name`.
-    // MARK: - Series Knowledge (Learning System)
+extension DatabaseManager {
 
     func fetchAllSeriesKnowledge() async throws -> [SeriesKnowledgeRecord] {
         guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
@@ -814,7 +812,12 @@ extension Database {
                 .fetchAll(db)
         }
     }
+}
 
+// MARK: - Database Helpers
+
+extension Database {
+    /// Returns true if `table` contains a column named `name`.
     func tableHasColumn(_ table: String, named name: String) throws -> Bool {
         let columns = try self.columns(in: table)
         return columns.contains { $0.name == name }
