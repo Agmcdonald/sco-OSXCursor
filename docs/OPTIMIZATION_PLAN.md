@@ -70,6 +70,9 @@ Noted from Stage 1 testing (Andrew, June 9): fade and zoom transitions feel too 
   Fold into Stage 3 alongside knowledge-base matching.
 - **Longbox / folder browse view**: a shelf-style browse of the library by
   publisher → series boxes, iPad first, then Mac.
+- **Marquee (rubber-band) drag selection** in the library grid, Finder-style.
+  Shift-click ranges + Select All shipped June 10; a drag marquee needs
+  per-cell geometry tracking in the scrolling grid — revisit later.
 - **Library grid sizing & alignment** (Andrew, June 9): user-adjustable cover
   size (e.g. 4-across), and uniform card heights — covers aligned in level
   rows regardless of title length, titles below, consistent row spacing at
