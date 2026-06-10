@@ -620,169 +620,15 @@ struct LibraryView: View {
 
                 // Selection mode controls
                 if isSelectionMode {
-                    HStack(spacing: Spacing.md) {
-                        Text("\(selectedComics.count) selected")
-                            .font(Typography.body)
-                            .foregroundColor(TextColors.secondary)
-
-                        // Select All / Deselect All — operates on the current
-                        // filter/search results, so "search a series → Select
-                        // All → Edit Fields" fixes hundreds in three clicks
-                        Button(action: {
-                            let visibleIDs = Set(filteredAndSortedComics.map(\.id))
-                            if selectedComics.count < visibleIDs.count {
-                                selectedComics = visibleIDs
-                            } else {
-                                selectedComics.removeAll()
-                            }
-                        }) {
-                            Text(
-                                selectedComics.count < filteredAndSortedComics.count
-                                    ? "Select All" : "Deselect All"
-                            )
-                            .font(Typography.bodySmall)
-                            .foregroundColor(AccentColors.primary)
-                            .padding(.horizontal, Spacing.md)
-                            .padding(.vertical, Spacing.sm)
-                            .background(AccentColors.primary.opacity(0.1))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    // iPad portrait: not enough width beside the title for all
+                    // controls — scroll horizontally instead of crushing labels
+                    #if os(iOS)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            selectionModeControls
                         }
-                        .buttonStyle(.plain)
-
-                        // Mark as Read button
-                        Button(action: {
-                            if !selectedComics.isEmpty {
-                                markAsReadSelectedComics()
-                            }
-                        }) {
-                            HStack(spacing: Spacing.xs) {
-                                Image(systemName: "checkmark.circle")
-                                Text("Mark as Read")
-                                    .font(Typography.bodySmall)
-                            }
-                            .foregroundColor(
-                                selectedComics.isEmpty ? TextColors.tertiary : AccentColors.primary
-                            )
-                            .padding(.horizontal, Spacing.md)
-                            .padding(.vertical, Spacing.sm)
-                            .background(
-                                selectedComics.isEmpty
-                                    ? BackgroundColors.elevated : AccentColors.primary.opacity(0.1)
-                            )
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(selectedComics.isEmpty)
-
-                        // Bulk Edit button — set series/publisher/year/format
-                        // on every selected book at once
-                        Button(action: {
-                            if !selectedComics.isEmpty {
-                                showingBulkEdit = true
-                            }
-                        }) {
-                            HStack(spacing: Spacing.xs) {
-                                Image(systemName: "square.and.pencil")
-                                Text("Edit Fields")
-                                    .font(Typography.bodySmall)
-                            }
-                            .foregroundColor(
-                                selectedComics.isEmpty ? TextColors.tertiary : AccentColors.primary
-                            )
-                            .padding(.horizontal, Spacing.md)
-                            .padding(.vertical, Spacing.sm)
-                            .background(
-                                selectedComics.isEmpty
-                                    ? BackgroundColors.elevated : AccentColors.primary.opacity(0.1)
-                            )
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(selectedComics.isEmpty)
-
-                        // Add to Reading List button
-                        Button(action: {
-                            if !selectedComics.isEmpty {
-                                addSelectedToReadingList()
-                            }
-                        }) {
-                            HStack(spacing: Spacing.xs) {
-                                Image("ReadingListIcon")
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(width: 14, height: 14)
-                                Text("Add to List")
-                                    .font(Typography.bodySmall)
-                            }
-                            .foregroundColor(
-                                selectedComics.isEmpty ? TextColors.tertiary : AccentColors.primary
-                            )
-                            .padding(.horizontal, Spacing.md)
-                            .padding(.vertical, Spacing.sm)
-                            .background(
-                                selectedComics.isEmpty
-                                    ? BackgroundColors.elevated : AccentColors.primary.opacity(0.1)
-                            )
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(selectedComics.isEmpty)
-
-                        // Regenerate Cover button
-                        Button(action: {
-                            if !selectedComics.isEmpty {
-                                regenerateCoversForSelected()
-                            }
-                        }) {
-                            HStack(spacing: Spacing.xs) {
-                                Image(systemName: "arrow.clockwise.circle")
-                                Text("Regenerate Cover")
-                                    .font(Typography.bodySmall)
-                            }
-                            .foregroundColor(
-                                selectedComics.isEmpty ? TextColors.tertiary : TextColors.primary
-                            )
-                            .padding(.horizontal, Spacing.md)
-                            .padding(.vertical, Spacing.sm)
-                            .background(
-                                selectedComics.isEmpty
-                                    ? BackgroundColors.elevated : BackgroundColors.elevated
-                            )
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(selectedComics.isEmpty)
-
-                        // Delete button
-                        Button(action: {
-                            if !selectedComics.isEmpty {
-                                showingDeleteConfirmation = true
-                            }
-                        }) {
-                            HStack(spacing: Spacing.xs) {
-                                Image(systemName: "trash")
-                                Text("Delete")
-                                    .font(Typography.bodySmall)
-                            }
-                            .foregroundColor(selectedComics.isEmpty ? TextColors.tertiary : .red)
-                            .padding(.horizontal, Spacing.md)
-                            .padding(.vertical, Spacing.sm)
-                            .background(
-                                selectedComics.isEmpty
-                                    ? BackgroundColors.elevated : Color.red.opacity(0.1)
-                            )
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(selectedComics.isEmpty)
-
-                        Button("Cancel") {
-                            isSelectionMode = false
-                            selectedComics.removeAll()
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundColor(TextColors.secondary)
-                    }
+                    #else
+                        selectionModeControls
+                    #endif
                 } else {
                     HStack(spacing: Spacing.md) {
                         // Quick Add button
@@ -1668,6 +1514,173 @@ struct LibraryView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(Spacing.xl)
+    }
+
+    // MARK: - Selection Mode Controls
+    private var selectionModeControls: some View {
+                    HStack(spacing: Spacing.md) {
+                        Text("\(selectedComics.count) selected")
+                            .font(Typography.body)
+                            .foregroundColor(TextColors.secondary)
+
+                        // Select All / Deselect All — operates on the current
+                        // filter/search results, so "search a series → Select
+                        // All → Edit Fields" fixes hundreds in three clicks
+                        Button(action: {
+                            let visibleIDs = Set(filteredAndSortedComics.map(\.id))
+                            if selectedComics.count < visibleIDs.count {
+                                selectedComics = visibleIDs
+                            } else {
+                                selectedComics.removeAll()
+                            }
+                        }) {
+                            Text(
+                                selectedComics.count < filteredAndSortedComics.count
+                                    ? "Select All" : "Deselect All"
+                            )
+                            .font(Typography.bodySmall)
+                            .foregroundColor(AccentColors.primary)
+                            .padding(.horizontal, Spacing.md)
+                            .padding(.vertical, Spacing.sm)
+                            .background(AccentColors.primary.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
+
+                        // Mark as Read button
+                        Button(action: {
+                            if !selectedComics.isEmpty {
+                                markAsReadSelectedComics()
+                            }
+                        }) {
+                            HStack(spacing: Spacing.xs) {
+                                Image(systemName: "checkmark.circle")
+                                Text("Mark as Read")
+                                    .font(Typography.bodySmall)
+                            }
+                            .foregroundColor(
+                                selectedComics.isEmpty ? TextColors.tertiary : AccentColors.primary
+                            )
+                            .padding(.horizontal, Spacing.md)
+                            .padding(.vertical, Spacing.sm)
+                            .background(
+                                selectedComics.isEmpty
+                                    ? BackgroundColors.elevated : AccentColors.primary.opacity(0.1)
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(selectedComics.isEmpty)
+
+                        // Bulk Edit button — set series/publisher/year/format
+                        // on every selected book at once
+                        Button(action: {
+                            if !selectedComics.isEmpty {
+                                showingBulkEdit = true
+                            }
+                        }) {
+                            HStack(spacing: Spacing.xs) {
+                                Image(systemName: "square.and.pencil")
+                                Text("Edit Fields")
+                                    .font(Typography.bodySmall)
+                            }
+                            .foregroundColor(
+                                selectedComics.isEmpty ? TextColors.tertiary : AccentColors.primary
+                            )
+                            .padding(.horizontal, Spacing.md)
+                            .padding(.vertical, Spacing.sm)
+                            .background(
+                                selectedComics.isEmpty
+                                    ? BackgroundColors.elevated : AccentColors.primary.opacity(0.1)
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(selectedComics.isEmpty)
+
+                        // Add to Reading List button
+                        Button(action: {
+                            if !selectedComics.isEmpty {
+                                addSelectedToReadingList()
+                            }
+                        }) {
+                            HStack(spacing: Spacing.xs) {
+                                Image("ReadingListIcon")
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 14, height: 14)
+                                Text("Add to List")
+                                    .font(Typography.bodySmall)
+                            }
+                            .foregroundColor(
+                                selectedComics.isEmpty ? TextColors.tertiary : AccentColors.primary
+                            )
+                            .padding(.horizontal, Spacing.md)
+                            .padding(.vertical, Spacing.sm)
+                            .background(
+                                selectedComics.isEmpty
+                                    ? BackgroundColors.elevated : AccentColors.primary.opacity(0.1)
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(selectedComics.isEmpty)
+
+                        // Regenerate Cover button
+                        Button(action: {
+                            if !selectedComics.isEmpty {
+                                regenerateCoversForSelected()
+                            }
+                        }) {
+                            HStack(spacing: Spacing.xs) {
+                                Image(systemName: "arrow.clockwise.circle")
+                                Text("Regenerate Cover")
+                                    .font(Typography.bodySmall)
+                            }
+                            .foregroundColor(
+                                selectedComics.isEmpty ? TextColors.tertiary : TextColors.primary
+                            )
+                            .padding(.horizontal, Spacing.md)
+                            .padding(.vertical, Spacing.sm)
+                            .background(
+                                selectedComics.isEmpty
+                                    ? BackgroundColors.elevated : BackgroundColors.elevated
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(selectedComics.isEmpty)
+
+                        // Delete button
+                        Button(action: {
+                            if !selectedComics.isEmpty {
+                                showingDeleteConfirmation = true
+                            }
+                        }) {
+                            HStack(spacing: Spacing.xs) {
+                                Image(systemName: "trash")
+                                Text("Delete")
+                                    .font(Typography.bodySmall)
+                            }
+                            .foregroundColor(selectedComics.isEmpty ? TextColors.tertiary : .red)
+                            .padding(.horizontal, Spacing.md)
+                            .padding(.vertical, Spacing.sm)
+                            .background(
+                                selectedComics.isEmpty
+                                    ? BackgroundColors.elevated : Color.red.opacity(0.1)
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(selectedComics.isEmpty)
+
+                        Button("Cancel") {
+                            isSelectionMode = false
+                            selectedComics.removeAll()
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(TextColors.secondary)
+                    }
     }
 
     // MARK: - Helper Methods

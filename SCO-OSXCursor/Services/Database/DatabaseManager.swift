@@ -592,6 +592,19 @@ extension DatabaseManager {
     }
 
     /// Check if a knowledge entry exists
+    /// Delete a knowledge entry by type + name (used to prune suggestions
+    /// that no longer match any book, e.g. a misspelled publisher).
+    func deleteKnowledgeEntry(type: KnowledgeEntry.EntryType, name: String) async throws {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+        let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        _ = try await dbQueue.write { db in
+            try KnowledgeEntry
+                .filter(KnowledgeEntry.Columns.type == type.rawValue)
+                .filter(KnowledgeEntry.Columns.normalizedName == normalized)
+                .deleteAll(db)
+        }
+    }
+
     func knowledgeEntryExists(type: KnowledgeEntry.EntryType, name: String) async throws -> Bool {
         guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
 

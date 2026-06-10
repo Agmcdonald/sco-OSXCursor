@@ -175,6 +175,14 @@ final class LibraryViewModel: ObservableObject {
                 // year-based folder structure) — re-file in-library books
                 await resortAfterEdit(comic.id)
             }
+
+            // Drop autocomplete suggestions the correction just orphaned
+            if publisherChanged {
+                pruneKnowledgeIfOrphaned(type: .publisher, name: old.publisher)
+            }
+            if seriesChanged {
+                pruneKnowledgeIfOrphaned(type: .series, name: old.series)
+            }
         }
     }
 
@@ -800,6 +808,38 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Knowledge Pruning
+
+    /// After a correction, remove a publisher/series suggestion that no book
+    /// uses anymore — so misspellings like "Malibu Malibu Comics Entertainment"
+    /// stop appearing in autocomplete once they're fixed everywhere.
+    func pruneKnowledgeIfOrphaned(type: KnowledgeEntry.EntryType, name: String?) {
+        guard let name, !name.isEmpty else { return }
+        let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        let stillUsed: Bool
+        switch type {
+        case .publisher:
+            stillUsed = comics.contains {
+                ($0.publisher ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    == normalized
+            }
+        case .series:
+            stillUsed = comics.contains {
+                ($0.series ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    == normalized
+            }
+        default:
+            return
+        }
+        guard !stillUsed else { return }
+
+        Task {
+            try? await database.deleteKnowledgeEntry(type: type, name: name)
+            print("[LibraryViewModel] 🧹 Pruned orphaned \(type.rawValue) suggestion: \(name)")
+        }
+    }
+
     // MARK: - Re-sort After Edits
 
     /// After metadata changes, move the file to its correct library location
@@ -842,8 +882,20 @@ final class LibraryViewModel: ObservableObject {
     /// Apply non-nil fields to all library comics in `ids`, persist, and
     /// teach the learning system the resulting associations.
     func bulkEdit(ids: Set<UUID>, values: BulkEditValues) {
+        // Track replaced names so orphaned suggestions can be pruned after
+        var replacedPublishers = Set<String>()
+        var replacedSeries = Set<String>()
+
         for index in comics.indices where ids.contains(comics[index].id) {
             var comic = comics[index]
+            if values.publisher != nil, let oldPublisher = comic.publisher,
+                oldPublisher != values.publisher
+            {
+                replacedPublishers.insert(oldPublisher)
+            }
+            if values.series != nil, let oldSeries = comic.series, oldSeries != values.series {
+                replacedSeries.insert(oldSeries)
+            }
             if let series = values.series { comic.series = series }
             if let publisher = values.publisher { comic.publisher = publisher }
             if let year = values.year { comic.year = year }
@@ -867,6 +919,14 @@ final class LibraryViewModel: ObservableObject {
                 bookFormat: comic.bookFormat)
         }
         print("[LibraryViewModel] ✏️ Bulk-edited \(ids.count) comics")
+
+        // Drop autocomplete suggestions the correction just orphaned
+        for publisher in replacedPublishers {
+            pruneKnowledgeIfOrphaned(type: .publisher, name: publisher)
+        }
+        for series in replacedSeries {
+            pruneKnowledgeIfOrphaned(type: .series, name: series)
+        }
 
         // Re-file edited books whose folder or clean filename changed
         // (sequentially — concurrent moves could race on folder cleanup)
