@@ -17,72 +17,58 @@ struct ComicCardView: View {
             // Cover image
             coverView
 
-            // Comic info
+            // Comic info — FIXED HEIGHT so every card in a row is the same
+            // height and covers sit in level rows regardless of title length
+            // (grid alignment request, Andrew, June 9). Title always reserves
+            // two lines; one metadata line below; progress moved onto the
+            // cover itself as a thin bottom bar.
             VStack(alignment: .leading, spacing: Spacing.xs) {
-                // Title
+                // Title — reserved 2-line slot, top-aligned
                 Text(comic.displayName)
                     .font(Typography.h3)
                     .foregroundColor(TextColors.primary)
                     .lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .frame(height: 44, alignment: .topLeading)
 
-                // Issue number and year
-                if comic.issueNumber != nil || comic.year != nil {
-                    HStack(spacing: Spacing.xs) {
-                        if let issueNumber = comic.issueNumber {
-                            Text("Issue #\(issueNumber)")
-                                .font(Typography.caption)
-                                .foregroundColor(TextColors.secondary)
-                        }
+                // One metadata line: issue/year • publisher (reserved even
+                // when empty so card heights never drift)
+                HStack(spacing: Spacing.xs) {
+                    if let issueNumber = comic.issueNumber {
+                        Text("Issue #\(issueNumber)")
+                            .font(Typography.caption)
+                            .foregroundColor(TextColors.secondary)
+                            .lineLimit(1)
+                            .layoutPriority(1)
+                    }
 
-                        if let year = comic.year {
-                            Text("(\(String(year)))")
+                    if let year = comic.year {
+                        Text("(\(String(year)))")
+                            .font(Typography.caption)
+                            .foregroundColor(TextColors.tertiary)
+                            .lineLimit(1)
+                            .layoutPriority(1)
+                    }
+
+                    if let publisher = comic.publisher {
+                        if comic.issueNumber != nil || comic.year != nil {
+                            Text("•")
                                 .font(Typography.caption)
                                 .foregroundColor(TextColors.tertiary)
                         }
-                    }
-                }
-
-                // Publisher badge
-                if let publisher = comic.publisher {
-                    HStack(spacing: Spacing.xs) {
                         Circle()
                             .fill(comic.publisherColor)
                             .frame(width: 6, height: 6)
-
                         Text(publisher)
-                            .font(Typography.label)
+                            .font(Typography.caption)
                             .foregroundColor(TextColors.secondary)
+                            .lineLimit(1)
                     }
-                    .padding(.horizontal, Spacing.sm)
-                    .padding(.vertical, 4)
-                    .background(BackgroundColors.elevated)
-                    .clipShape(Capsule())
+
+                    Spacer(minLength: 0)
                 }
-
-                // Progress indicator
-                if comic.isInProgress {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(comic.progressPercentage)
-                            .font(Typography.label)
-                            .foregroundColor(TextColors.tertiary)
-
-                        GeometryReader { geometry in
-                            ZStack(alignment: .leading) {
-                                // Background
-                                RoundedRectangle(cornerRadius: 2)
-                                    .fill(BackgroundColors.elevated)
-                                    .frame(height: 4)
-
-                                // Progress
-                                RoundedRectangle(cornerRadius: 2)
-                                    .fill(comic.status.color)
-                                    .frame(width: geometry.size.width * comic.progress, height: 4)
-                            }
-                        }
-                        .frame(height: 4)
-                    }
-                }
+                .frame(height: 16)
             }
         }
         .padding(Spacing.md)
@@ -196,6 +182,25 @@ struct ComicCardView: View {
                         }
                     }  // HStack bottom badges
                 }  // VStack overlay
+
+                // Reading progress — thin bar along the cover's bottom edge
+                // (replaces the in-card progress row so card heights stay
+                // uniform for level grid rows)
+                if comic.isInProgress {
+                    VStack {
+                        Spacer()
+                        ZStack(alignment: .leading) {
+                            Rectangle()
+                                .fill(Color.black.opacity(0.35))
+                                .frame(height: 4)
+
+                            Rectangle()
+                                .fill(comic.status.color)
+                                .frame(
+                                    width: geometry.size.width * comic.progress, height: 4)
+                        }
+                    }
+                }
             }  // ZStack
             .clipped()  // Clip content to geometry bounds
         }

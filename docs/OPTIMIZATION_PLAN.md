@@ -53,8 +53,23 @@ Implemented (June 10):
 Done: warning sweep (Swift-6 async-iterator errors, deprecated onChange,
 Text '+', discarded results, unused vars), BookFormat/StagedComic/
 SeriesKnowledgeRecord unit tests added, 11 stale status docs archived to
-docs/archive. REMAINING: split LibraryView.swift (~2,400 lines) into
-components; EPUBReaderView dead-CSS block needs a real review; migrate
+docs/archive.
+
+DONE (June 10, second pass): LibraryView.swift split — 2,141 lines down to
+a ~550-line coordinator plus focused components in Views/Library/:
+LibraryModels (view mode/sort/filters + testable LibraryQuery pipeline),
+LibraryHeaderView, LibrarySelectionBar, LibraryGridView, LibraryListView,
+LibraryPublisherBrowseView, LibraryEmptyStateView, LibraryFilterPanel,
+ComicCellModifiers (shared tap/context-menu behavior, was repeated 3×).
+Dead code dropped: unused selectedComic/importedFileURLs state,
+bindingForComic. Shipped alongside (same surface): cover-size slider in
+the header (120–260pt, persisted) and uniform card heights — fixed 2-line
+title slot + one metadata line, progress bar moved onto the cover's bottom
+edge — so covers sit in level rows at every size. Verified: built & ran on
+iPad simulator and macOS; grid/list/publisher views and selection mode
+smoke-tested on macOS.
+
+REMAINING: EPUBReaderView dead-CSS block needs a real review; migrate
 prints to os.Logger.
 
 ## Stage 4 — original scope
@@ -88,10 +103,10 @@ refinement — define with Andrew on-device.
 - **Marquee (rubber-band) drag selection** in the library grid, Finder-style.
   Shift-click ranges + Select All shipped June 10; a drag marquee needs
   per-cell geometry tracking in the scrolling grid — revisit later.
-- **Library grid sizing & alignment** (Andrew, June 9): user-adjustable cover
-  size (e.g. 4-across), and uniform card heights — covers aligned in level
-  rows regardless of title length, titles below, consistent row spacing at
-  every size.
+- **Library grid sizing & alignment** (Andrew, June 9) — DONE June 10:
+  cover-size slider in the header (persisted per device) and uniform card
+  heights — covers aligned in level rows regardless of title length, titles
+  below, consistent row spacing at every size.
 - **Mac ↔ iPad transfer**: send books (with their metadata) between devices;
   pairs with the long-term "remote access to your own library" vision. iPad
   stays the lighter reading/metadata app; Mac owns file organization.
