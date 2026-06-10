@@ -152,11 +152,7 @@ struct ContentView: View {
         case .organize:
             OrganizeView(viewModel: organizeViewModel)
         case .learning:
-            PlaceholderView(
-                title: "Learning",
-                subtitle: "Smart organization patterns will appear here",
-                icon: "brain.head.profile"
-            )
+            LearningView()
         case .knowledge:
             KnowledgeView()
         case .maintenance:

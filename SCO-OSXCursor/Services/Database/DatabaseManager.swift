@@ -268,6 +268,51 @@ final class DatabaseManager {
             print("[DatabaseManager] ✅ Migration v11_book_format complete")
         }
 
+        // Version 12: Learning system — series knowledge + correction history
+        migrator.registerMigration("v12_series_knowledge") { db in
+            print("[DatabaseManager] 🔄 Running migration: v12_series_knowledge")
+
+            try db.create(table: "series_knowledge", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("series_name", .text).notNull()
+                t.column("normalized_name", .text).notNull().unique()
+                t.column("publisher", .text)
+                t.column("book_format", .text).notNull().defaults(to: "issue")
+                t.column("aliases", .text).notNull().defaults(to: "[]")
+                t.column("use_count", .integer).notNull().defaults(to: 1)
+                t.column("last_used", .datetime).notNull()
+            }
+
+            try db.create(table: "correction_history", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("original_series", .text)
+                t.column("corrected_series", .text)
+                t.column("original_publisher", .text)
+                t.column("corrected_publisher", .text)
+                t.column("source_filename", .text)
+                t.column("created_at", .datetime).notNull()
+            }
+
+            // Seed from the existing library so the learning system starts
+            // with everything already imported
+            if try db.tableExists("comics") {
+                try db.execute(
+                    sql: """
+                        INSERT OR IGNORE INTO series_knowledge
+                            (series_name, normalized_name, publisher, book_format,
+                             aliases, use_count, last_used)
+                        SELECT series, LOWER(TRIM(series)), MAX(publisher), 'issue',
+                               '[]', COUNT(*), datetime('now')
+                        FROM comics
+                        WHERE series IS NOT NULL AND TRIM(series) <> ''
+                        GROUP BY LOWER(TRIM(series))
+                        """)
+                print("[DatabaseManager] ✅ Seeded series_knowledge from existing library")
+            }
+
+            print("[DatabaseManager] ✅ Migration v12_series_knowledge complete")
+        }
+
         return migrator
     }
 
@@ -703,6 +748,73 @@ extension DatabaseManager {
 
 extension Database {
     /// Returns true if `table` contains a column named `name`.
+    // MARK: - Series Knowledge (Learning System)
+
+    func fetchAllSeriesKnowledge() async throws -> [SeriesKnowledgeRecord] {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+        return try await dbQueue.read { db in
+            try SeriesKnowledgeRecord
+                .order(Column("use_count").desc)
+                .fetchAll(db)
+        }
+    }
+
+    /// Insert or update by normalized series name (the unique key).
+    func upsertSeriesKnowledge(_ record: SeriesKnowledgeRecord) async throws {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+        let aliasesJSON =
+            (try? JSONEncoder().encode(record.aliases))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+
+        try await dbQueue.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO series_knowledge
+                        (series_name, normalized_name, publisher, book_format,
+                         aliases, use_count, last_used)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(normalized_name) DO UPDATE SET
+                        series_name = excluded.series_name,
+                        publisher = COALESCE(excluded.publisher, series_knowledge.publisher),
+                        book_format = excluded.book_format,
+                        aliases = excluded.aliases,
+                        use_count = excluded.use_count,
+                        last_used = excluded.last_used
+                    """,
+                arguments: [
+                    record.seriesName, record.normalizedName, record.publisher,
+                    record.bookFormat.rawValue, aliasesJSON, record.useCount, record.lastUsed,
+                ])
+        }
+    }
+
+    func deleteSeriesKnowledge(normalizedName: String) async throws {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+        _ = try await dbQueue.write { db in
+            try SeriesKnowledgeRecord
+                .filter(Column("normalized_name") == normalizedName)
+                .deleteAll(db)
+        }
+    }
+
+    func logCorrection(_ record: CorrectionRecord) async throws {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+        try await dbQueue.write { db in
+            var mutable = record
+            try mutable.insert(db)
+        }
+    }
+
+    func fetchRecentCorrections(limit: Int = 100) async throws -> [CorrectionRecord] {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+        return try await dbQueue.read { db in
+            try CorrectionRecord
+                .order(Column("created_at").desc)
+                .limit(limit)
+                .fetchAll(db)
+        }
+    }
+
     func tableHasColumn(_ table: String, named name: String) throws -> Bool {
         let columns = try self.columns(in: table)
         return columns.contains { $0.name == name }

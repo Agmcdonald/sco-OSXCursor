@@ -123,10 +123,16 @@ final class OrganizeViewModel: ObservableObject {
             }
         }.value
 
+        // Make sure learned knowledge is available before matching
+        await SeriesKnowledge.shared.loadIfNeeded()
+
         var newComics: [StagedComic] = []
         for (index, url) in fileURLs.enumerated() {
             // Create StagedComic (parses the filename on init)
-            newComics.append(StagedComic(url: url))
+            var staged = StagedComic(url: url)
+            // Enrich from learned series knowledge + folder-name hints
+            applyKnowledge(to: &staged)
+            newComics.append(staged)
             processingProgress = Double(index + 1) / Double(fileURLs.count)
         }
 
@@ -144,6 +150,43 @@ final class OrganizeViewModel: ObservableObject {
         // Enrich from embedded ComicInfo.xml in the background — embedded
         // metadata beats filename guessing and raises auto-match confidence.
         enrichFromEmbeddedMetadata(newComics)
+    }
+
+    // MARK: - Learned Knowledge Application
+
+    /// Fill gaps in a staged comic from learned series knowledge and the
+    /// folder structure it came from, then re-evaluate its confidence.
+    private func applyKnowledge(to comic: inout StagedComic) {
+        let knowledge = SeriesKnowledge.shared
+        let hints = knowledge.folderHints(for: comic.originalURL)
+
+        // Filename gave no series → fall back to the folder name
+        if comic.series.isEmpty, let folderSeries = hints.series {
+            comic.series = folderSeries
+        }
+
+        // Known series (or learned alias) → canonical name, publisher, format
+        if let match = knowledge.match(series: comic.series) {
+            comic.series = match.canonicalSeries
+            if comic.publisher == nil {
+                comic.publisher = match.publisher
+            }
+            if comic.bookFormat == .issue, match.bookFormat != .issue,
+                comic.issueNumber == nil
+            {
+                comic.bookFormat = match.bookFormat
+            }
+        }
+
+        // Publisher fallbacks: folder name, then character heuristics
+        if comic.publisher == nil {
+            comic.publisher = hints.publisher
+        }
+        if comic.publisher == nil {
+            comic.publisher = PublisherDetector.detectFromCharacters(comic.series)
+        }
+
+        comic.reevaluate(userEdited: false)
     }
 
     // MARK: - Embedded Metadata Enrichment
@@ -362,7 +405,25 @@ final class OrganizeViewModel: ObservableObject {
             lastMoveDestination = nil
         }
 
-        // 3. Remove from staging
+        // 3. LEARN from this confirmation:
+        //    - remember the series → publisher/format association
+        //    - if the user corrected what the filename parse produced, store
+        //      the original as an alias so next time it matches automatically
+        let originalParse = MetadataParser.parseFromFilename(current.originalFileName)
+        SeriesKnowledge.shared.recordImport(
+            series: current.series,
+            publisher: current.publisher,
+            bookFormat: current.bookFormat
+        )
+        SeriesKnowledge.shared.recordCorrection(
+            originalSeries: originalParse.series,
+            correctedSeries: current.series,
+            originalPublisher: originalParse.publisher,
+            correctedPublisher: current.publisher,
+            filename: current.originalFileName
+        )
+
+        // 4. Remove from staging
         if let idx = stagedComics.firstIndex(where: { $0.id == current.id }) {
             stagedComics.remove(at: idx)
         }

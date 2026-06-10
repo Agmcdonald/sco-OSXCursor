@@ -28,13 +28,25 @@ The architecture is sound (MVVM, GRDB/SQLite, security-scoped bookmarks, backgro
 - Run missing-file integrity checks off the main thread.
 - Verify folder drops enumerate recursively (incl. .epub once Stage 5 routing is confirmed).
 
-## Stage 3 — Learning system (the app's core promise)
+## Stage 3 — Learning system (the app's core promise) — DONE
 
-- New GRDB tables: `series_aliases` (alias → canonical series + publisher, confidence, use count), `learned_patterns`, `correction_history`.
-- Implement `OrganizationLearner` persistence (replace the TODO stubs).
-- Consult knowledge during staging: after the filename parse, look up aliases and prior series → fill publisher/series, boost confidence; an exact prior-series match auto-promotes to Ready.
-- Capture corrections automatically at `confirmMatch`: diff the initial parse against the user-confirmed values and store the mapping. Next file from the same series imports clean.
-- Surface learned aliases in the Knowledge view (editable/deletable).
+Implemented (June 10):
+
+- New tables (migration v12): `series_knowledge` (canonical series → publisher,
+  book format, aliases, use count) and `correction_history`. Seeded from the
+  existing library on first run.
+- `SeriesKnowledge` service: in-memory cache + DB mirror; exact and alias
+  matching; folder-name hints (publisher via exact match against built-in +
+  learned publishers; series via parent folder).
+- Staging and quick-add both consult knowledge after the filename parse:
+  alias → canonical series, publisher filled, volume-format remembered,
+  character-map fallback. Confidence re-evaluated with the enriched fields.
+- Every confirmed import calls `recordImport`; differences between the
+  original parse and the confirmed values become aliases + correction rows.
+  Metadata-editor corrections (`OrganizationLearner.learnFromCorrection`)
+  forward into the same store.
+- Learning tab is now a real view: learned series (searchable, with aliases
+  and use counts, context-menu Forget) + recent corrections.
 
 ## Stage 4 — Code health
 

@@ -79,6 +79,20 @@ struct PublisherDetector {
         return nil
     }
 
+    /// Exact (whole-string) publisher match — for folder names, where the
+    /// substring matching of `detect(from:)` would false-positive
+    /// (e.g. "Pyrate-DCP" contains "dc").
+    static func exactMatch(_ name: String) -> String? {
+        let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return nil }
+        for publisher in publishers {
+            if publisher.name.lowercased() == normalized || publisher.aliases.contains(normalized) {
+                return publisher.name
+            }
+        }
+        return nil
+    }
+
     /// Get color for a publisher
     static func color(for publisherName: String?) -> Color {
         guard let publisher = detect(from: publisherName) else {

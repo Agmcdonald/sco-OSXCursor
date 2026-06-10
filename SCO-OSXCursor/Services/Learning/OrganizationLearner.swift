@@ -149,6 +149,23 @@ class OrganizationLearner {
         originalSeries: String?,
         correctedSeries: String?
     ) async {
+        // Persist through the Stage 3 learning system: series renames become
+        // aliases, associations are remembered, corrections are logged.
+        await MainActor.run {
+            SeriesKnowledge.shared.recordCorrection(
+                originalSeries: originalSeries,
+                correctedSeries: correctedSeries ?? comic.series,
+                originalPublisher: originalPublisher,
+                correctedPublisher: correctedPublisher ?? comic.publisher,
+                filename: comic.fileName
+            )
+            SeriesKnowledge.shared.recordImport(
+                series: correctedSeries ?? comic.series,
+                publisher: correctedPublisher ?? comic.publisher,
+                bookFormat: comic.bookFormat
+            )
+        }
+
         // If publisher was corrected, update publisher mappings confidence
         if let original = originalPublisher,
            let corrected = correctedPublisher,

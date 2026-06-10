@@ -41,6 +41,8 @@ final class LibraryViewModel: ObservableObject {
         // Load comics from database on initialization
         Task {
             await loadComics()
+            // Warm the learning system so staging/import matching is instant
+            await SeriesKnowledge.shared.loadIfNeeded()
             // If library is empty, automatically import bundled samples
             if comics.isEmpty {
                 await importBundledComics()
@@ -403,6 +405,9 @@ final class LibraryViewModel: ObservableObject {
             importProgress = 0.0
         }
 
+        // Learned knowledge participates in matching below
+        await SeriesKnowledge.shared.loadIfNeeded()
+
         // Expand folders into their contained comic files (recursive).
         //
         // IMPORTANT (iOS sandbox): security-scoped access must be started
@@ -535,6 +540,32 @@ final class LibraryViewModel: ObservableObject {
                 // Parse metadata from filename
                 let filenameMetadata = MetadataParser.parseFromFilename(fileName)
 
+                // Enrich from learned series knowledge + folder-name hints
+                // (quick add bypasses Organize, so the learning system fills
+                // gaps here directly)
+                var series = filenameMetadata.series
+                var publisher = filenameMetadata.publisher
+                var bookFormat = Comic.BookFormat.detect(
+                    issueNumber: filenameMetadata.number, volume: filenameMetadata.volume)
+
+                let hints = SeriesKnowledge.shared.folderHints(for: url)
+                if (series ?? "").isEmpty, let folderSeries = hints.series {
+                    series = folderSeries
+                }
+                if let match = SeriesKnowledge.shared.match(series: series) {
+                    series = match.canonicalSeries
+                    if publisher == nil { publisher = match.publisher }
+                    if bookFormat == .issue, match.bookFormat != .issue,
+                        filenameMetadata.number == nil
+                    {
+                        bookFormat = match.bookFormat
+                    }
+                }
+                if publisher == nil {
+                    publisher = hints.publisher
+                        ?? PublisherDetector.detectFromCharacters(series)
+                }
+
                 // Get reader for file type
                 let reader: ComicReaderProtocol
                 switch fileType {
@@ -573,13 +604,12 @@ final class LibraryViewModel: ObservableObject {
                     fileName: fileName,
                     bookmarkData: bookmarkData,
                     title: filenameMetadata.title,
-                    publisher: filenameMetadata.publisher,
-                    series: filenameMetadata.series,
+                    publisher: publisher,
+                    series: series,
                     issueNumber: filenameMetadata.number,
                     volume: filenameMetadata.volume,
                     year: filenameMetadata.year,
-                    bookFormat: Comic.BookFormat.detect(
-                        issueNumber: filenameMetadata.number, volume: filenameMetadata.volume),
+                    bookFormat: bookFormat,
                     writer: filenameMetadata.writer,
                     artist: filenameMetadata.penciller,
                     coverArtist: filenameMetadata.coverArtist,
@@ -653,6 +683,13 @@ final class LibraryViewModel: ObservableObject {
                 // Add to new comics list
                 newComics.append(finalComic)
                 imported += 1
+
+                // Teach the learning system this series → publisher/format link
+                SeriesKnowledge.shared.recordImport(
+                    series: finalComic.series,
+                    publisher: finalComic.publisher,
+                    bookFormat: finalComic.bookFormat
+                )
 
                 print("[LibraryViewModel] ✅ Imported: \(extractedComic.fileName)")
 
