@@ -331,6 +331,7 @@ struct OrganizeInspectorView: View {
         case .issue: return !issueNumber.isEmpty
         case .oneShot: return year > 0
         case .volume: return volume != nil
+        case .ebook: return true  // a title and publisher suffice for prose
         }
     }
 

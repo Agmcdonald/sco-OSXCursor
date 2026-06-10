@@ -31,7 +31,7 @@ struct OrganizeView: View {
                             panel.canCreateDirectories = false
                             let types = [
                                 UTType(filenameExtension: "cbz"), UTType(filenameExtension: "cbr"),
-                                .pdf,
+                                UTType(filenameExtension: "epub"), .pdf, .epub,
                             ].compactMap { $0 }
                             panel.allowedContentTypes = types
 

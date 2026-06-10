@@ -91,8 +91,10 @@ struct StagedComic: Identifiable, Equatable {
         self.summary = metadata.summary
 
         // Detect what kind of book this is from the parsed metadata
+        // (EPUBs are prose ebooks regardless of filename)
         self.bookFormat = Comic.BookFormat.detect(
-            issueNumber: self.issueNumber, volume: self.volume)
+            issueNumber: self.issueNumber, volume: self.volume,
+            fileType: Comic.FileType(rawValue: url.pathExtension.lowercased()))
 
         // Calculate initial confidence
         reevaluate(userEdited: false)
@@ -119,6 +121,11 @@ struct StagedComic: Identifiable, Equatable {
         case .volume:
             core = hasSeries && volume != nil
             full = core && year != nil && publisher != nil
+        case .ebook:
+            // Prose ebooks often lack year/publisher metadata — a title is
+            // the only hard requirement
+            core = hasSeries
+            full = core && (year != nil || publisher != nil)
         }
 
         confidence = full ? .high : (core ? .medium : .low)
@@ -149,8 +156,8 @@ struct StagedComic: Identifiable, Equatable {
                 parts.append("#\(issue)")
             }
 
-        case .oneShot:
-            // Self-contained book: "Series (Year)"
+        case .oneShot, .ebook:
+            // Self-contained book: "Title (Year)"
             break
 
         case .volume:

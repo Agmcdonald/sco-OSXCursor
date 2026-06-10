@@ -30,6 +30,14 @@ struct BookFormatDetectionTests {
         #expect(Comic.BookFormat.detect(issueNumber: nil, volume: nil) == .oneShot)
         #expect(Comic.BookFormat.detect(issueNumber: "", volume: nil) == .oneShot)
     }
+
+    @Test func epubAlwaysMeansEbook() {
+        // Even if the filename parse found an "issue" or volume number
+        #expect(
+            Comic.BookFormat.detect(issueNumber: "001", volume: nil, fileType: .epub) == .ebook)
+        #expect(Comic.BookFormat.detect(issueNumber: nil, volume: 2, fileType: .epub) == .ebook)
+        #expect(Comic.BookFormat.detect(issueNumber: "001", volume: nil, fileType: .cbz) == .issue)
+    }
 }
 
 // MARK: - Clean Filename per Format

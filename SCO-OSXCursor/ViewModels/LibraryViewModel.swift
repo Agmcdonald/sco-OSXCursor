@@ -527,7 +527,8 @@ final class LibraryViewModel: ObservableObject {
                 var series = filenameMetadata.series
                 var publisher = filenameMetadata.publisher
                 var bookFormat = Comic.BookFormat.detect(
-                    issueNumber: filenameMetadata.number, volume: filenameMetadata.volume)
+                    issueNumber: filenameMetadata.number, volume: filenameMetadata.volume,
+                    fileType: fileType)
 
                 let hints = SeriesKnowledge.shared.folderHints(for: url)
                 if (series ?? "").isEmpty, let folderSeries = hints.series {

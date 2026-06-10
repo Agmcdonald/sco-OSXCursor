@@ -58,7 +58,7 @@ final class OrganizeViewModel: ObservableObject {
         isProcessing = true
         processingProgress = 0.0
 
-        let validExtensions = ["cbz", "cbr", "pdf"]
+        let validExtensions = ["cbz", "cbr", "pdf", "epub"]
 
         // Separate folders from files; keep folder security scopes open for
         // the rest of the staging session so their children stay readable.
@@ -252,7 +252,9 @@ final class OrganizeViewModel: ObservableObject {
         // Embedded metadata may reveal the real format (e.g. an issue number
         // appeared, or a volume number for a collected edition)
         comic.bookFormat = Comic.BookFormat.detect(
-            issueNumber: comic.issueNumber, volume: comic.volume)
+            issueNumber: comic.issueNumber, volume: comic.volume,
+            fileType: Comic.FileType(
+                rawValue: comic.originalURL.pathExtension.lowercased()))
 
         // Re-evaluate confidence with the enriched fields
         comic.reevaluate(userEdited: false)

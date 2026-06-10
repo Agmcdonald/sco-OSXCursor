@@ -211,12 +211,14 @@ extension Comic {
         case issue = "issue"
         case oneShot = "one_shot"
         case volume = "volume"
+        case ebook = "ebook"
 
         var displayName: String {
             switch self {
             case .issue: return "Issue"
             case .oneShot: return "One-Shot"
             case .volume: return "Volume"
+            case .ebook: return "eBook"
             }
         }
 
@@ -225,13 +227,18 @@ extension Comic {
             case .issue: return "number"
             case .oneShot: return "book.closed"
             case .volume: return "books.vertical"
+            case .ebook: return "text.book.closed"
             }
         }
 
         /// Heuristic detection from parsed filename metadata:
-        /// an issue number means a single issue; a volume number without an
-        /// issue means a collected/manga volume; neither means a one-shot/OGN.
-        static func detect(issueNumber: String?, volume: Int?) -> BookFormat {
+        /// EPUBs are prose ebooks; an issue number means a single issue; a
+        /// volume number without an issue means a collected/manga volume;
+        /// neither means a one-shot/OGN.
+        static func detect(
+            issueNumber: String?, volume: Int?, fileType: Comic.FileType? = nil
+        ) -> BookFormat {
+            if fileType == .epub { return .ebook }
             if let issueNumber, !issueNumber.isEmpty { return .issue }
             if volume != nil { return .volume }
             return .oneShot
@@ -336,8 +343,8 @@ extension Comic {
                 }
             }
 
-        case .oneShot:
-            // Self-contained book: just "Series (Year)"
+        case .oneShot, .ebook:
+            // Self-contained book: just "Title (Year)"
             break
 
         case .volume:

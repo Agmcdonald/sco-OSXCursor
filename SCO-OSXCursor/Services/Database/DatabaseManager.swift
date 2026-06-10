@@ -313,6 +313,28 @@ final class DatabaseManager {
             print("[DatabaseManager] ✅ Migration v12_series_knowledge complete")
         }
 
+        // Version 13: EPUBs are prose ebooks, not comic issues
+        migrator.registerMigration("v13_ebook_format") { db in
+            print("[DatabaseManager] 🔄 Running migration: v13_ebook_format")
+            if try db.tableExists("comics"), try db.tableHasColumn("comics", named: "book_format") {
+                try db.execute(
+                    sql: "UPDATE comics SET book_format = 'ebook' WHERE file_type = 'epub'")
+                print("[DatabaseManager] ✅ Reclassified EPUB books as eBook format")
+            }
+            if try db.tableExists("series_knowledge") {
+                // Fix learned entries created from EPUB imports
+                try db.execute(
+                    sql: """
+                        UPDATE series_knowledge SET book_format = 'ebook'
+                        WHERE normalized_name IN (
+                            SELECT DISTINCT LOWER(TRIM(series)) FROM comics
+                            WHERE file_type = 'epub' AND series IS NOT NULL
+                        )
+                        """)
+            }
+            print("[DatabaseManager] ✅ Migration v13_ebook_format complete")
+        }
+
         return migrator
     }
 
