@@ -32,11 +32,31 @@ struct PageCurlView: UIViewControllerRepresentable {
     }
     
     func updateUIViewController(_ pageVC: UIPageViewController, context: Context) {
+        // Keep the coordinator's parent fresh — the struct is copied on every
+        // SwiftUI update, so without this the coordinator would forever hold
+        // the ORIGINAL pages array (placeholders that never fill in).
+        context.coordinator.parent = self
+
         guard let currentVC = pageVC.viewControllers?.first as? PageHostingController,
-              let currentIndex = context.coordinator.pages.firstIndex(where: { $0.id == currentVC.page.id }),
-              currentIndex != currentPage else { return }
-        
-        let direction: UIPageViewController.NavigationDirection = currentPage > currentIndex ? .forward : .reverse
+            let currentIndex = context.coordinator.pages.firstIndex(where: {
+                $0.id == currentVC.page.id
+            })
+        else { return }
+
+        if currentIndex == currentPage {
+            // Same page — but if its data has since lazy-loaded, swap in the
+            // fresh version so the spinner is replaced by the real page
+            let freshPage = context.coordinator.pages[currentIndex]
+            if freshPage.isLoaded != currentVC.page.isLoaded,
+                let newVC = context.coordinator.viewController(for: currentIndex)
+            {
+                pageVC.setViewControllers([newVC], direction: .forward, animated: false)
+            }
+            return
+        }
+
+        let direction: UIPageViewController.NavigationDirection =
+            currentPage > currentIndex ? .forward : .reverse
         if let newVC = context.coordinator.viewController(for: currentPage) {
             pageVC.setViewControllers([newVC], direction: direction, animated: true)
         }

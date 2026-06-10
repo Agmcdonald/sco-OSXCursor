@@ -27,7 +27,61 @@ struct InReaderSettingsView: View {
     @State private var useDefaultTheme: Bool = true
 
     var body: some View {
-        NavigationView {
+        #if os(macOS)
+            // NavigationView inside a macOS sheet collapses to a toolbar-only
+            // pill (the "empty white sheet" bug) — use an explicit layout.
+            VStack(spacing: 0) {
+                HStack {
+                    Text("Reader Settings")
+                        .font(Typography.h3)
+                        .foregroundColor(TextColors.primary)
+                    Spacer()
+                    Button("Cancel") {
+                        isPresented = false
+                    }
+                    .keyboardShortcut(.cancelAction)
+                    Button("Save") {
+                        saveChanges()
+                        isPresented = false
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
+                }
+                .padding(Spacing.lg)
+
+                Divider()
+
+                settingsForm
+                    .formStyle(.grouped)
+            }
+            .frame(minWidth: 540, idealWidth: 580, minHeight: 540, idealHeight: 660)
+            .onAppear { loadState() }
+        #else
+            NavigationView {
+                settingsForm
+                    .navigationTitle("Reader Settings")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") {
+                                isPresented = false
+                            }
+                        }
+
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Save") {
+                                saveChanges()
+                                isPresented = false
+                            }
+                            .fontWeight(.semibold)
+                        }
+                    }
+            }
+            .onAppear { loadState() }
+        #endif
+    }
+
+    private var settingsForm: some View {
             Form {
                 // MARK: - Reading Style Section
                 Section {
@@ -186,7 +240,7 @@ struct InReaderSettingsView: View {
                 Section {
                     HStack(spacing: Spacing.lg) {
                         ForEach(
-                            PageTransition.allCases.filter { $0.isAvailableOnCurrentPlatform }.prefix(4),
+                            PageTransition.allCases.filter { $0.isAvailableOnCurrentPlatform }.prefix(5),
                             id: \.self
                         ) { transition in
                             TransitionPreviewCard(transition: transition)
@@ -196,60 +250,41 @@ struct InReaderSettingsView: View {
                     Text("Transition Preview")
                 }
             }
-            #if os(macOS)
-            .formStyle(.grouped)
-            #endif
-            .navigationTitle("Reader Settings")
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        isPresented = false
-                    }
-                }
+    }
 
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        saveChanges()
-                        isPresented = false
-                    }
-                    .fontWeight(.semibold)
-                }
-            }
+    private func loadState() {
+        // Load reading style setting
+        if let styleString = comic.readingStyle,
+            let style = ReadingStyle(rawValue: styleString)
+        {
+            useDefaultStyle = false
+            selectedStyle = style
+        } else {
+            useDefaultStyle = true
+            selectedStyle = nil
         }
-        .onAppear {
-            // Load reading style setting
-            if let styleString = comic.readingStyle,
-               let style = ReadingStyle(rawValue: styleString) {
-                useDefaultStyle = false
-                selectedStyle = style
-            } else {
-                useDefaultStyle = true
-                selectedStyle = nil
-            }
 
-            // Load transition setting
-            if let preferredString = comic.preferredTransition,
-               let preferred = PageTransition(rawValue: preferredString) {
-                useDefault = false
-                selectedTransition = preferred
-            } else {
-                useDefault = true
-                selectedTransition = nil
-            }
+        // Load transition setting
+        if let preferredString = comic.preferredTransition,
+            let preferred = PageTransition(rawValue: preferredString)
+        {
+            useDefault = false
+            selectedTransition = preferred
+        } else {
+            useDefault = true
+            selectedTransition = nil
+        }
 
-            // Load EPUB theme setting
-            if comic.fileType == .epub {
-                if let themeString = comic.epubTheme,
-                   let theme = EPUBTheme(rawValue: themeString) {
-                    useDefaultTheme = false
-                    selectedTheme = theme
-                } else {
-                    useDefaultTheme = true
-                    selectedTheme = nil
-                }
+        // Load EPUB theme setting
+        if comic.fileType == .epub {
+            if let themeString = comic.epubTheme,
+                let theme = EPUBTheme(rawValue: themeString)
+            {
+                useDefaultTheme = false
+                selectedTheme = theme
+            } else {
+                useDefaultTheme = true
+                selectedTheme = nil
             }
         }
     }

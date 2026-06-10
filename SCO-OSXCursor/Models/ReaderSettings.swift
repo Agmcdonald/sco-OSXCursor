@@ -71,26 +71,40 @@ enum EPUBTheme: String, CaseIterable, Codable {
 
 enum PageTransition: String, CaseIterable, Codable {
     case slide = "Slide"
+    case curl = "Page Curl"
     case fade = "Fade"
     case zoom = "Zoom"
     case none = "None"
-    
+
     var icon: String {
         switch self {
         case .slide: return "arrow.left.arrow.right"
+        case .curl: return "book.pages"
         case .fade: return "circle.dotted"
         case .zoom: return "arrow.up.left.and.arrow.down.right"
         case .none: return "minus"
         }
     }
-    
+
     var isAvailableOnCurrentPlatform: Bool {
-        return true
+        switch self {
+        case .curl:
+            // Apple Books-style curl uses UIPageViewController — iOS/iPadOS only
+            #if os(iOS)
+                return true
+            #else
+                return false
+            #endif
+        default:
+            return true
+        }
     }
     
     func transition(for direction: Edge) -> AnyTransition {
         switch self {
-        case .slide:
+        case .slide, .curl:
+            // .curl renders via UIPageViewController on iOS; this branch is
+            // the macOS/SwiftUI fallback (a slide push) for synced books
             // True push: the new page slides in from `direction` while the
             // old page slides out the opposite edge — both move together.
             return .asymmetric(
@@ -113,7 +127,7 @@ enum PageTransition: String, CaseIterable, Codable {
 
     func animation() -> Animation {
         switch self {
-        case .slide:
+        case .slide, .curl:
             // Spring reads as a physical page push (Panels-like)
             return .spring(response: 0.38, dampingFraction: 0.86)
         case .zoom:

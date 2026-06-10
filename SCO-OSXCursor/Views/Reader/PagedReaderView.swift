@@ -52,7 +52,18 @@ struct PagedReaderView: View {
     
     var body: some View {
         GeometryReader { geometry in
-            standardPageView
+            #if os(iOS)
+                if effectiveTransition == .curl {
+                    // Apple Books-style page curl via UIPageViewController
+                    PageCurlView(pages: pages, currentPage: $currentPage)
+                        .background(Color.black)
+                        .ignoresSafeArea()
+                } else {
+                    standardPageView
+                }
+            #else
+                standardPageView
+            #endif
         }
     }
     
