@@ -168,6 +168,12 @@ final class LibraryViewModel: ObservableObject {
                         comics[idx] = updated
                     }
                 }
+            } else if old.year != comic.year || old.issueNumber != comic.issueNumber
+                || old.volume != comic.volume || old.bookFormat != comic.bookFormat
+            {
+                // Year/issue/volume/format affect the clean FILENAME (and the
+                // year-based folder structure) — re-file in-library books
+                await resortAfterEdit(comic.id)
             }
         }
     }
@@ -794,6 +800,43 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Re-sort After Edits
+
+    /// After metadata changes, move the file to its correct library location
+    /// (publisher/series folder + clean name) when auto-sort is enabled and
+    /// the file already lives inside the home library. Empty source folders
+    /// (e.g. a misspelled publisher) are cleaned up by the move.
+    func resortAfterEdit(_ comicID: UUID) async {
+        let settings = AppSettings.load()
+        guard settings.autoSortIntoLibrary,
+            let libraryRoot = SettingsViewModel().resolveHomeLibraryURL(),
+            let index = comics.firstIndex(where: { $0.id == comicID })
+        else { return }
+
+        let comic = comics[index]
+
+        // Only manage files that already live inside the library root —
+        // books elsewhere (external folders, iCloud) are left where they are.
+        let rootPath = libraryRoot.standardizedFileURL.path
+        guard comic.filePath.standardizedFileURL.path.hasPrefix(rootPath + "/") else { return }
+
+        do {
+            // moveToLibrary no-ops when the file is already in the right
+            // place, renames + moves otherwise, refreshes the bookmark, and
+            // removes now-empty source folders.
+            let moved = try await LibraryFileService.shared.moveToLibrary(
+                comic, libraryRoot: libraryRoot, database: database)
+            guard moved.filePath != comic.filePath else { return }
+
+            if let i = comics.firstIndex(where: { $0.id == moved.id }) {
+                comics[i] = moved
+            }
+            await logActivity(.fileMoved, comic: moved, new: moved.fileName)
+        } catch {
+            print("[LibraryViewModel] ⚠️ Re-sort after edit failed for \(comic.fileName): \(error)")
+        }
+    }
+
     // MARK: - Bulk Edit
 
     /// Apply non-nil fields to all library comics in `ids`, persist, and
@@ -824,6 +867,19 @@ final class LibraryViewModel: ObservableObject {
                 bookFormat: comic.bookFormat)
         }
         print("[LibraryViewModel] ✏️ Bulk-edited \(ids.count) comics")
+
+        // Re-file edited books whose folder or clean filename changed
+        // (sequentially — concurrent moves could race on folder cleanup)
+        let affectsLocation =
+            values.series != nil || values.publisher != nil || values.year != nil
+            || values.volume != nil || values.bookFormat != nil
+        if affectsLocation {
+            Task {
+                for id in ids {
+                    await resortAfterEdit(id)
+                }
+            }
+        }
     }
 
     // MARK: - Pre-fetching (iOS only)
