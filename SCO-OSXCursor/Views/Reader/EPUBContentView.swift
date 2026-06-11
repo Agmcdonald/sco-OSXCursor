@@ -38,7 +38,8 @@ struct EPUBContentView: View {
             totalChapters: totalChapters,
             fontSize: $fontSize,
             onClose: closeReader,
-            onShowSettings: { showSettings = true }
+            onShowSettings: { showSettings = true },
+            onCycleTheme: cycleTheme
         )
         .sheet(isPresented: $showSettings) {
             InReaderSettingsView(
@@ -85,6 +86,23 @@ struct EPUBContentView: View {
             }
         }
 
+        libraryViewModel.updateComic(updated)
+    }
+
+    // MARK: - Theme
+
+    /// One-click cycle Dark → Light → Sepia, saved as this book's override
+    /// (same field the Reader Settings sheet writes, so the two stay in sync).
+    private func cycleTheme() {
+        let current = ReaderSettings.shared.effectiveEPUBTheme(for: localComic)
+        let all = EPUBTheme.allCases
+        let next = all[((all.firstIndex(of: current) ?? 0) + 1) % all.count]
+
+        localComic.epubTheme = next.rawValue
+
+        guard let index = libraryViewModel.comics.firstIndex(where: { $0.id == localComic.id }) else { return }
+        var updated = libraryViewModel.comics[index]
+        updated.epubTheme = next.rawValue
         libraryViewModel.updateComic(updated)
     }
 

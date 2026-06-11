@@ -320,6 +320,24 @@ final class DatabaseManager {
             AppLog.database.info("[DatabaseManager] ✅ Migration v13_ebook_format complete")
         }
 
+        // Version 14: per-book EPUB theme — the Comic model and the Reader
+        // Settings sheet have had epubTheme since v10-era, but the column was
+        // never added, so theme overrides silently vanished on relaunch.
+        migrator.registerMigration("v14_epub_theme") { db in
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v14_epub_theme")
+            if try db.tableExists("comics") {
+                do {
+                    try db.alter(table: "comics") { t in
+                        t.add(column: "epub_theme", .text)
+                    }
+                    AppLog.database.info("[DatabaseManager] ✅ Added epub_theme column")
+                } catch {
+                    AppLog.database.error("[DatabaseManager] ℹ️ epub_theme column may already exist: \(error.localizedDescription)")
+                }
+            }
+            AppLog.database.info("[DatabaseManager] ✅ Migration v14_epub_theme complete")
+        }
+
         return migrator
     }
 

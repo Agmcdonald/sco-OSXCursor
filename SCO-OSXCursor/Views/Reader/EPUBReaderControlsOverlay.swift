@@ -15,8 +15,12 @@ struct EPUBReaderControlsOverlay: View {
     @Binding var fontSize: Int
     let chapters: [EPUBChapter]
     @Binding var showTableOfContents: Bool
+    /// Currently active theme — drives the cycle button's icon.
+    let theme: EPUBTheme
     var onClose: () -> Void
     var onShowSettings: () -> Void
+    /// One-click theme cycle: Dark → Light → Sepia → Dark.
+    var onCycleTheme: () -> Void
     var onPreviousChapter: () -> Void
     var onNextChapter: () -> Void
     var onUserInteraction: () -> Void
@@ -72,6 +76,7 @@ struct EPUBReaderControlsOverlay: View {
             Spacer()
 
             #if !os(macOS)
+            themeButton
             settingsButton
             tocButton
             #endif
@@ -105,6 +110,23 @@ struct EPUBReaderControlsOverlay: View {
         .buttonStyle(.plain)
         .keyboardShortcut(.escape, modifiers: [])
         .help("Close reader")
+    }
+
+    private var themeButton: some View {
+        Button(action: {
+            onUserInteraction()
+            onCycleTheme()
+        }) {
+            Image(systemName: theme.icon)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundColor(.white)
+                .frame(width: 36, height: 36)
+                .contentShape(Circle())
+        }
+        .background(AnyShapeStyle(.ultraThinMaterial))
+        .clipShape(Circle())
+        .buttonStyle(.plain)
+        .help("Theme: \(theme.displayName) — click to switch")
     }
 
     private var settingsButton: some View {
@@ -219,7 +241,9 @@ struct EPUBReaderControlsOverlay: View {
                     .frame(height: 24)
                     .background(Color.white.opacity(0.15))
 
-                // Settings (theme/font) + ToC — also relocated from the top
+                // Theme cycle + Settings + ToC — relocated from the top
+                themeButton
+                    .padding(.leading, 10)
                 settingsButton
                     .padding(.leading, 10)
                 tocButton

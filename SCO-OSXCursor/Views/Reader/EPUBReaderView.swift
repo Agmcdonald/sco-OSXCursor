@@ -21,6 +21,8 @@ struct EPUBReaderView: View {
 
     var onClose: () -> Void
     var onShowSettings: () -> Void
+    /// One-click theme cycle from the reader bar (Dark → Light → Sepia).
+    var onCycleTheme: () -> Void
 
     @State private var chapters: [EPUBChapter] = []
     @State private var isLoading = true
@@ -66,8 +68,10 @@ struct EPUBReaderView: View {
                     fontSize: $fontSize,
                     chapters: chapters,
                     showTableOfContents: $showTableOfContents,
+                    theme: theme,
                     onClose: onClose,
                     onShowSettings: onShowSettings,
+                    onCycleTheme: onCycleTheme,
                     onPreviousChapter: { navigateChapter(by: -1) },
                     onNextChapter: { navigateChapter(by: 1) },
                     onUserInteraction: { resetAutoHideTimer() }

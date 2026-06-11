@@ -534,6 +534,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         static let preferredTransition = Column("preferred_transition")
         static let readingStyle = Column("reading_style")
         static let epubFontSize = Column("epub_font_size")
+        static let epubTheme = Column("epub_theme")
         static let contentRating = Column("content_rating")
         static let fileSize = Column("file_size")
         static let fileType = Column("file_type")
@@ -574,6 +575,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         container[Columns.preferredTransition] = preferredTransition
         container[Columns.readingStyle] = readingStyle
         container[Columns.epubFontSize] = epubFontSize
+        container[Columns.epubTheme] = epubTheme
         container[Columns.contentRating] = contentRating.rawValue
         container[Columns.fileSize] = fileSize
         container[Columns.fileType] = fileType.rawValue
@@ -639,6 +641,7 @@ extension Comic: FetchableRecord, PersistableRecord {
             preferredTransition: row["preferred_transition"],
             readingStyle: row["reading_style"],
             epubFontSize: row["epub_font_size"],
+            epubTheme: row["epub_theme"],
             contentRating: ContentRating(rawValue: row["content_rating"] ?? 0) ?? .allAges,
             fileSize: fileSize,
             fileType: fileType,
