@@ -108,6 +108,9 @@ struct EPUBReaderControlsOverlay: View {
                 .clipShape(Circle())
         }
         .buttonStyle(.plain)
+        // iOS hardware keyboards: Esc closes. (macOS uses an NSEvent
+        // monitor in EPUBReaderView instead — it works even while this
+        // overlay is hidden, and consumes the event before this shortcut.)
         .keyboardShortcut(.escape, modifiers: [])
         .help("Close reader")
     }

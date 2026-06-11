@@ -54,7 +54,8 @@ struct EPUBReaderView: View {
                     readingStyle: comic.readingStyle,
                     theme: theme,
                     onTap: { handleTap() },
-                    onNavigate: { delta in navigateChapter(by: delta) }
+                    onNavigate: { delta in navigateChapter(by: delta) },
+                    onEscape: { handleEscape() }
                 )
                 .ignoresSafeArea()
             }
@@ -97,9 +98,52 @@ struct EPUBReaderView: View {
             resetAutoHideTimer()
         }
         #if os(macOS)
-        .onAppear { setupKeyboardHandling() }
+        .onAppear {
+            setupKeyboardHandling()
+            installEscapeMonitor()
+        }
+        .onDisappear { removeEscapeMonitor() }
         #endif
     }
+
+    /// Esc: dismiss the ToC drawer if it's open, otherwise close the reader.
+    private func handleEscape() {
+        if showTableOfContents {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                showTableOfContents = false
+            }
+        } else {
+            onClose()
+        }
+    }
+
+    #if os(macOS)
+    // Esc must work whether or not the controls overlay is on screen, and
+    // even while the WKWebView has keyboard focus. The overlay's close
+    // button (and its shortcut) only exist while the overlay is visible, so
+    // Esc otherwise fell through unhandled — closing nothing and triggering
+    // the system beep. A local NSEvent monitor sees the key first and
+    // consumes it (return nil = no beep).
+    private func installEscapeMonitor() {
+        guard EPUBEscapeMonitor.shared.monitor == nil else { return }
+        AppLog.reader.debug("[EPUBReaderView] Esc monitor installed")
+        EPUBEscapeMonitor.shared.monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.keyCode == 53 else { return event }  // 53 = Esc
+            // Let sheets (Reader Settings) keep their own Esc-to-cancel.
+            if NSApp.keyWindow?.isSheet == true { return event }
+            AppLog.reader.debug("[EPUBReaderView] Esc consumed by monitor")
+            Task { @MainActor in handleEscape() }
+            return nil
+        }
+    }
+
+    private func removeEscapeMonitor() {
+        if let monitor = EPUBEscapeMonitor.shared.monitor {
+            NSEvent.removeMonitor(monitor)
+            EPUBEscapeMonitor.shared.monitor = nil
+        }
+    }
+    #endif
 
     // MARK: - Chapter Loading
 
@@ -234,6 +278,16 @@ struct EPUBReaderView: View {
 
 // MARK: - WKWebView Wrapper
 
+#if os(macOS)
+/// Holds the reader's Esc key monitor — a class so the SwiftUI view struct
+/// can install/remove it from onAppear/onDisappear without state plumbing.
+@MainActor
+private final class EPUBEscapeMonitor {
+    static let shared = EPUBEscapeMonitor()
+    var monitor: Any?
+}
+#endif
+
 // MARK: - WKWebView Wrapper
 
 /// Shared logic for both platform variants of EPUBWebView.
@@ -263,11 +317,22 @@ private struct EPUBWebViewHelper {
         webView.addGestureRecognizer(tap)
         #endif
 
-        loadContent(into: webView)
+        loadContent(into: webView, coordinator: coordinator)
         return webView
     }
 
-    func loadContent(into webView: WKWebView) {
+    /// Identifies the content this helper would render — used to skip
+    /// redundant reloads. updateNSView/updateUIView fire on EVERY SwiftUI
+    /// state change (e.g. toggling the controls overlay), and reloading the
+    /// chapter each time reset the scroll position and dropped keyboard
+    /// focus, which is why arrow keys "stopped working" mid-book.
+    var loadKey: String {
+        "\(chapter.index)|\(chapter.fileURL.path)|\(fontSize)|\(readingStyle ?? "")|\(theme.rawValue)"
+    }
+
+    func loadContent(into webView: WKWebView, coordinator: EPUBWebView.Coordinator) {
+        guard coordinator.lastLoadKey != loadKey else { return }
+        coordinator.lastLoadKey = loadKey
         guard let rawHTML = try? chapter.htmlContent() else { return }
         let styledHTML = injectStyles(into: rawHTML)
         
@@ -322,7 +387,10 @@ private struct EPUBWebViewHelper {
         }
         """
 
-        // JS to handle keyboard pagination and chapter navigation
+        // JS to handle keyboard pagination and chapter navigation.
+        // Escape is also handled here because the WKWebView holds keyboard
+        // focus while reading — without this the key fell through unhandled
+        // (system beep) unless the controls overlay happened to be visible.
         let js = isHorizontal ? """
         <script>
         document.addEventListener('keydown', function(e) {
@@ -341,6 +409,9 @@ private struct EPUBWebViewHelper {
                     window.scrollBy({ left: -scrollAmt, behavior: 'smooth' });
                 }
                 e.preventDefault();
+            } else if (e.key === 'Escape') {
+                window.webkit.messageHandlers.epubNavigation.postMessage('closeReader');
+                e.preventDefault();
             }
         });
         // Auto-focus body so keys are caught immediately
@@ -351,8 +422,13 @@ private struct EPUBWebViewHelper {
         document.addEventListener('keydown', function(e) {
             if (e.key === 'ArrowRight') {
                 window.webkit.messageHandlers.epubNavigation.postMessage('nextChapter');
+                e.preventDefault();
             } else if (e.key === 'ArrowLeft') {
                 window.webkit.messageHandlers.epubNavigation.postMessage('prevChapter');
+                e.preventDefault();
+            } else if (e.key === 'Escape') {
+                window.webkit.messageHandlers.epubNavigation.postMessage('closeReader');
+                e.preventDefault();
             }
         });
         window.onload = function() { window.focus(); document.body.focus(); };
@@ -418,17 +494,30 @@ struct EPUBWebView {
     let theme: EPUBTheme
     var onTap: () -> Void
     var onNavigate: (Int) -> Void
+    /// Esc pressed while the page has keyboard focus (sent from injected JS).
+    var onEscape: () -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onTap: onTap, onNavigate: onNavigate) }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onTap: onTap, onNavigate: onNavigate, onEscape: onEscape)
+    }
 
     // MARK: - Coordinator (shared)
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         let onTap: () -> Void
         let onNavigate: (Int) -> Void
-        
-        init(onTap: @escaping () -> Void, onNavigate: @escaping (Int) -> Void) { 
-            self.onTap = onTap 
+        let onEscape: () -> Void
+        /// What's currently loaded — lets updateNSView/updateUIView skip
+        /// reloads when nothing the page depends on actually changed.
+        var lastLoadKey: String?
+
+        init(
+            onTap: @escaping () -> Void,
+            onNavigate: @escaping (Int) -> Void,
+            onEscape: @escaping () -> Void
+        ) {
+            self.onTap = onTap
             self.onNavigate = onNavigate
+            self.onEscape = onEscape
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -437,6 +526,8 @@ struct EPUBWebView {
                     onNavigate(1)
                 } else if action == "prevChapter" {
                     onNavigate(-1)
+                } else if action == "closeReader" {
+                    onEscape()
                 }
             }
         }
@@ -454,6 +545,18 @@ struct EPUBWebView {
         ) {
             decisionHandler(navigationAction.navigationType == .linkActivated ? .cancel : .allow)
         }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            #if os(macOS)
+            // Give the page keyboard focus as soon as it loads, so the
+            // arrow-key handlers in the injected JS work immediately —
+            // previously the user had to click the page first, and until
+            // then every arrow press fell through and beeped.
+            DispatchQueue.main.async {
+                webView.window?.makeFirstResponder(webView)
+            }
+            #endif
+        }
     }
 }
 
@@ -467,7 +570,8 @@ extension EPUBWebView: NSViewRepresentable {
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
-        EPUBWebViewHelper(chapter: chapter, fontSize: fontSize, readingStyle: readingStyle, theme: theme).loadContent(into: webView)
+        EPUBWebViewHelper(chapter: chapter, fontSize: fontSize, readingStyle: readingStyle, theme: theme)
+            .loadContent(into: webView, coordinator: context.coordinator)
     }
 }
 #else
@@ -480,7 +584,8 @@ extension EPUBWebView: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
-        EPUBWebViewHelper(chapter: chapter, fontSize: fontSize, readingStyle: readingStyle, theme: theme).loadContent(into: webView)
+        EPUBWebViewHelper(chapter: chapter, fontSize: fontSize, readingStyle: readingStyle, theme: theme)
+            .loadContent(into: webView, coordinator: context.coordinator)
     }
 }
 #endif
