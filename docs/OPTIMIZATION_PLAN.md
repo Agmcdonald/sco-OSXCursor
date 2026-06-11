@@ -69,8 +69,18 @@ edge — so covers sit in level rows at every size. Verified: built & ran on
 iPad simulator and macOS; grid/list/publisher views and selection mode
 smoke-tested on macOS.
 
-REMAINING: EPUBReaderView dead-CSS block needs a real review; migrate
-prints to os.Logger.
+DONE (June 10, third pass) — Stage 4 complete:
+- EPUB "dead CSS" root-caused: every interpolation in injectStyles was
+  double-escaped (`\\(...)`), so the theme/typography CSS, keyboard-nav JS,
+  and even the head injection itself were inert literal text. Unescaped;
+  color-scheme now follows the theme; reader backdrop matches the active
+  theme instead of hard-coded dark. Verified on macOS: themed rendering,
+  arrow-key chapter nav, controls overlay.
+- print() → os.Logger: all ~290 call sites migrated to AppLog
+  (Utilities/AppLog.swift), categorized loggers (Database, Library, Reader,
+  Organize, Metadata, Learning, Files, App) with debug/info/error levels.
+  AppLogger wraps os.Logger taking plain String so existing interpolations
+  (e.g. \(error)) keep working. Only remaining prints are #Preview stubs.
 
 ## Stage 4 — original scope
 

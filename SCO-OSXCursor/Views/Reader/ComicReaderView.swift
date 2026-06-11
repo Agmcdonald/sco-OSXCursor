@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import os
 
 #if os(macOS)
     import AppKit
@@ -182,28 +183,28 @@ struct ComicReaderView: View {
         )
         #endif
         .task {
-            print("📖 [ComicReaderView] .task triggered - about to load comic")
-            print("📖 [ComicReaderView] Comic: \(comic.fileName)")
+            AppLog.reader.debug("📖 [ComicReaderView] .task triggered - about to load comic")
+            AppLog.reader.debug("📖 [ComicReaderView] Comic: \(comic.fileName)")
 
             #if os(iOS)
                 // Fast-path: if LibraryViewModel pre-fetched this comic, skip the spinner
                 if let prefetched = libraryViewModel.consumePrefetchedComicBook(for: comic.id) {
                     viewModel.acceptPrefetched(prefetched, for: comic)
-                    print("📖 [ComicReaderView] ⚡ Using pre-fetched data — skipped spinner")
+                    AppLog.reader.debug("📖 [ComicReaderView] ⚡ Using pre-fetched data — skipped spinner")
                 } else {
                     await viewModel.loadComic(from: comic)
-                    print("📖 [ComicReaderView] loadComic() returned")
+                    AppLog.reader.debug("📖 [ComicReaderView] loadComic() returned")
                 }
             #else
                 await viewModel.loadComic(from: comic)
-                print("📖 [ComicReaderView] loadComic() returned")
+                AppLog.reader.debug("📖 [ComicReaderView] loadComic() returned")
             #endif
 
             // Start auto-hide timer when reader loads
             resetAutoHideTimer()
         }
         .onChange(of: viewModel.currentPage) { oldValue, newValue in
-            print("📖 [ComicReaderView] Page changed: \(oldValue + 1) → \(newValue + 1)")
+            AppLog.reader.debug("📖 [ComicReaderView] Page changed: \(oldValue + 1) → \(newValue + 1)")
             Task {
                 await viewModel.onPageChanged(to: newValue)
 
@@ -253,18 +254,18 @@ struct ComicReaderView: View {
                             guard !isManualLayoutOverride else { return }
                             let isLandscape = geo.size.width > geo.size.height
                             viewModel.isSpreadMode = isLandscape
-                            print("📐 [ComicReaderView] Initial orientation: \(isLandscape ? "landscape (spread)" : "portrait (single)")")
+                            AppLog.reader.debug("📐 [ComicReaderView] Initial orientation: \(isLandscape ? "landscape (spread)" : "portrait (single)")")
                         }
                         .onChange(of: geo.size) { _, newSize in
                             guard !isManualLayoutOverride else {
-                                print("📐 [ComicReaderView] Rotation ignored — manual override active")
+                                AppLog.reader.debug("📐 [ComicReaderView] Rotation ignored — manual override active")
                                 return
                             }
                             let isLandscape = newSize.width > newSize.height
                             withAnimation(.easeInOut(duration: 0.3)) {
                                 viewModel.isSpreadMode = isLandscape
                             }
-                            print("📐 [ComicReaderView] Rotated — spread: \(isLandscape)")
+                            AppLog.reader.debug("📐 [ComicReaderView] Rotated — spread: \(isLandscape)")
                         }
                 }
             )
@@ -403,7 +404,7 @@ struct ComicReaderView: View {
                     #if os(iOS)
                         // Lock in the user's manual choice; orientation changes won't override it
                         isManualLayoutOverride = true
-                        print("📐 [ComicReaderView] Manual spread override enabled")
+                        AppLog.reader.debug("📐 [ComicReaderView] Manual spread override enabled")
                     #endif
                 },
                 onComicUpdated: { updatedComic in
@@ -493,9 +494,7 @@ struct ComicReaderView: View {
             let percent = location.x / screenWidth
 
             #if DEBUG
-                print(
-                    "👆 [ComicReaderView] Global tap x=\(Int(location.x))/\(Int(screenWidth)) (\(String(format: "%.0f", percent * 100))%)"
-                )
+                AppLog.reader.debug("👆 [ComicReaderView] Global tap x=\(Int(location.x))/\(Int(screenWidth)) (\(String(format: "%.0f", percent * 100))%)")
             #endif
 
             let outerZone: CGFloat = 0.15
@@ -503,19 +502,19 @@ struct ComicReaderView: View {
             switch percent {
             case ..<outerZone:
                 #if DEBUG
-                    print("⬅️ [ComicReaderView] Left zone → previous page")
+                    AppLog.reader.debug("⬅️ [ComicReaderView] Left zone → previous page")
                 #endif
                 viewModel.turn(by: -1)
 
             case (1.0 - outerZone)...:
                 #if DEBUG
-                    print("➡️ [ComicReaderView] Right zone → next page")
+                    AppLog.reader.debug("➡️ [ComicReaderView] Right zone → next page")
                 #endif
                 viewModel.turn(by: +1)
 
             default:
                 #if DEBUG
-                    print("🎛️ [ComicReaderView] Centre zone → toggle controls")
+                    AppLog.reader.debug("🎛️ [ComicReaderView] Centre zone → toggle controls")
                 #endif
                 NotificationCenter.default.post(name: .scoToggleControls, object: nil)
             }
@@ -749,14 +748,12 @@ struct ComicReaderView: View {
     /// Handle tap to toggle controls visibility
     private func handleTapToToggleControls() {
         #if DEBUG
-            print("🟨 [ComicReaderView] handleTapToToggleControls() CALLED")
-            print(
-                "🟨 [Tap] Toggle controls | Δt=\(Date().timeIntervalSince(viewModel.lastInteractionAt))"
-            )
+            AppLog.reader.debug("🟨 [ComicReaderView] handleTapToToggleControls() CALLED")
+            AppLog.reader.debug("🟨 [Tap] Toggle controls | Δt=\(Date().timeIntervalSince(viewModel.lastInteractionAt))")
         #endif
         guard Date().timeIntervalSince(viewModel.lastInteractionAt) > tapCooldown else {
             #if DEBUG
-                print("❌ [Tap] Blocked by cooldown")
+                AppLog.reader.error("❌ [Tap] Blocked by cooldown")
             #endif
             return
         }
@@ -871,7 +868,7 @@ struct ComicReaderView: View {
                     await viewModel.loadComic(from: currentComic)
                 }
             } catch {
-                print("[ComicReaderView] ❌ Could not create bookmark from located file: \(error)")
+                AppLog.reader.error("[ComicReaderView] ❌ Could not create bookmark from located file: \(error)")
             }
         }
 

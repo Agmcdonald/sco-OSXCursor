@@ -7,6 +7,7 @@
 
 import Combine
 import SwiftUI
+import os
 
 // MARK: - Comic Page View
 @MainActor
@@ -50,7 +51,7 @@ struct ComicPageView: View {
 
     @inline(__always) private func debugLog(_ msg: @autoclosure () -> String) {
         #if DEBUG
-            print(msg())
+            AppLog.reader.debug("\(msg())")
         #endif
     }
 
@@ -59,9 +60,7 @@ struct ComicPageView: View {
             let angle = Int(atan2(dy, dx) * 180 / .pi)
             let normalizedAngle = (angle + 360) % 360
             let isHorizontal = abs(dx) > abs(dy)
-            print(
-                "[Swipe] dx=\(Int(dx)) dy=\(Int(dy)) angle=\(normalizedAngle)° horizontal:\(isHorizontal)"
-            )
+            AppLog.reader.debug("[Swipe] dx=\(Int(dx)) dy=\(Int(dy)) angle=\(normalizedAngle)° horizontal:\(isHorizontal)")
         }
     #endif
 

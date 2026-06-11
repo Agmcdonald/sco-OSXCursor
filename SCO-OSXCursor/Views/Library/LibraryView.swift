@@ -18,6 +18,7 @@
 
 import SwiftUI
 import UniformTypeIdentifiers
+import os
 
 // Wrapper to make UUID work with .sheet(item:)
 private struct ComicID: Identifiable {
@@ -423,9 +424,9 @@ struct LibraryView: View {
         // Get the comic objects to delete
         let comicsToDelete = viewModel.comics.filter { selectedComics.contains($0.id) }
 
-        print("\n🗑️ [LibraryView] Deleting \(comicsToDelete.count) comics:")
+        AppLog.library.debug("🗑️ [LibraryView] Deleting \(comicsToDelete.count) comics:")
         for comic in comicsToDelete {
-            print("   - \(comic.fileName)")
+            AppLog.library.debug("   - \(comic.fileName)")
         }
 
         // Delete them
@@ -439,33 +440,33 @@ struct LibraryView: View {
     // MARK: - Open / Edit
 
     private func openReader(for comic: Comic) {
-        print("\n🎯 [LibraryView] User tapped comic: \(comic.fileName)")
-        print("🎯 [LibraryView] File type: \(comic.fileType.rawValue)")
-        print("🎯 [LibraryView] Has bookmark: \(comic.bookmarkData != nil)")
+        AppLog.library.debug("🎯 [LibraryView] User tapped comic: \(comic.fileName)")
+        AppLog.library.debug("🎯 [LibraryView] File type: \(comic.fileType.rawValue)")
+        AppLog.library.debug("🎯 [LibraryView] Has bookmark: \(comic.bookmarkData != nil)")
 
         #if os(iOS)
             // Start pre-fetching immediately so the reader has a head start.
             // The reader will consume this data and skip its loading spinner.
             viewModel.prefetchComic(comic)
-            print("🎯 [LibraryView] ⚡ Pre-fetch triggered — opening reader")
+            AppLog.library.debug("🎯 [LibraryView] ⚡ Pre-fetch triggered — opening reader")
 
             // Give the CPU a 200ms head start to decompress (especially helpful for CBR).
             // This usually eliminates the visible spinner entirely for most file sizes.
             Task {
                 try? await Task.sleep(nanoseconds: 200_000_000)
                 await MainActor.run {
-                    print("🎯 [LibraryView] Setting viewModel.readingComic after 200ms head start")
+                    AppLog.library.debug("🎯 [LibraryView] Setting viewModel.readingComic after 200ms head start")
                     viewModel.readingComic = comic
                 }
             }
         #else
-            print("🎯 [LibraryView] Setting viewModel.readingComic (triggers full screen reader)")
+            AppLog.library.debug("🎯 [LibraryView] Setting viewModel.readingComic (triggers full screen reader)")
             viewModel.readingComic = comic
         #endif
     }
 
     private func editComic(_ comic: Comic) {
-        print("[LibraryView] 📝 Opening editor for: \(comic.fileName)")
+        AppLog.library.debug("[LibraryView] 📝 Opening editor for: \(comic.fileName)")
         editingComicID = ComicID(id: comic.id)
     }
 
@@ -479,7 +480,7 @@ struct LibraryView: View {
                 await viewModel.importComics(from: urls)
             }
         case .failure(let error):
-            print("File import failed: \(error.localizedDescription)")
+            AppLog.library.error("File import failed: \(error.localizedDescription)")
         }
     }
 
@@ -496,7 +497,7 @@ struct LibraryView: View {
                     defer { group.leave() }
 
                     if let error = error {
-                        print("Error loading item: \(error)")
+                        AppLog.library.error("Error loading item: \(error)")
                         return
                     }
 
@@ -519,7 +520,7 @@ struct LibraryView: View {
             // Wait for all loads to complete, then import
             group.notify(queue: .main) {
                 if !urls.isEmpty {
-                    print("Importing \(urls.count) dropped files")
+                    AppLog.library.debug("Importing \(urls.count) dropped files")
                     Task {
                         await viewModel.importComics(from: urls)
                     }
@@ -546,7 +547,7 @@ struct LibraryView: View {
                                 }
                             }
                         } catch {
-                            print("Failed to load dropped item: \(error)")
+                            AppLog.library.error("Failed to load dropped item: \(error)")
                         }
                     }
                 }

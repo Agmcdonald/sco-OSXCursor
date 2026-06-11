@@ -7,6 +7,7 @@
 
 import Foundation
 import ZIPFoundation
+import os
 
 // MARK: - CBZ Reader
 //
@@ -67,7 +68,7 @@ class CBZReader: ComicReaderProtocol {
                     ))
             } catch {
                 #if DEBUG
-                    print("[CBZReader] ⚠️ Failed to extract page \(entry.path): \(error)")
+                    AppLog.reader.error("[CBZReader] ⚠️ Failed to extract page \(entry.path): \(error)")
                 #endif
                 continue
             }
@@ -81,9 +82,7 @@ class CBZReader: ComicReaderProtocol {
         let metadata = try? extractMetadata(from: archive)
 
         #if DEBUG
-            print(
-                "[CBZReader] ✅ Opened \(url.lastPathComponent): \(sortedEntries.count) pages (\(initialPages.count) eager)"
-            )
+            AppLog.reader.info("[CBZReader] ✅ Opened \(url.lastPathComponent): \(sortedEntries.count) pages (\(initialPages.count) eager)")
         #endif
 
         return ComicBook(
@@ -235,7 +234,7 @@ class CBZReader: ComicReaderProtocol {
         }
 
         #if DEBUG
-            print("[CBZReader] ✅ Parsed ComicInfo.xml: \(metadata.displayTitle ?? "Unknown")")
+            AppLog.reader.info("[CBZReader] ✅ Parsed ComicInfo.xml: \(metadata.displayTitle ?? "Unknown")")
         #endif
         return metadata
     }

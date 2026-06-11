@@ -7,6 +7,7 @@
 
 import Foundation
 import PDFKit
+import os
 
 // MARK: - PDF Reader
 class PDFReader: ComicReaderProtocol {
@@ -20,32 +21,32 @@ class PDFReader: ComicReaderProtocol {
 
     private func _loadComic(from url: URL) throws -> ComicBook {
         let startTime = Date().timeIntervalSince1970
-        print("    [PDFReader] loadComic() ENTRY at \(startTime)")
-        print("    [PDFReader] URL: \(url.path)")
+        AppLog.reader.debug("    [PDFReader] loadComic() ENTRY at \(startTime)")
+        AppLog.reader.debug("    [PDFReader] URL: \(url.path)")
         
         // Check if bundled resource
         let isBundled = url.path.contains(Bundle.main.bundlePath)
-        print("    [PDFReader] Is bundled: \(isBundled)")
+        AppLog.reader.debug("    [PDFReader] Is bundled: \(isBundled)")
         
         // Only start security access for user files
         var accessing = false
         if !isBundled {
-            print("    [PDFReader] Attempting to start security-scoped access...")
+            AppLog.reader.debug("    [PDFReader] Attempting to start security-scoped access...")
             accessing = url.startAccessingSecurityScopedResource()
-            print("    [PDFReader] Security access started: \(accessing)")
+            AppLog.reader.debug("    [PDFReader] Security access started: \(accessing)")
         } else {
-            print("    [PDFReader] Skipping security access for bundled resource")
+            AppLog.reader.debug("    [PDFReader] Skipping security access for bundled resource")
         }
         
         // Note: We keep access open during reading. The ReaderViewModel will release it.
         
         // Verify file exists
-        print("    [PDFReader] Checking if file exists...")
+        AppLog.reader.debug("    [PDFReader] Checking if file exists...")
         let fileExists = FileManager.default.fileExists(atPath: url.path)
-        print("    [PDFReader] File exists: \(fileExists)")
+        AppLog.reader.debug("    [PDFReader] File exists: \(fileExists)")
         
         guard fileExists else {
-            print("    [PDFReader] ❌ ERROR: File not found")
+            AppLog.reader.error("    [PDFReader] ❌ ERROR: File not found")
             throw ComicReaderError.fileNotFound
         }
         
@@ -53,30 +54,30 @@ class PDFReader: ComicReaderProtocol {
         do {
             let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
             let fileSize = attributes[.size] as? Int64 ?? 0
-            print("    [PDFReader] File size: \(fileSize) bytes")
+            AppLog.reader.debug("    [PDFReader] File size: \(fileSize) bytes")
         } catch {
-            print("    [PDFReader] ⚠️ Could not get file attributes: \(error)")
+            AppLog.reader.error("    [PDFReader] ⚠️ Could not get file attributes: \(error)")
         }
         
         // Load PDF document
-        print("    [PDFReader] Attempting to load PDFDocument...")
+        AppLog.reader.debug("    [PDFReader] Attempting to load PDFDocument...")
         guard let pdfDocument = PDFDocument(url: url) else {
-            print("    [PDFReader] ❌ ERROR: Failed to load PDF document")
+            AppLog.reader.error("    [PDFReader] ❌ ERROR: Failed to load PDF document")
             throw ComicReaderError.invalidFormat
         }
-        print("    [PDFReader] ✅ PDFDocument loaded successfully")
+        AppLog.reader.info("    [PDFReader] ✅ PDFDocument loaded successfully")
         
         // Get page count
         let pageCount = pdfDocument.pageCount
-        print("    [PDFReader] Page count: \(pageCount)")
+        AppLog.reader.debug("    [PDFReader] Page count: \(pageCount)")
         
         guard pageCount > 0 else {
-            print("    [PDFReader] ❌ ERROR: No pages in PDF")
+            AppLog.reader.error("    [PDFReader] ❌ ERROR: No pages in PDF")
             throw ComicReaderError.noImages
         }
         
         // For PDFs, use lazy loading: load only first 3 pages initially
-        print("    [PDFReader] 🚀 Using LAZY LOADING - loading first 3 pages only")
+        AppLog.reader.debug("    [PDFReader] 🚀 Using LAZY LOADING - loading first 3 pages only")
         var initialPages: [ComicPage] = []
         let pagesToLoad = min(3, pageCount)
         
@@ -96,25 +97,25 @@ class PDFReader: ComicReaderProtocol {
             initialPages.append(page)
             
             if pageIndex == 0 {
-                print("    [PDFReader] ✅ Rendered first page (\(imageData.count) bytes)")
+                AppLog.reader.info("    [PDFReader] ✅ Rendered first page (\(imageData.count) bytes)")
             }
         }
         
-        print("    [PDFReader] Successfully rendered \(initialPages.count) initial pages")
+        AppLog.reader.info("    [PDFReader] Successfully rendered \(initialPages.count) initial pages")
         
         guard !initialPages.isEmpty else {
-            print("    [PDFReader] ❌ ERROR: No pages rendered")
+            AppLog.reader.error("    [PDFReader] ❌ ERROR: No pages rendered")
             throw ComicReaderError.extractionFailed
         }
         
         // Extract metadata
-        print("    [PDFReader] Extracting metadata...")
+        AppLog.reader.debug("    [PDFReader] Extracting metadata...")
         let metadata = extractMetadata(from: pdfDocument)
-        print("    [PDFReader] Metadata: \(metadata != nil ? "found" : "not found")")
+        AppLog.reader.debug("    [PDFReader] Metadata: \(metadata != nil ? "found" : "not found")")
         
         let endTime = Date().timeIntervalSince1970
-        print("    [PDFReader] ✅ loadComic() SUCCESS - Time: \(String(format: "%.3f", endTime - startTime))s")
-        print("    [PDFReader] (Remaining \(pageCount - initialPages.count) pages will load on-demand)")
+        AppLog.reader.info("    [PDFReader] ✅ loadComic() SUCCESS - Time: \(String(format: "%.3f", endTime - startTime))s")
+        AppLog.reader.debug("    [PDFReader] (Remaining \(pageCount - initialPages.count) pages will load on-demand)")
         
         // Return lazy-loaded comic book
         return ComicBook(sourceURL: url, totalPages: pageCount, initialPages: initialPages, metadata: metadata)
@@ -275,7 +276,7 @@ class PDFReader: ComicReaderProtocol {
     /// Extract metadata from PDF document
     private func extractMetadata(from document: PDFDocument) -> ComicMetadata? {
         guard let attributes = document.documentAttributes else {
-            print("    [PDFReader] No document attributes found")
+            AppLog.reader.debug("    [PDFReader] No document attributes found")
             return nil
         }
         
@@ -284,22 +285,22 @@ class PDFReader: ComicReaderProtocol {
         // Extract standard PDF metadata
         if let title = attributes[PDFDocumentAttribute.titleAttribute] as? String, !title.isEmpty {
             metadata.title = title
-            print("    [PDFReader] Found title: \(title)")
+            AppLog.reader.debug("    [PDFReader] Found title: \(title)")
         }
         
         if let author = attributes[PDFDocumentAttribute.authorAttribute] as? String, !author.isEmpty {
             metadata.writer = author
-            print("    [PDFReader] Found author: \(author)")
+            AppLog.reader.debug("    [PDFReader] Found author: \(author)")
         }
         
         if let subject = attributes[PDFDocumentAttribute.subjectAttribute] as? String, !subject.isEmpty {
             metadata.summary = subject
-            print("    [PDFReader] Found subject: \(subject)")
+            AppLog.reader.debug("    [PDFReader] Found subject: \(subject)")
         }
         
         if let keywords = attributes[PDFDocumentAttribute.keywordsAttribute] as? [String], !keywords.isEmpty {
             metadata.genre = keywords.joined(separator: ", ")
-            print("    [PDFReader] Found keywords: \(keywords)")
+            AppLog.reader.debug("    [PDFReader] Found keywords: \(keywords)")
         }
         
         if let creator = attributes[PDFDocumentAttribute.creatorAttribute] as? String, !creator.isEmpty {
@@ -317,20 +318,20 @@ class PDFReader: ComicReaderProtocol {
             metadata.year = components.year
             metadata.month = components.month
             metadata.day = components.day
-            print("    [PDFReader] Found creation date: \(components.year ?? 0)-\(components.month ?? 0)-\(components.day ?? 0)")
+            AppLog.reader.debug("    [PDFReader] Found creation date: \(components.year ?? 0)-\(components.month ?? 0)-\(components.day ?? 0)")
         }
         
         // Page count
         metadata.pageCount = document.pageCount
-        print("    [PDFReader] Page count: \(document.pageCount)")
+        AppLog.reader.debug("    [PDFReader] Page count: \(document.pageCount)")
         
         // Return nil if no useful metadata was found
         if metadata.title == nil && metadata.writer == nil && metadata.summary == nil && metadata.year == nil {
-            print("    [PDFReader] No useful metadata found")
+            AppLog.reader.debug("    [PDFReader] No useful metadata found")
             return nil
         }
         
-        print("    [PDFReader] ✅ Extracted metadata: \(metadata.displayTitle ?? "Unknown")")
+        AppLog.reader.info("    [PDFReader] ✅ Extracted metadata: \(metadata.displayTitle ?? "Unknown")")
         return metadata
     }
 }

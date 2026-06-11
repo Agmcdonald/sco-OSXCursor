@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import os
 
 // MARK: - Paged Reader View
 @MainActor
@@ -38,7 +39,7 @@ struct PagedReaderView: View {
     
     @inline(__always) private func debugLog(_ msg: @autoclosure () -> String) {
         #if DEBUG
-        print(msg())
+        AppLog.reader.debug("\(msg())")
         #endif
     }
     

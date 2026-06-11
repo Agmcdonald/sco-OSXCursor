@@ -8,6 +8,7 @@
 import Combine
 import Foundation
 import GRDB  // For database access
+import os
 
 @MainActor
 class KnowledgeViewModel: ObservableObject {
@@ -96,7 +97,7 @@ class KnowledgeViewModel: ObservableObject {
                 return try await database.searchKnowledge(type: type, query: query)
             }
         } catch {
-            print("Autocomplete error: \(error)")
+            AppLog.learning.error("Autocomplete error: \(error)")
         }
         return []
     }

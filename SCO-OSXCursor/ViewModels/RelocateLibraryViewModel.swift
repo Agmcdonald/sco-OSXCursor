@@ -8,6 +8,7 @@
 import Combine
 import Foundation
 import SwiftUI
+import os
 
 // MARK: - RelocateLibraryViewModel
 
@@ -171,14 +172,14 @@ final class RelocateLibraryViewModel: ObservableObject {
                 do {
                     try await database.updateComic(updated)
                     remappedCount += 1
-                    print("[RelocateLibraryViewModel] ✅ Remapped: \(preview.comic.fileName)")
+                    AppLog.files.info("[RelocateLibraryViewModel] ✅ Remapped: \(preview.comic.fileName)")
                 } catch {
                     notFoundCount += 1
                     errors.append(RemapError(
                         comicName: preview.comic.displayName,
                         reason: error.localizedDescription
                     ))
-                    print("[RelocateLibraryViewModel] ❌ Failed to remap \(preview.comic.fileName): \(error)")
+                    AppLog.files.error("[RelocateLibraryViewModel] ❌ Failed to remap \(preview.comic.fileName): \(error)")
                 }
             }
 
@@ -188,7 +189,7 @@ final class RelocateLibraryViewModel: ObservableObject {
         // Update Settings to point at the new root
         settingsViewModel.setHomeLibraryFolder(newRoot)
 
-        print("[RelocateLibraryViewModel] ✅ Remap complete — \(remappedCount) remapped, \(notFoundCount) not found")
+        AppLog.files.info("[RelocateLibraryViewModel] ✅ Remap complete — \(remappedCount) remapped, \(notFoundCount) not found")
         phase = .done
     }
 

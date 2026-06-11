@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import os
 
 // MARK: - LibraryFileService
 
@@ -139,7 +140,7 @@ final class LibraryFileService {
 
         // If the file is already in the right place, skip the move
         if source.standardizedFileURL == destination.standardizedFileURL {
-            print("[LibraryFileService] ✅ Already in place: \(comic.fileName)")
+            AppLog.files.info("[LibraryFileService] ✅ Already in place: \(comic.fileName)")
             return comic
         }
 
@@ -179,7 +180,7 @@ final class LibraryFileService {
         removeEmptyFolders(from: source.deletingLastPathComponent(), stoppingAt: libraryRoot)
 
         let relative = relativeDescription(of: destination, relativeTo: libraryRoot)
-        print("[LibraryFileService] ✅ Moved \(comic.fileName) → \(relative)")
+        AppLog.files.info("[LibraryFileService] ✅ Moved \(comic.fileName) → \(relative)")
 
         return updated
     }
@@ -303,9 +304,9 @@ final class LibraryFileService {
             }
             do {
                 try fm.removeItem(at: current)
-                print("[LibraryFileService] 🗑️ Removed empty folder: \(current.lastPathComponent)")
+                AppLog.files.debug("[LibraryFileService] 🗑️ Removed empty folder: \(current.lastPathComponent)")
             } catch {
-                print("[LibraryFileService] ⚠️ Could not remove folder \(current.lastPathComponent): \(error)")
+                AppLog.files.error("[LibraryFileService] ⚠️ Could not remove folder \(current.lastPathComponent): \(error)")
                 break
             }
             current = current.deletingLastPathComponent().standardizedFileURL
@@ -364,7 +365,7 @@ final class LibraryFileService {
         }
         // Delete original
         try fm.removeItem(at: source)
-        print("[LibraryFileService] ✅ Cross-volume move verified: \(source.lastPathComponent)")
+        AppLog.files.info("[LibraryFileService] ✅ Cross-volume move verified: \(source.lastPathComponent)")
     }
 
     private func relativeDescription(of url: URL, relativeTo root: URL) -> String {

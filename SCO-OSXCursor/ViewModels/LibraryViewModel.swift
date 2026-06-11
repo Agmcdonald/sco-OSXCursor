@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import SwiftUI
+import os
 
 #if os(macOS)
     import AppKit
@@ -70,9 +71,7 @@ final class LibraryViewModel: ObservableObject {
                 self.comics[index] = updated
                 Task {
                     try? await self.database.saveComic(updated)
-                    print(
-                        "[LibraryViewModel] ✅ Persisted refreshed bookmark for: \(updated.fileName)"
-                    )
+                    AppLog.library.info("[LibraryViewModel] ✅ Persisted refreshed bookmark for: \(updated.fileName)")
                 }
             }
             .store(in: &cancellables)
@@ -85,17 +84,17 @@ final class LibraryViewModel: ObservableObject {
             let fetchedComics = try await database.fetchAllComics()
             await MainActor.run {
                 self.comics = fetchedComics
-                print("[LibraryViewModel] ✅ Loaded \(fetchedComics.count) comics from database")
+                AppLog.library.info("[LibraryViewModel] ✅ Loaded \(fetchedComics.count) comics from database")
             }
         } catch {
-            print("[LibraryViewModel] ❌ Failed to load comics: \(error)")
+            AppLog.library.error("[LibraryViewModel] ❌ Failed to load comics: \(error)")
         }
     }
 
     // ✅ DB-only persistence (NO array update)
     func persistComic(_ comic: Comic) async throws {
         try await database.updateComic(comic)
-        print("[LibraryViewModel] ✅ Persisted comic to database: \(comic.fileName)")
+        AppLog.library.info("[LibraryViewModel] ✅ Persisted comic to database: \(comic.fileName)")
     }
 
     // (Optional) Keep ONLY for non-editor callers
@@ -283,14 +282,14 @@ final class LibraryViewModel: ObservableObject {
             try? await database.updateComic(comics[index])
             if missing {
                 flaggedCount += 1
-                print("[LibraryViewModel] ⚠️ Missing file flagged: \(comics[index].fileName)")
+                AppLog.library.error("[LibraryViewModel] ⚠️ Missing file flagged: \(comics[index].fileName)")
             } else {
-                print("[LibraryViewModel] ✅ Cleared missing flag: \(comics[index].fileName)")
+                AppLog.library.error("[LibraryViewModel] ✅ Cleared missing flag: \(comics[index].fileName)")
             }
         }
 
         if flaggedCount > 0 {
-            print("[LibraryViewModel] ⚠️ \(flaggedCount) comics flagged as missing")
+            AppLog.library.error("[LibraryViewModel] ⚠️ \(flaggedCount) comics flagged as missing")
         }
     }
 
@@ -342,7 +341,7 @@ final class LibraryViewModel: ObservableObject {
         }
 
         guard let rawCover = try? await reader.extractCover(from: fileURL) else {
-            print("[LibraryViewModel] ⚠️ Cover regeneration failed for \(comic.fileName)")
+            AppLog.library.error("[LibraryViewModel] ⚠️ Cover regeneration failed for \(comic.fileName)")
             return
         }
 
@@ -354,7 +353,7 @@ final class LibraryViewModel: ObservableObject {
         var updated = comic
         updated.coverImageData = coverData
         updateComic(updated)
-        print("[LibraryViewModel] ✅ Cover regenerated for \(comic.fileName)")
+        AppLog.library.info("[LibraryViewModel] ✅ Cover regenerated for \(comic.fileName)")
     }
 
     // ✅ Background read + single publish
@@ -379,7 +378,7 @@ final class LibraryViewModel: ObservableObject {
                 }
 
                 self.comics = updated
-                print("[LibraryViewModel] ✅ Synced progress (batched)")
+                AppLog.library.info("[LibraryViewModel] ✅ Synced progress (batched)")
             }
         }
     }
@@ -406,7 +405,7 @@ final class LibraryViewModel: ObservableObject {
                 }
 
                 self.comics = updated
-                print("[LibraryViewModel] 📖 Restored progress (batched)")
+                AppLog.library.debug("[LibraryViewModel] 📖 Restored progress (batched)")
             }
         }
     }
@@ -472,7 +471,7 @@ final class LibraryViewModel: ObservableObject {
                 let fileExtension = url.pathExtension.lowercased()
 
                 guard let fileType = Comic.FileType(rawValue: fileExtension) else {
-                    print("[LibraryViewModel] ⚠️ Skipping unsupported file: \(fileName)")
+                    AppLog.library.error("[LibraryViewModel] ⚠️ Skipping unsupported file: \(fileName)")
                     continue
                 }
 
@@ -562,9 +561,7 @@ final class LibraryViewModel: ObservableObject {
                 do {
                     pageCount = try await reader.getPageCount(from: url)
                 } catch {
-                    print(
-                        "[LibraryViewModel] ⚠️ Could not read page count (CBR?): \(error.localizedDescription)"
-                    )
+                    AppLog.library.error("[LibraryViewModel] ⚠️ Could not read page count (CBR?): \(error.localizedDescription)")
                 }
 
                 // Extract cover image, downsampled for storage (~100 KB JPEG
@@ -637,16 +634,12 @@ final class LibraryViewModel: ObservableObject {
                                     relativeTo: nil
                                 )
                             #endif
-                            print("[LibraryViewModel] 📝 Renamed: \(fileName) → \(newFileName)")
+                            AppLog.library.debug("[LibraryViewModel] 📝 Renamed: \(fileName) → \(newFileName)")
                         } else {
-                            print(
-                                "[LibraryViewModel] ⚠️ Skipped rename (target exists): \(newFileName)"
-                            )
+                            AppLog.library.error("[LibraryViewModel] ⚠️ Skipped rename (target exists): \(newFileName)")
                         }
                     } catch {
-                        print(
-                            "[LibraryViewModel] ⚠️ Rename failed (continuing with original): \(error.localizedDescription)"
-                        )
+                        AppLog.library.error("[LibraryViewModel] ⚠️ Rename failed (continuing with original): \(error.localizedDescription)")
                     }
                 }
 
@@ -673,10 +666,10 @@ final class LibraryViewModel: ObservableObject {
                     bookFormat: finalComic.bookFormat
                 )
 
-                print("[LibraryViewModel] ✅ Imported: \(extractedComic.fileName)")
+                AppLog.library.info("[LibraryViewModel] ✅ Imported: \(extractedComic.fileName)")
 
             } catch {
-                print("[LibraryViewModel] ❌ Failed to import \(url.lastPathComponent): \(error)")
+                AppLog.library.error("[LibraryViewModel] ❌ Failed to import \(url.lastPathComponent): \(error)")
             }
 
             // Update progress
@@ -697,7 +690,7 @@ final class LibraryViewModel: ObservableObject {
 
             isImporting = false
             importProgress = 0.0
-            print("[LibraryViewModel] ✅ Import complete: \(imported)/\(total) comics imported")
+            AppLog.library.info("[LibraryViewModel] ✅ Import complete: \(imported)/\(total) comics imported")
         }
 
         // Sync progress after import
@@ -708,7 +701,7 @@ final class LibraryViewModel: ObservableObject {
 
     /// Scans the app bundle for comic files and imports them if not already present
     func importBundledComics() async {
-        print("[LibraryViewModel] 📦 Scanning for bundled comics...")
+        AppLog.library.debug("[LibraryViewModel] 📦 Scanning for bundled comics...")
 
         let extensions = ["cbz", "pdf", "cbr", "epub"]
         var bundledURLs: [URL] = []
@@ -720,13 +713,11 @@ final class LibraryViewModel: ObservableObject {
         }
 
         guard !bundledURLs.isEmpty else {
-            print("[LibraryViewModel] ℹ️ No bundled comics found")
+            AppLog.library.debug("[LibraryViewModel] ℹ️ No bundled comics found")
             return
         }
 
-        print(
-            "[LibraryViewModel] ℹ️ Found \(bundledURLs.count) bundled comics: \(bundledURLs.map { $0.lastPathComponent })"
-        )
+        AppLog.library.debug("[LibraryViewModel] ℹ️ Found \(bundledURLs.count) bundled comics: \(bundledURLs.map { $0.lastPathComponent })")
 
         // Filter out comics that already exist based on filename
         let existingFilenames = Set(comics.map { $0.fileName.lowercased() })
@@ -735,17 +726,17 @@ final class LibraryViewModel: ObservableObject {
         }
 
         if !toImport.isEmpty {
-            print("[LibraryViewModel] 📥 Importing \(toImport.count) new bundled comics...")
+            AppLog.library.debug("[LibraryViewModel] 📥 Importing \(toImport.count) new bundled comics...")
             await importComics(from: toImport)
         } else {
-            print("[LibraryViewModel] ✅ All bundled comics already imported")
+            AppLog.library.info("[LibraryViewModel] ✅ All bundled comics already imported")
         }
     }
 
     // MARK: - Mark as Read
 
     func markAsRead(_ comicsToMark: [Comic]) {
-        print("[LibraryViewModel] 📖 Marking \(comicsToMark.count) comics as read")
+        AppLog.library.debug("[LibraryViewModel] 📖 Marking \(comicsToMark.count) comics as read")
         for comic in comicsToMark {
             var updatedComic = comic
             updatedComic.status = .completed
@@ -761,7 +752,7 @@ final class LibraryViewModel: ObservableObject {
     func deleteComics(_ comics: [Comic]) {
         // TODO: Implement delete logic
         // This is a placeholder - needs full implementation
-        print("[LibraryViewModel] ⚠️ deleteComics(_:) needs implementation")
+        AppLog.library.error("[LibraryViewModel] ⚠️ deleteComics(_:) needs implementation")
 
         for comic in comics {
             // Log deletion before removing
@@ -804,7 +795,7 @@ final class LibraryViewModel: ObservableObject {
 
         Task {
             try? await database.deleteKnowledgeEntry(type: type, name: name)
-            print("[LibraryViewModel] 🧹 Pruned orphaned \(type.rawValue) suggestion: \(name)")
+            AppLog.library.debug("[LibraryViewModel] 🧹 Pruned orphaned \(type.rawValue) suggestion: \(name)")
         }
     }
 
@@ -841,7 +832,7 @@ final class LibraryViewModel: ObservableObject {
             }
             await logActivity(.fileMoved, comic: moved, new: moved.fileName)
         } catch {
-            print("[LibraryViewModel] ⚠️ Re-sort after edit failed for \(comic.fileName): \(error)")
+            AppLog.library.error("[LibraryViewModel] ⚠️ Re-sort after edit failed for \(comic.fileName): \(error)")
         }
     }
 
@@ -887,7 +878,7 @@ final class LibraryViewModel: ObservableObject {
                 series: comic.series, publisher: comic.publisher,
                 bookFormat: comic.bookFormat, countsAsImport: false)
         }
-        print("[LibraryViewModel] ✏️ Bulk-edited \(ids.count) comics")
+        AppLog.library.debug("[LibraryViewModel] ✏️ Bulk-edited \(ids.count) comics")
 
         // Drop autocomplete suggestions the correction just orphaned
         for publisher in replacedPublishers {
@@ -975,11 +966,11 @@ final class LibraryViewModel: ObservableObject {
                         // Only store if the ID still matches (user hasn't changed selection)
                         if self.prefetchedForComicID == comic.id {
                             self.prefetchedComicBook = comicBook
-                            print("[LibraryViewModel] ⚡ Pre-fetch complete for: \(comic.fileName)")
+                            AppLog.library.info("[LibraryViewModel] ⚡ Pre-fetch complete for: \(comic.fileName)")
                         }
                     }
                 } catch {
-                    print("[LibraryViewModel] ⚠️ Pre-fetch failed for \(comic.fileName): \(error)")
+                    AppLog.library.error("[LibraryViewModel] ⚠️ Pre-fetch failed for \(comic.fileName): \(error)")
                 }
             }
         }
@@ -989,7 +980,7 @@ final class LibraryViewModel: ObservableObject {
             guard prefetchedForComicID == comicID, let book = prefetchedComicBook else { return nil }
             prefetchedComicBook = nil
             prefetchedForComicID = nil
-            print("[LibraryViewModel] ✅ Consumed pre-fetched comic — skipping load spinner")
+            AppLog.library.info("[LibraryViewModel] ✅ Consumed pre-fetched comic — skipping load spinner")
             return book
         }
     #endif
@@ -1041,7 +1032,7 @@ final class LibraryViewModel: ObservableObject {
             let fileExtension = fileURL.pathExtension.lowercased()
 
             guard let fileType = Comic.FileType(rawValue: fileExtension) else {
-                print("[LibraryViewModel] ⚠️ Unsupported file type from Organize: \(fileName)")
+                AppLog.library.error("[LibraryViewModel] ⚠️ Unsupported file type from Organize: \(fileName)")
                 await MainActor.run { isImporting = false }
                 return
             }
@@ -1095,9 +1086,7 @@ final class LibraryViewModel: ObservableObject {
             do {
                 pageCount = try await reader.getPageCount(from: fileURL)
             } catch {
-                print(
-                    "[LibraryViewModel] ⚠️ Could not read page count (CBR?): \(error.localizedDescription)"
-                )
+                AppLog.library.error("[LibraryViewModel] ⚠️ Could not read page count (CBR?): \(error.localizedDescription)")
             }
 
             // Extract cover image — also non-fatal; downsampled for storage
@@ -1157,11 +1146,9 @@ final class LibraryViewModel: ObservableObject {
                 }
             }
 
-            print("[LibraryViewModel] ✅ Imported from Organize: \(fileName)")
+            AppLog.library.info("[LibraryViewModel] ✅ Imported from Organize: \(fileName)")
         } catch {
-            print(
-                "[LibraryViewModel] ❌ Failed to import from Organize \(fileURL.lastPathComponent): \(error)"
-            )
+            AppLog.library.error("[LibraryViewModel] ❌ Failed to import from Organize \(fileURL.lastPathComponent): \(error)")
         }
 
         await MainActor.run {

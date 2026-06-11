@@ -7,6 +7,7 @@
 
 import Foundation
 import Unrar
+import os
 
 // MARK: - CBR Reader (RAR Archive)
 //
@@ -43,7 +44,7 @@ class CBRReader: ComicReaderProtocol {
             archive = try Archive(fileURL: url)
         } catch {
             #if DEBUG
-                print("[CBRReader] ❌ Failed to open RAR archive: \(error)")
+                AppLog.reader.error("[CBRReader] ❌ Failed to open RAR archive: \(error)")
             #endif
             throw ComicReaderError.invalidFormat
         }
@@ -67,7 +68,7 @@ class CBRReader: ComicReaderProtocol {
                     ))
             } catch {
                 #if DEBUG
-                    print("[CBRReader] ⚠️ Failed to extract page \(entry.fileName): \(error)")
+                    AppLog.reader.error("[CBRReader] ⚠️ Failed to extract page \(entry.fileName): \(error)")
                 #endif
                 continue
             }
@@ -78,9 +79,7 @@ class CBRReader: ComicReaderProtocol {
         }
 
         #if DEBUG
-            print(
-                "[CBRReader] ✅ Opened \(url.lastPathComponent): \(sortedEntries.count) pages (\(initialPages.count) eager)"
-            )
+            AppLog.reader.info("[CBRReader] ✅ Opened \(url.lastPathComponent): \(sortedEntries.count) pages (\(initialPages.count) eager)")
         #endif
 
         return ComicBook(

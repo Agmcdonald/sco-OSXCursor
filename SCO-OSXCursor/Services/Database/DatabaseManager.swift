@@ -7,6 +7,7 @@
 
 import Foundation
 import GRDB
+import os
 
 // MARK: - Database Manager
 final class DatabaseManager {
@@ -23,18 +24,18 @@ final class DatabaseManager {
     private func setupDatabase() {
         do {
             let dbPath = try getDatabasePath()
-            print("[DatabaseManager] 📁 Database path: \(dbPath.path)")
+            AppLog.database.debug("[DatabaseManager] 📁 Database path: \(dbPath.path)")
 
             dbQueue = try DatabaseQueue(path: dbPath.path)
             try migrator.migrate(dbQueue!)
 
-            print("[DatabaseManager] ✅ Database initialized successfully")
+            AppLog.database.info("[DatabaseManager] ✅ Database initialized successfully")
 
             // Log table info
             try logDatabaseInfo()
 
         } catch {
-            print("[DatabaseManager] ❌ Database setup error: \(error)")
+            AppLog.database.error("[DatabaseManager] ❌ Database setup error: \(error)")
         }
     }
 
@@ -63,19 +64,19 @@ final class DatabaseManager {
 
         // Version 1: Initial schema
         migrator.registerMigration("v1_initial_schema") { db in
-            print("[DatabaseManager] 🔄 Running migration: v1_initial_schema")
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v1_initial_schema")
 
             try self.createComicsTable(db)
             try self.createPublisherMappingsTable(db)
             try self.createActivityLogTable(db)
             try self.createIndexes(db)
 
-            print("[DatabaseManager] ✅ Migration v1_initial_schema complete")
+            AppLog.database.info("[DatabaseManager] ✅ Migration v1_initial_schema complete")
         }
 
         // Version 2: Add preferred_transition column to comics table
         migrator.registerMigration("v2_add_preferred_transition") { db in
-            print("[DatabaseManager] 🔄 Running migration: v2_add_preferred_transition")
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v2_add_preferred_transition")
 
             // Add column if it doesn't exist
             // GRDB will handle the case where column already exists gracefully
@@ -84,21 +85,19 @@ final class DatabaseManager {
                     try db.alter(table: "comics") { t in
                         t.add(column: "preferred_transition", .text)
                     }
-                    print("[DatabaseManager] ✅ Added preferred_transition column")
+                    AppLog.database.info("[DatabaseManager] ✅ Added preferred_transition column")
                 } catch {
                     // Column might already exist, which is fine
-                    print(
-                        "[DatabaseManager] ℹ️ preferred_transition column may already exist: \(error.localizedDescription)"
-                    )
+                    AppLog.database.error("[DatabaseManager] ℹ️ preferred_transition column may already exist: \(error.localizedDescription)")
                 }
             }
 
-            print("[DatabaseManager] ✅ Migration v2_add_preferred_transition complete")
+            AppLog.database.info("[DatabaseManager] ✅ Migration v2_add_preferred_transition complete")
         }
 
         // Version 3: Add metadata_knowledge table
         migrator.registerMigration("v3_knowledge_schema") { db in
-            print("[DatabaseManager] 🔄 Running migration: v3_knowledge_schema")
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v3_knowledge_schema")
 
             try db.create(table: "metadata_knowledge") { t in
                 t.autoIncrementedPrimaryKey("id")
@@ -116,29 +115,27 @@ final class DatabaseManager {
                 index: "idx_knowledge_type_name", on: "metadata_knowledge",
                 columns: ["type", "name"])
 
-            print("[DatabaseManager] ✅ Migration v3_knowledge_schema complete")
+            AppLog.database.info("[DatabaseManager] ✅ Migration v3_knowledge_schema complete")
         }
 
         migrator.registerMigration("v4_reading_list") { db in
-            print("[DatabaseManager] 🔄 Running migration: v4_reading_list")
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v4_reading_list")
             if try db.tableExists("comics") {
                 do {
                     try db.alter(table: "comics") { t in
                         t.add(column: "is_on_reading_list", .boolean).notNull().defaults(to: false)
                     }
-                    print("[DatabaseManager] ✅ Added is_on_reading_list column")
+                    AppLog.database.info("[DatabaseManager] ✅ Added is_on_reading_list column")
                 } catch {
-                    print(
-                        "[DatabaseManager] ℹ️ is_on_reading_list column may already exist: \(error.localizedDescription)"
-                    )
+                    AppLog.database.error("[DatabaseManager] ℹ️ is_on_reading_list column may already exist: \(error.localizedDescription)")
                 }
             }
-            print("[DatabaseManager] ✅ Migration v4_reading_list complete")
+            AppLog.database.info("[DatabaseManager] ✅ Migration v4_reading_list complete")
         }
 
         // Version 5: Expand Creator Metadata
         migrator.registerMigration("v5_expand_creators") { db in
-            print("[DatabaseManager] 🔄 Running migration: v5_expand_creators")
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v5_expand_creators")
             if try db.tableExists("comics") {
                 do {
                     try db.alter(table: "comics") { t in
@@ -146,27 +143,25 @@ final class DatabaseManager {
                         t.add(column: "inker", .text)
                         t.add(column: "editor", .text)
                     }
-                    print("[DatabaseManager] ✅ Added colorist, inker, and editor columns")
+                    AppLog.database.info("[DatabaseManager] ✅ Added colorist, inker, and editor columns")
                 } catch {
-                    print(
-                        "[DatabaseManager] ℹ️ creator columns may already exist: \(error.localizedDescription)"
-                    )
+                    AppLog.database.error("[DatabaseManager] ℹ️ creator columns may already exist: \(error.localizedDescription)")
                 }
             }
-            print("[DatabaseManager] ✅ Migration v5_expand_creators complete")
+            AppLog.database.info("[DatabaseManager] ✅ Migration v5_expand_creators complete")
         }
 
         // Version 6: Publisher banner images
         migrator.registerMigration("v6_publisher_banners") { db in
-            print("[DatabaseManager] 🔄 Running migration: v6_publisher_banners")
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v6_publisher_banners")
             if try db.tableExists("publisher_mappings") {
                 do {
                     try db.alter(table: "publisher_mappings") { t in
                         t.add(column: "image_data", .blob)
                     }
-                    print("[DatabaseManager] ✅ Added image_data column to publisher_mappings")
+                    AppLog.database.info("[DatabaseManager] ✅ Added image_data column to publisher_mappings")
                 } catch {
-                    print("[DatabaseManager] ℹ️ image_data column may already exist: \(error)")
+                    AppLog.database.error("[DatabaseManager] ℹ️ image_data column may already exist: \(error)")
                 }
             } else {
                 // publisher_mappings may not exist on all devices; create it now
@@ -174,103 +169,93 @@ final class DatabaseManager {
                     t.column("publisher_name", .text).primaryKey()
                     t.column("image_data", .blob)
                 }
-                print("[DatabaseManager] ✅ Created publisher_banners fallback table")
+                AppLog.database.info("[DatabaseManager] ✅ Created publisher_banners fallback table")
             }
-            print("[DatabaseManager] ✅ Migration v6_publisher_banners complete")
+            AppLog.database.info("[DatabaseManager] ✅ Migration v6_publisher_banners complete")
         }
 
         // Version 7: Content Ratings
         migrator.registerMigration("v7_content_ratings") { db in
-            print("[DatabaseManager] 🔄 Running migration: v7_content_ratings")
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v7_content_ratings")
             if try db.tableExists("comics") {
                 do {
                     try db.alter(table: "comics") { t in
                         t.add(column: "content_rating", .integer).notNull().defaults(to: 0)
                     }
-                    print("[DatabaseManager] ✅ Added content_rating column")
+                    AppLog.database.info("[DatabaseManager] ✅ Added content_rating column")
                 } catch {
-                    print(
-                        "[DatabaseManager] ℹ️ content_rating column may already exist: \(error.localizedDescription)"
-                    )
+                    AppLog.database.error("[DatabaseManager] ℹ️ content_rating column may already exist: \(error.localizedDescription)")
                 }
             }
-            print("[DatabaseManager] ✅ Migration v7_content_ratings complete")
+            AppLog.database.info("[DatabaseManager] ✅ Migration v7_content_ratings complete")
         }
 
         // Version 8: Home Library — needs_attention flag
         migrator.registerMigration("v8_needs_attention") { db in
-            print("[DatabaseManager] 🔄 Running migration: v8_needs_attention")
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v8_needs_attention")
             if try db.tableExists("comics") {
                 do {
                     try db.alter(table: "comics") { t in
                         t.add(column: "needs_attention", .boolean).notNull().defaults(to: false)
                     }
-                    print("[DatabaseManager] ✅ Added needs_attention column")
+                    AppLog.database.info("[DatabaseManager] ✅ Added needs_attention column")
                 } catch {
-                    print(
-                        "[DatabaseManager] ℹ️ needs_attention column may already exist: \(error.localizedDescription)"
-                    )
+                    AppLog.database.error("[DatabaseManager] ℹ️ needs_attention column may already exist: \(error.localizedDescription)")
                 }
             }
-            print("[DatabaseManager] ✅ Migration v8_needs_attention complete")
+            AppLog.database.info("[DatabaseManager] ✅ Migration v8_needs_attention complete")
         }
 
         // Version 9: Reading Style — per-book reading style preference
         migrator.registerMigration("v9_reading_style") { db in
-            print("[DatabaseManager] 🔄 Running migration: v9_reading_style")
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v9_reading_style")
             if try db.tableExists("comics") {
                 do {
                     try db.alter(table: "comics") { t in
                         t.add(column: "reading_style", .text)
                     }
-                    print("[DatabaseManager] ✅ Added reading_style column")
+                    AppLog.database.info("[DatabaseManager] ✅ Added reading_style column")
                 } catch {
-                    print(
-                        "[DatabaseManager] ℹ️ reading_style column may already exist: \(error.localizedDescription)"
-                    )
+                    AppLog.database.error("[DatabaseManager] ℹ️ reading_style column may already exist: \(error.localizedDescription)")
                 }
             }
-            print("[DatabaseManager] ✅ Migration v9_reading_style complete")
+            AppLog.database.info("[DatabaseManager] ✅ Migration v9_reading_style complete")
         }
 
         // Version 10: EPUB support — per-book font size preference
         migrator.registerMigration("v10_epub_support") { db in
-            print("[DatabaseManager] 🔄 Running migration: v10_epub_support")
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v10_epub_support")
             if try db.tableExists("comics") {
                 do {
                     try db.alter(table: "comics") { t in
                         t.add(column: "epub_font_size", .integer)
                     }
-                    print("[DatabaseManager] ✅ Added epub_font_size column")
+                    AppLog.database.info("[DatabaseManager] ✅ Added epub_font_size column")
                 } catch {
-                    print(
-                        "[DatabaseManager] ℹ️ epub_font_size column may already exist: \(error.localizedDescription)"
-                    )
+                    AppLog.database.error("[DatabaseManager] ℹ️ epub_font_size column may already exist: \(error.localizedDescription)")
                 }
             }
-            print("[DatabaseManager] ✅ Migration v10_epub_support complete")
+            AppLog.database.info("[DatabaseManager] ✅ Migration v10_epub_support complete")
         }
 
         migrator.registerMigration("v11_book_format") { db in
-            print("[DatabaseManager] 🔄 Running migration: v11_book_format")
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v11_book_format")
             if try db.tableExists("comics") {
                 do {
                     try db.alter(table: "comics") { t in
                         t.add(column: "book_format", .text).notNull().defaults(to: "issue")
                     }
-                    print("[DatabaseManager] ✅ Added book_format column")
+                    AppLog.database.info("[DatabaseManager] ✅ Added book_format column")
                 } catch {
-                    print(
-                        "[DatabaseManager] ℹ️ book_format column may already exist: \(error.localizedDescription)"
-                    )
+                    AppLog.database.error("[DatabaseManager] ℹ️ book_format column may already exist: \(error.localizedDescription)")
                 }
             }
-            print("[DatabaseManager] ✅ Migration v11_book_format complete")
+            AppLog.database.info("[DatabaseManager] ✅ Migration v11_book_format complete")
         }
 
         // Version 12: Learning system — series knowledge + correction history
         migrator.registerMigration("v12_series_knowledge") { db in
-            print("[DatabaseManager] 🔄 Running migration: v12_series_knowledge")
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v12_series_knowledge")
 
             try db.create(table: "series_knowledge", ifNotExists: true) { t in
                 t.autoIncrementedPrimaryKey("id")
@@ -307,19 +292,19 @@ final class DatabaseManager {
                         WHERE series IS NOT NULL AND TRIM(series) <> ''
                         GROUP BY LOWER(TRIM(series))
                         """)
-                print("[DatabaseManager] ✅ Seeded series_knowledge from existing library")
+                AppLog.database.info("[DatabaseManager] ✅ Seeded series_knowledge from existing library")
             }
 
-            print("[DatabaseManager] ✅ Migration v12_series_knowledge complete")
+            AppLog.database.info("[DatabaseManager] ✅ Migration v12_series_knowledge complete")
         }
 
         // Version 13: EPUBs are prose ebooks, not comic issues
         migrator.registerMigration("v13_ebook_format") { db in
-            print("[DatabaseManager] 🔄 Running migration: v13_ebook_format")
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v13_ebook_format")
             if try db.tableExists("comics"), try db.tableHasColumn("comics", named: "book_format") {
                 try db.execute(
                     sql: "UPDATE comics SET book_format = 'ebook' WHERE file_type = 'epub'")
-                print("[DatabaseManager] ✅ Reclassified EPUB books as eBook format")
+                AppLog.database.info("[DatabaseManager] ✅ Reclassified EPUB books as eBook format")
             }
             if try db.tableExists("series_knowledge") {
                 // Fix learned entries created from EPUB imports
@@ -332,7 +317,7 @@ final class DatabaseManager {
                         )
                         """)
             }
-            print("[DatabaseManager] ✅ Migration v13_ebook_format complete")
+            AppLog.database.info("[DatabaseManager] ✅ Migration v13_ebook_format complete")
         }
 
         return migrator
@@ -387,7 +372,7 @@ final class DatabaseManager {
             t.column("date_modified", .datetime).notNull()
         }
 
-        print("[DatabaseManager] ✅ Created comics table")
+        AppLog.database.info("[DatabaseManager] ✅ Created comics table")
     }
 
     private func createPublisherMappingsTable(_ db: Database) throws {
@@ -403,7 +388,7 @@ final class DatabaseManager {
             t.column("last_used", .datetime)
         }
 
-        print("[DatabaseManager] ✅ Created publisher_mappings table")
+        AppLog.database.info("[DatabaseManager] ✅ Created publisher_mappings table")
     }
 
     private func createActivityLogTable(_ db: Database) throws {
@@ -417,7 +402,7 @@ final class DatabaseManager {
             t.column("user_confirmed", .boolean).notNull().defaults(to: false)
         }
 
-        print("[DatabaseManager] ✅ Created activity_log table")
+        AppLog.database.info("[DatabaseManager] ✅ Created activity_log table")
     }
 
     private func createIndexes(_ db: Database) throws {
@@ -432,7 +417,7 @@ final class DatabaseManager {
         try db.create(index: "idx_activity_comic", on: "activity_log", columns: ["comic_id"])
         try db.create(index: "idx_activity_timestamp", on: "activity_log", columns: ["timestamp"])
 
-        print("[DatabaseManager] ✅ Created indexes")
+        AppLog.database.info("[DatabaseManager] ✅ Created indexes")
     }
 
     // MARK: - Database Info
@@ -443,11 +428,11 @@ final class DatabaseManager {
         try dbQueue.read { db in
             let tables = try String.fetchAll(
                 db, sql: "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-            print("[DatabaseManager] 📊 Tables: \(tables.joined(separator: ", "))")
+            AppLog.database.debug("[DatabaseManager] 📊 Tables: \(tables.joined(separator: ", "))")
 
             // Get comics count
             let comicsCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM comics") ?? 0
-            print("[DatabaseManager] 📚 Comics in database: \(comicsCount)")
+            AppLog.database.debug("[DatabaseManager] 📚 Comics in database: \(comicsCount)")
         }
     }
 
@@ -461,7 +446,7 @@ final class DatabaseManager {
 
         try await dbQueue.write { db in
             try comic.save(db)
-            print("[DatabaseManager] ✅ Saved comic: \(comic.fileName)")
+            AppLog.database.info("[DatabaseManager] ✅ Saved comic: \(comic.fileName)")
         }
     }
 
@@ -473,7 +458,7 @@ final class DatabaseManager {
 
         return try await dbQueue.read { db in
             let comics = try Comic.fetchAll(db)
-            print("[DatabaseManager] 📚 Fetched \(comics.count) comics from database")
+            AppLog.database.debug("[DatabaseManager] 📚 Fetched \(comics.count) comics from database")
             return comics
         }
     }
@@ -512,7 +497,7 @@ final class DatabaseManager {
 
         try await dbQueue.write { db in
             try comic.update(db)
-            print("[DatabaseManager] ✅ Updated comic: \(comic.fileName)")
+            AppLog.database.info("[DatabaseManager] ✅ Updated comic: \(comic.fileName)")
         }
     }
 
@@ -524,7 +509,7 @@ final class DatabaseManager {
 
         try await dbQueue.write { db in
             try Comic.deleteOne(db, key: id.uuidString)
-            print("[DatabaseManager] 🗑️ Deleted comic with ID: \(id)")
+            AppLog.database.info("[DatabaseManager] 🗑️ Deleted comic with ID: \(id)")
         }
     }
 
@@ -871,7 +856,7 @@ extension DatabaseManager {
                 try event.insert(db)
             }
         } catch {
-            print("[DatabaseManager] ⚠️ Failed to log activity: \(error)")
+            AppLog.database.error("[DatabaseManager] ⚠️ Failed to log activity: \(error)")
         }
     }
 

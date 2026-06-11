@@ -8,6 +8,7 @@
 
 import SwiftUI
 import WebKit
+import os
 
 // MARK: - EPUB Reader View
 
@@ -28,10 +29,15 @@ struct EPUBReaderView: View {
     @State private var autoHideTimer: Timer?
     @State private var showTableOfContents = false
 
+    /// Active theme for this book (per-book override or global setting).
+    private var theme: EPUBTheme {
+        ReaderSettings.shared.effectiveEPUBTheme(for: comic)
+    }
+
     var body: some View {
         ZStack {
             // Background — matches the reader's injected CSS
-            Color(hex: "#1A1A1E")
+            Color(hex: theme.cssColors.background)
                 .ignoresSafeArea()
 
             if isLoading {
@@ -44,7 +50,7 @@ struct EPUBReaderView: View {
                     chapter: chapters[min(currentChapter, chapters.count - 1)],
                     fontSize: fontSize,
                     readingStyle: comic.readingStyle,
-                    theme: ReaderSettings.shared.effectiveEPUBTheme(for: comic),
+                    theme: theme,
                     onTap: { handleTap() },
                     onNavigate: { delta in navigateChapter(by: delta) }
                 )
@@ -270,7 +276,7 @@ private struct EPUBWebViewHelper {
             // Allow read access to the entire temp directory so all epub assets are accessible
             webView.loadFileURL(styledURL, allowingReadAccessTo: FileManager.default.temporaryDirectory)
         } catch {
-            print("[EPUBReaderView] Failed to write styled HTML: \(error)")
+            AppLog.reader.error("[EPUBReaderView] Failed to write styled HTML: \(error)")
             // Fallback to loadHTMLString (often blocks images/css on modern OS)
             webView.loadHTMLString(styledHTML, baseURL: chapter.baseURL)
         }
@@ -354,7 +360,7 @@ private struct EPUBWebViewHelper {
         <script>
         document.addEventListener("DOMContentLoaded", function() {
             document.querySelectorAll('*').forEach(el => {
-                el.style.setProperty('color', '\\(colors.text)', 'important');
+                el.style.setProperty('color', '\(colors.text)', 'important');
                 el.style.setProperty('background-color', 'transparent', 'important');
             });
         });
@@ -363,38 +369,38 @@ private struct EPUBWebViewHelper {
 
         let css = """
         <style>
-        :root { color-scheme: dark; }
+        :root { color-scheme: \(theme == .dark ? "dark" : "light"); }
         * { box-sizing: border-box; }
         html, body {
-            background-color: \\(colors.background) !important;
-            color: \\(colors.text) !important;
+            background-color: \(colors.background) !important;
+            color: \(colors.text) !important;
             font-family: -apple-system, 'Georgia', serif !important;
-            font-size: \\(fontSize)px !important;
+            font-size: \(fontSize)px !important;
             line-height: 1.75 !important;
         }
-        \\(layoutCSS)
-        p, li, div, span, td, th { font-size: inherit !important; color: \\(colors.text) !important; }
-        h1, h2, h3, h4, h5, h6 { color: \\(colors.text) !important; font-weight: 600; margin-top: 1.5em; margin-bottom: 0.5em; }
-        a { color: \\(colors.accent) !important; }
+        \(layoutCSS)
+        p, li, div, span, td, th { font-size: inherit !important; color: \(colors.text) !important; }
+        h1, h2, h3, h4, h5, h6 { color: \(colors.text) !important; font-weight: 600; margin-top: 1.5em; margin-bottom: 0.5em; }
+        a { color: \(colors.accent) !important; }
         img { border-radius: 8px; }
         blockquote {
-            border-left: 3px solid \\(colors.accent);
+            border-left: 3px solid \(colors.accent);
             margin-left: 0; padding-left: 16px;
-            color: \\(colors.text) !important; font-style: italic; opacity: 0.8;
+            color: \(colors.text) !important; font-style: italic; opacity: 0.8;
         }
-        code, pre { background: \\(theme == .dark ? "#2C2C34" : "#F0F0F0") !important; color: \\(colors.text) !important; border-radius: 4px; padding: 2px 6px; }
+        code, pre { background: \(theme == .dark ? "#2C2C34" : "#F0F0F0") !important; color: \(colors.text) !important; border-radius: 4px; padding: 2px 6px; }
         pre { padding: 12px; }
         </style>
         """
         
-        let headInjection = "\\(css)\\n\\(js)\\n\\(stripInlineColorsJS)"
+        let headInjection = "\(css)\n\(js)\n\(stripInlineColorsJS)"
         
         if let range = html.range(of: "</head>", options: .caseInsensitive) {
-            return html.replacingCharacters(in: range, with: "\\(headInjection)</head>")
+            return html.replacingCharacters(in: range, with: "\(headInjection)</head>")
         } else if let range = html.range(of: "<html>", options: .caseInsensitive) {
-            return html.replacingCharacters(in: range, with: "<html><head>\\(headInjection)</head>")
+            return html.replacingCharacters(in: range, with: "<html><head>\(headInjection)</head>")
         } else {
-            return "<html><head>\\(headInjection)</head><body>\\(html)</body></html>"
+            return "<html><head>\(headInjection)</head><body>\(html)</body></html>"
         }
     }
 }

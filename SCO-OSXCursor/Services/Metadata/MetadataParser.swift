@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import os
 
 // MARK: - Metadata Parser
 class MetadataParser {
@@ -29,7 +30,7 @@ class MetadataParser {
             return metadata.toComicMetadata()
 
         } catch {
-            print("[MetadataParser] ❌ Failed to parse ComicInfo.xml: \(error)")
+            AppLog.metadata.error("[MetadataParser] ❌ Failed to parse ComicInfo.xml: \(error)")
             return nil
         }
     }
@@ -82,7 +83,7 @@ class MetadataParser {
         // Convert underscores to spaces
         working = working.replacingOccurrences(of: "_", with: " ")
 
-        print("[MetadataParser] 📝 Parsing filename: \(working)")
+        AppLog.metadata.debug("[MetadataParser] 📝 Parsing filename: \(working)")
 
         // ============================================================
         // Step 0: Extract (of #) mini-series total — must be first
@@ -94,7 +95,7 @@ class MetadataParser {
             // Extract just the number
             if let numRange = matched.range(of: #"\d+"#, options: .regularExpression) {
                 metadata.ofTotal = String(matched[numRange])
-                print("[MetadataParser]    ✓ Of Total: \(metadata.ofTotal!)")
+                AppLog.metadata.debug("[MetadataParser]    ✓ Of Total: \(metadata.ofTotal!)")
             }
             working = working.replacingCharacters(in: ofMatch, with: "")
         }
@@ -117,14 +118,14 @@ class MetadataParser {
                     {
                         if metadata.format == nil {
                             metadata.format = content
-                            print("[MetadataParser]    ✓ Format: \(content)")
+                            AppLog.metadata.debug("[MetadataParser]    ✓ Format: \(content)")
                         }
                     }
 
                     // Capture scan/release group info (text-text patterns like "Kileko-Empire")
                     if content.contains("-") && !content.contains(" ") && content.count > 3 {
                         metadata.scanInformation = content
-                        print("[MetadataParser]    ✓ Scan Info: \(content)")
+                        AppLog.metadata.debug("[MetadataParser]    ✓ Scan Info: \(content)")
                     }
                 }
             }
@@ -148,7 +149,7 @@ class MetadataParser {
                 let yearStr = String(matched[numRange])
                 if let year = Int(yearStr), year > 1900, year < 2100 {
                     metadata.year = year
-                    print("[MetadataParser]    ✓ Year: \(year)")
+                    AppLog.metadata.debug("[MetadataParser]    ✓ Year: \(year)")
                 }
             }
             working = working.replacingCharacters(in: yearMatch, with: "")
@@ -170,7 +171,7 @@ class MetadataParser {
                 if let numRange = matched.range(of: #"\d+"#, options: .regularExpression) {
                     if let vol = Int(String(matched[numRange])) {
                         metadata.volume = vol
-                        print("[MetadataParser]    ✓ Volume: \(vol)")
+                        AppLog.metadata.debug("[MetadataParser]    ✓ Volume: \(vol)")
                     }
                 }
                 working = working.replacingCharacters(in: volMatch, with: "")
@@ -187,7 +188,7 @@ class MetadataParser {
                 if let numRange = matched.range(of: #"\d+"#, options: .regularExpression) {
                     if let vol = Int(String(matched[numRange])) {
                         metadata.volume = vol
-                        print("[MetadataParser]    ✓ Volume (paren): \(vol)")
+                        AppLog.metadata.debug("[MetadataParser]    ✓ Volume (paren): \(vol)")
                     }
                 }
                 working = working.replacingCharacters(in: volMatch, with: "")
@@ -203,7 +204,7 @@ class MetadataParser {
             .replacingOccurrences(of: #"\s*\([^)]*\)"#, with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespaces)
 
-        print("[MetadataParser]    Cleaned for issue: \(cleanedForIssue)")
+        AppLog.metadata.debug("[MetadataParser]    Cleaned for issue: \(cleanedForIssue)")
 
         // Pattern A: #123 or # 123 (explicit hash)
         // Pattern B: "issue 123" or "issue #123"
@@ -232,14 +233,14 @@ class MetadataParser {
                     } else {
                         metadata.number = issueStr
                     }
-                    print("[MetadataParser]    ✓ Issue (\(desc)): \(metadata.number!)")
+                    AppLog.metadata.debug("[MetadataParser]    ✓ Issue (\(desc)): \(metadata.number!)")
 
                     // Split at the issue number — everything before is the series name
                     let seriesName = String(cleanedForIssue[..<issueMatch.lowerBound])
                         .trimmingCharacters(in: CharacterSet(charactersIn: " -#"))
                     if !seriesName.isEmpty {
                         metadata.series = seriesName
-                        print("[MetadataParser]    ✓ Series: \(seriesName)")
+                        AppLog.metadata.debug("[MetadataParser]    ✓ Series: \(seriesName)")
                     }
 
                     issueFound = true
@@ -257,7 +258,7 @@ class MetadataParser {
                 .trimmingCharacters(in: CharacterSet(charactersIn: " -#"))
             if !fallbackSeries.isEmpty {
                 metadata.series = fallbackSeries
-                print("[MetadataParser]    ✓ Series (no issue): \(fallbackSeries)")
+                AppLog.metadata.debug("[MetadataParser]    ✓ Series (no issue): \(fallbackSeries)")
             }
         }
 
@@ -290,13 +291,11 @@ class MetadataParser {
         if metadata.publisher == nil {
             if let detected = PublisherDetector.detectFromCharacters(metadata.series) {
                 metadata.publisher = detected
-                print("[MetadataParser]    ✓ Publisher (from characters): \(detected)")
+                AppLog.metadata.debug("[MetadataParser]    ✓ Publisher (from characters): \(detected)")
             }
         }
 
-        print(
-            "[MetadataParser] ✅ Result: series=\(metadata.series ?? "nil"), issue=\(metadata.number ?? "nil"), year=\(metadata.year.map { String($0) } ?? "nil"), volume=\(metadata.volume.map { String($0) } ?? "nil"), publisher=\(metadata.publisher ?? "nil"), ofTotal=\(metadata.ofTotal ?? "nil")"
-        )
+        AppLog.metadata.info("[MetadataParser] ✅ Result: series=\(metadata.series ?? "nil"), issue=\(metadata.number ?? "nil"), year=\(metadata.year.map { String($0) } ?? "nil"), volume=\(metadata.volume.map { String($0) } ?? "nil"), publisher=\(metadata.publisher ?? "nil"), ofTotal=\(metadata.ofTotal ?? "nil")")
 
         return metadata
     }

@@ -8,6 +8,7 @@
 import Combine
 import Foundation
 import SwiftUI
+import os
 
 // MARK: - Settings ViewModel
 @MainActor
@@ -114,14 +115,14 @@ class SettingsViewModel: ObservableObject {
     /// Save settings to UserDefaults
     private func saveSettings() {
         settings.save()
-        print("[SettingsViewModel] 💾 Settings saved")
+        AppLog.app.info("[SettingsViewModel] 💾 Settings saved")
     }
 
     /// Reset all settings to defaults
     func resetToDefaults() {
         AppSettings.reset()
         self.settings = AppSettings.load()
-        print("[SettingsViewModel] 🔄 Settings reset to defaults")
+        AppLog.app.debug("[SettingsViewModel] 🔄 Settings reset to defaults")
     }
 
     /// Validate naming pattern
@@ -165,7 +166,7 @@ class SettingsViewModel: ObservableObject {
         )
         #endif
         saveSettings()
-        print("[SettingsViewModel] 📁 Home library set: \(url.path)")
+        AppLog.app.debug("[SettingsViewModel] 📁 Home library set: \(url.path)")
     }
 
     /// Resolves the stored bookmark → URL, refreshing it if stale.

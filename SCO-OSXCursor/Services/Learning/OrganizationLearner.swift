@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import os
 
 // MARK: - Organization Learner
 /// Service that learns naming patterns from imported books and applies them to future imports
@@ -192,13 +193,13 @@ class OrganizationLearner {
     private func updatePublisherMappingConfidence(original: String, corrected: String) async {
         // This would update the publisher_mappings table
         // For now, we'll log it - full implementation would update database
-        print("[OrganizationLearner] 📝 Learned correction: '\(original)' → '\(corrected)'")
+        AppLog.learning.debug("[OrganizationLearner] 📝 Learned correction: '\(original)' → '\(corrected)'")
     }
     
     /// Learn series-to-publisher association
     private func learnSeriesAssociation(series: String, publisher: String) async {
         // Store association for future use
-        print("[OrganizationLearner] 📝 Learned association: '\(series)' → '\(publisher)'")
+        AppLog.learning.debug("[OrganizationLearner] 📝 Learned association: '\(series)' → '\(publisher)'")
     }
     
     /// Adjust pattern confidence based on correction
@@ -232,7 +233,7 @@ class OrganizationLearner {
     private func saveLearnedPattern(_ pattern: LearnedPattern) async {
         // TODO: Save to database when table is created
         // For now, patterns are stored in memory
-        print("[OrganizationLearner] 💾 Saved pattern for '\(pattern.publisher)': \(pattern.pattern) (confidence: \(Int(pattern.confidence * 100))%)")
+        AppLog.learning.info("[OrganizationLearner] 💾 Saved pattern for '\(pattern.publisher)': \(pattern.pattern) (confidence: \(Int(pattern.confidence * 100))%)")
     }
     
     /// Get all learned patterns
@@ -244,7 +245,7 @@ class OrganizationLearner {
     func clearAllPatterns() async {
         learnedPatterns.removeAll()
         // TODO: Clear from database
-        print("[OrganizationLearner] 🗑️ Cleared all learned patterns")
+        AppLog.learning.debug("[OrganizationLearner] 🗑️ Cleared all learned patterns")
     }
     
     /// Get pattern count

@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import os
 
 // MARK: - LibraryRelocator
 
@@ -65,7 +66,7 @@ final class LibraryRelocator {
                 )
             )
 
-            print("[LibraryRelocator] ✅ Relocated \(movedComic.fileName) after metadata change")
+            AppLog.files.info("[LibraryRelocator] ✅ Relocated \(movedComic.fileName) after metadata change")
             return movedComic
 
         } catch {
@@ -84,7 +85,7 @@ final class LibraryRelocator {
                 )
             )
 
-            print("[LibraryRelocator] ❌ Move failed for \(new.fileName): \(error)")
+            AppLog.files.error("[LibraryRelocator] ❌ Move failed for \(new.fileName): \(error)")
             return flagged
         }
     }

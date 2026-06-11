@@ -6,6 +6,7 @@
 import Combine
 import SwiftUI
 import UniformTypeIdentifiers
+import os
 
 // MARK: - ViewModel
 
@@ -103,21 +104,17 @@ final class BatchPublisherBrandingViewModel: ObservableObject {
         var matched = 0
         for fileURL in imageFiles {
             let stem = fileURL.deletingPathExtension().lastPathComponent
-            print("[BatchPublisherBranding] Checking file: \(fileURL.lastPathComponent)")
+            AppLog.app.debug("[BatchPublisherBranding] Checking file: \(fileURL.lastPathComponent)")
 
             // Find the best-matching publisher (exact first, then prefix)
             guard let publisher = bestMatch(stem: stem, candidates: candidates) else {
-                print("[BatchPublisherBranding] No matching publisher for stem: '\(stem)'")
+                AppLog.app.debug("[BatchPublisherBranding] No matching publisher for stem: '\(stem)'")
                 continue
             }
-            print(
-                "[BatchPublisherBranding] Matched file \(fileURL.lastPathComponent) to publisher: \(publisher)"
-            )
+            AppLog.app.debug("[BatchPublisherBranding] Matched file \(fileURL.lastPathComponent) to publisher: \(publisher)")
 
             guard let data = try? Data(contentsOf: fileURL) else {
-                print(
-                    "[BatchPublisherBranding] Failed to read data from \(fileURL.lastPathComponent)"
-                )
+                AppLog.app.error("[BatchPublisherBranding] Failed to read data from \(fileURL.lastPathComponent)")
                 continue
             }
 
@@ -127,9 +124,9 @@ final class BatchPublisherBrandingViewModel: ObservableObject {
                     entries[idx] = (name: publisher, imageData: data)
                 }
                 matched += 1
-                print("[BatchPublisherBranding] Successfully saved banner for \(publisher)")
+                AppLog.app.info("[BatchPublisherBranding] Successfully saved banner for \(publisher)")
             } catch {
-                print("[BatchPublisherBranding] Failed to save banner for \(publisher): \(error)")
+                AppLog.app.error("[BatchPublisherBranding] Failed to save banner for \(publisher): \(error)")
             }
         }
 

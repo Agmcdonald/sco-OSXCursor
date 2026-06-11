@@ -9,6 +9,7 @@
 import Foundation
 import SwiftUI
 import ZIPFoundation
+import os
 
 // MARK: - EPUB Chapter
 
@@ -95,7 +96,7 @@ final class EPUBReader: ComicReaderProtocol {
 
         try fm.createDirectory(at: tmpBase, withIntermediateDirectories: true)
         try fm.unzipItem(at: url, to: tmpBase)
-        print("[EPUBReader] ✅ Extracted EPUB to: \(tmpBase.path)")
+        AppLog.reader.info("[EPUBReader] ✅ Extracted EPUB to: \(tmpBase.path)")
         return tmpBase
     }
 

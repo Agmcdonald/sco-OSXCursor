@@ -8,6 +8,7 @@
 import Combine
 import Foundation
 import SwiftUI
+import os
 
 /// ViewModel for the Organize (Staging) workflow.
 /// Manages temporary `StagedComic` objects before they are committed to the Library.
@@ -109,7 +110,7 @@ final class OrganizeViewModel: ObservableObject {
         }
 
         isProcessing = false
-        print("[OrganizeViewModel] Added \(newComics.count) files to staging.")
+        AppLog.organize.debug("[OrganizeViewModel] Added \(newComics.count) files to staging.")
 
         // Enrich from embedded ComicInfo.xml in the background — embedded
         // metadata beats filename guessing and raises auto-match confidence.
@@ -328,7 +329,7 @@ final class OrganizeViewModel: ObservableObject {
             comic.reevaluate(userEdited: true)
             stagedComics[index] = comic
         }
-        print("[OrganizeViewModel] ✏️ Bulk-updated \(ids.count) staged comics")
+        AppLog.organize.debug("[OrganizeViewModel] ✏️ Bulk-updated \(ids.count) staged comics")
     }
 
     /// Check or uncheck every staged comic (quick selection for bulk edit)
@@ -373,22 +374,18 @@ final class OrganizeViewModel: ObservableObject {
                         try FileManager.default.moveItem(at: originalURL, to: newURL)
                         return newURL
                     } else {
-                        print(
-                            "[OrganizeViewModel] ⚠️ Target file exists, skipping rename: \(newFileName)"
-                        )
+                        AppLog.organize.error("[OrganizeViewModel] ⚠️ Target file exists, skipping rename: \(newFileName)")
                         return nil
                     }
                 } catch {
-                    print("[OrganizeViewModel] ❌ Rename failed: \(error)")
+                    AppLog.organize.error("[OrganizeViewModel] ❌ Rename failed: \(error)")
                     return nil
                 }
             }.value
 
             if let renamedURL {
                 finalURL = renamedURL
-                print(
-                    "[OrganizeViewModel] 📝 Renamed staged file: \(originalURL.lastPathComponent) → \(newFileName)"
-                )
+                AppLog.organize.debug("[OrganizeViewModel] 📝 Renamed staged file: \(originalURL.lastPathComponent) → \(newFileName)")
             }
         }
 
@@ -442,7 +439,7 @@ final class OrganizeViewModel: ObservableObject {
                 lastMoveDestination = (rel as NSString).deletingLastPathComponent
                 await libraryViewModel.logActivity(.fileMoved, comic: movedComic, new: rel)
             } catch {
-                print("[OrganizeViewModel] ⚠️ Auto-sort failed: \(error)")
+                AppLog.organize.error("[OrganizeViewModel] ⚠️ Auto-sort failed: \(error)")
                 lastMoveDestination = nil
             }
         } else {

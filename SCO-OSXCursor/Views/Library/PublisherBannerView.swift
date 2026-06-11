@@ -5,6 +5,7 @@
 
 import SwiftUI
 import UniformTypeIdentifiers
+import os
 
 #if os(macOS)
     import AppKit
@@ -129,7 +130,7 @@ struct PublisherBannerView: View {
                         self.imageData = data
                     }
                 } else if let error = error {
-                    print("[PublisherBannerView] Drop error: \(error)")
+                    AppLog.library.error("[PublisherBannerView] Drop error: \(error)")
                 }
             }
             return true
@@ -195,7 +196,7 @@ struct PublisherBannerView: View {
                 }
             }
         case .failure(let error):
-            print("[PublisherBannerView] Picker error: \(error)")
+            AppLog.library.error("[PublisherBannerView] Picker error: \(error)")
         }
     }
 }

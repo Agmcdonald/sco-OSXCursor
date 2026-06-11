@@ -7,6 +7,7 @@
 
 import SwiftUI
 import UniformTypeIdentifiers
+import os
 
 @MainActor
 struct SettingsView: View {
@@ -626,7 +627,7 @@ struct SettingsView: View {
                 homeLibraryStatus = viewModel.homeLibraryStatus()
             }
         case .failure(let error):
-            print("Failed to select path: \(error.localizedDescription)")
+            AppLog.app.error("Failed to select path: \(error.localizedDescription)")
         }
     }
 

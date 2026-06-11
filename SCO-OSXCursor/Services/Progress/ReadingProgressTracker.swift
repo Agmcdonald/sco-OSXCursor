@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import os
 
 // MARK: - Reading Progress Model
 struct ReadingProgress: Codable {
@@ -46,9 +47,9 @@ class ReadingProgressTracker {
         // Encode to JSON
         if let encoded = try? JSONEncoder().encode(allProgress) {
             defaults.set(encoded, forKey: userDefaultsKey)
-            print("[ProgressTracker] ✅ Saved progress for comic \(progress.comicID): Page \(progress.currentPage + 1)/\(progress.totalPages)")
+            AppLog.files.info("[ProgressTracker] ✅ Saved progress for comic \(progress.comicID): Page \(progress.currentPage + 1)/\(progress.totalPages)")
         } else {
-            print("[ProgressTracker] ❌ Failed to encode progress")
+            AppLog.files.error("[ProgressTracker] ❌ Failed to encode progress")
         }
     }
     
@@ -107,14 +108,14 @@ class ReadingProgressTracker {
         
         if let encoded = try? JSONEncoder().encode(allProgress) {
             defaults.set(encoded, forKey: userDefaultsKey)
-            print("[ProgressTracker] 🗑️ Deleted progress for comic \(comicID)")
+            AppLog.files.info("[ProgressTracker] 🗑️ Deleted progress for comic \(comicID)")
         }
     }
     
     /// Clear all progress
     func clearAllProgress() {
         defaults.removeObject(forKey: userDefaultsKey)
-        print("[ProgressTracker] 🗑️ Cleared all reading progress")
+        AppLog.files.debug("[ProgressTracker] 🗑️ Cleared all reading progress")
     }
     
     // MARK: - Statistics

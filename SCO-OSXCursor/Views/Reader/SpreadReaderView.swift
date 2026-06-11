@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import os
 
 // MARK: - Spread Reader View (Two-Page Display)
 @MainActor
@@ -36,7 +37,7 @@ struct SpreadReaderView: View {
 
     @inline(__always) private func debugLog(_ msg: @autoclosure () -> String) {
         #if DEBUG
-            print(msg())
+            AppLog.reader.debug("\(msg())")
         #endif
     }
 
@@ -156,7 +157,7 @@ struct SpreadView: View {
 
     @inline(__always) private func debugLog(_ msg: @autoclosure () -> String) {
         #if DEBUG
-            print(msg())
+            AppLog.reader.debug("\(msg())")
         #endif
     }
 

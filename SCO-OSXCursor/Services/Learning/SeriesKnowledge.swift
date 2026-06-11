@@ -15,6 +15,7 @@
 
 import Combine
 import Foundation
+import os
 
 @MainActor
 final class SeriesKnowledge: ObservableObject {
@@ -56,7 +57,7 @@ final class SeriesKnowledge: ObservableObject {
                 knownPublishers[entry.normalizedName] = entry.name
             }
         }
-        print("[SeriesKnowledge] 📚 Loaded \(records.count) learned series")
+        AppLog.learning.debug("[SeriesKnowledge] 📚 Loaded \(records.count) learned series")
     }
 
     private func rebuildIndexes() {
@@ -227,9 +228,7 @@ final class SeriesKnowledge: ObservableObject {
                 records[i] = record
                 rebuildIndexes()
                 persist(record)
-                print(
-                    "[SeriesKnowledge] 🎓 Learned alias: '\(originalSeries ?? "")' → '\(record.seriesName)'"
-                )
+                AppLog.learning.debug("[SeriesKnowledge] 🎓 Learned alias: '\(originalSeries ?? "")' → '\(record.seriesName)'")
             }
         }
 

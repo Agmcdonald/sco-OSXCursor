@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import os
 
 #if os(macOS)
     import AppKit
@@ -507,10 +508,10 @@ struct ComicDetailView: View {
         editedComic.summary = draftSummary.nilIfEmpty
         editedComic.rating = draftRating > 0 ? draftRating : nil
 
-        print("[ComicDetailView] 💾 Saving changes...")
-        print("[ComicDetailView]    Title: '\(editedComic.title ?? "nil")'")
-        print("[ComicDetailView]    Publisher: '\(editedComic.publisher ?? "nil")'")
-        print("[ComicDetailView]    Series: '\(editedComic.series ?? "nil")'")
+        AppLog.library.debug("[ComicDetailView] 💾 Saving changes...")
+        AppLog.library.debug("[ComicDetailView]    Title: '\(editedComic.title ?? "nil")'")
+        AppLog.library.debug("[ComicDetailView]    Publisher: '\(editedComic.publisher ?? "nil")'")
+        AppLog.library.debug("[ComicDetailView]    Series: '\(editedComic.series ?? "nil")'")
 
         // Auto-add new values to the Knowledge Base
         let fieldsToCheck: [(String?, KnowledgeEntry.EntryType)] = [
@@ -531,9 +532,7 @@ struct ComicDetailView: View {
                 if exists == false {
                     let newEntry = KnowledgeEntry(type: type, name: name)
                     try? await DatabaseManager.shared.saveKnowledgeEntry(newEntry)
-                    print(
-                        "[ComicDetailView] ➕ Auto-added '\(name)' to \(type.pluralName) Knowledge Base"
-                    )
+                    AppLog.library.debug("[ComicDetailView] ➕ Auto-added '\(name)' to \(type.pluralName) Knowledge Base")
                 }
             }
         }
@@ -542,9 +541,9 @@ struct ComicDetailView: View {
         var finalComic = editedComic
         finalComic.dateModified = Date()
 
-        print("[ComicDetailView]    Calling onSave closure...")
+        AppLog.library.debug("[ComicDetailView]    Calling onSave closure...")
         try await onSave(finalComic)
-        print("[ComicDetailView]    ✅ Save completed successfully")
+        AppLog.library.info("[ComicDetailView]    ✅ Save completed successfully")
 
         // Learn from corrections if publisher or series changed
         let publisherChanged = finalComic.publisher != comic.publisher
@@ -559,7 +558,7 @@ struct ComicDetailView: View {
                     originalSeries: comic.series,
                     correctedSeries: finalComic.series
                 )
-                print("[ComicDetailView] ✅ Learned from correction")
+                AppLog.library.info("[ComicDetailView] ✅ Learned from correction")
             }
         }
 

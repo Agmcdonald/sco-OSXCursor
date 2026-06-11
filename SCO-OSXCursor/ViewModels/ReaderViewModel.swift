@@ -8,6 +8,7 @@
 import Combine
 import Foundation
 import SwiftUI
+import os
 
 #if canImport(UIKit)
     import UIKit
@@ -121,17 +122,15 @@ class ReaderViewModel: ObservableObject {
     // MARK: - Resolve Bookmark
     private func resolveFileURL(from comic: Comic) throws -> URL {
         let timestamp = Date().timeIntervalSince1970
-        print(
-            "\n[ATTEMPT #\(currentAttempt)] [\(timestamp)] [ReaderViewModel] resolveFileURL() ENTRY"
-        )
-        print("[ATTEMPT #\(currentAttempt)] Comic: \(comic.fileName)")
-        print("[ATTEMPT #\(currentAttempt)] FilePath: \(comic.resolvedURL.path)")
-        print("[ATTEMPT #\(currentAttempt)] Has bookmark: \(comic.bookmarkData != nil)")
+        AppLog.reader.debug("[ATTEMPT #\(currentAttempt)] [\(timestamp)] [ReaderViewModel] resolveFileURL() ENTRY")
+        AppLog.reader.debug("[ATTEMPT #\(currentAttempt)] Comic: \(comic.fileName)")
+        AppLog.reader.debug("[ATTEMPT #\(currentAttempt)] FilePath: \(comic.resolvedURL.path)")
+        AppLog.reader.debug("[ATTEMPT #\(currentAttempt)] Has bookmark: \(comic.bookmarkData != nil)")
 
         // Use Comic helper for clean detection
         let isBundled = Comic.isBundled(comic)
         #if DEBUG
-            print("[Reader][Attempt #\(currentAttempt)] Is bundled: \(isBundled)")
+            AppLog.reader.debug("[Reader][Attempt #\(currentAttempt)] Is bundled: \(isBundled)")
         #endif
 
         if isBundled {
@@ -145,26 +144,20 @@ class ReaderViewModel: ObservableObject {
             if let bundleURL = Bundle.main.url(forResource: baseName, withExtension: fileExtension)
             {
                 #if DEBUG
-                    print("[Reader][Attempt #\(currentAttempt)] 📦 Re-resolved: \(fileName)")
-                    print("[Reader][Attempt #\(currentAttempt)] Bundle URL: \(bundleURL.path)")
+                    AppLog.reader.debug("[Reader][Attempt #\(currentAttempt)] 📦 Re-resolved: \(fileName)")
+                    AppLog.reader.debug("[Reader][Attempt #\(currentAttempt)] Bundle URL: \(bundleURL.path)")
                 #endif
 
                 // Validate the file actually exists (catches Xcode bundle-copy bugs)
                 if FileManager.default.fileExists(atPath: bundleURL.path) {
                     return bundleURL
                 } else {
-                    print(
-                        "[Reader][Attempt #\(currentAttempt)] ⚠️ Bundle URL exists but file missing: \(bundleURL.path)"
-                    )
+                    AppLog.reader.error("[Reader][Attempt #\(currentAttempt)] ⚠️ Bundle URL exists but file missing: \(bundleURL.path)")
                     throw ComicReaderError.fileNotFound
                 }
             } else {
-                print(
-                    "[Reader][Attempt #\(currentAttempt)] ⚠️ Could not locate bundled comic \(fileName)."
-                )
-                print(
-                    "[Reader] ⚠️ Falling back to user documents – likely stale reference or missing asset."
-                )
+                AppLog.reader.error("[Reader][Attempt #\(currentAttempt)] ⚠️ Could not locate bundled comic \(fileName).")
+                AppLog.reader.error("[Reader] ⚠️ Falling back to user documents – likely stale reference or missing asset.")
                 throw ComicReaderError.fileNotFound
             }
         }
@@ -172,9 +165,7 @@ class ReaderViewModel: ObservableObject {
         #if os(macOS)
             // On macOS, try to resolve security bookmark if available
             if let bookmarkData = comic.bookmarkData {
-                print(
-                    "[ATTEMPT #\(currentAttempt)] Attempting to resolve bookmark (\(bookmarkData.count) bytes)"
-                )
+                AppLog.reader.debug("[ATTEMPT #\(currentAttempt)] Attempting to resolve bookmark (\(bookmarkData.count) bytes)")
                 var isStale = false
                 do {
                     let resolvedURL = try URL(
@@ -184,50 +175,38 @@ class ReaderViewModel: ObservableObject {
                         bookmarkDataIsStale: &isStale
                     )
 
-                    print("[ATTEMPT #\(currentAttempt)] Bookmark resolved. Is stale: \(isStale)")
+                    AppLog.reader.debug("[ATTEMPT #\(currentAttempt)] Bookmark resolved. Is stale: \(isStale)")
 
                     if isStale {
-                        print(
-                            "[ATTEMPT #\(currentAttempt)] ⚠️ Bookmark is stale for: \(comic.fileName) — attempting refresh"
-                        )
+                        AppLog.reader.error("[ATTEMPT #\(currentAttempt)] ⚠️ Bookmark is stale for: \(comic.fileName) — attempting refresh")
                         // Try to access the URL and issue a fresh bookmark
                         return try refreshAndReturnURL(staleURL: resolvedURL, comic: comic)
                     }
 
                     // Start accessing the security-scoped resource
-                    print(
-                        "[ATTEMPT #\(currentAttempt)] Attempting to start security-scoped access..."
-                    )
+                    AppLog.reader.debug("[ATTEMPT #\(currentAttempt)] Attempting to start security-scoped access...")
                     guard resolvedURL.startAccessingSecurityScopedResource() else {
-                        print(
-                            "[ATTEMPT #\(currentAttempt)] ❌ Failed to start accessing security-scoped resource for: \(comic.fileName)"
-                        )
+                        AppLog.reader.error("[ATTEMPT #\(currentAttempt)] ❌ Failed to start accessing security-scoped resource for: \(comic.fileName)")
                         throw ComicReaderError.accessDenied
                     }
 
-                    print(
-                        "[ATTEMPT #\(currentAttempt)] ✅ Resolved bookmark and started access for: \(comic.fileName)"
-                    )
+                    AppLog.reader.info("[ATTEMPT #\(currentAttempt)] ✅ Resolved bookmark and started access for: \(comic.fileName)")
                     return resolvedURL
                 } catch let err as ComicReaderError {
                     throw err
                 } catch {
-                    print(
-                        "[ATTEMPT #\(currentAttempt)] ⚠️ Failed to resolve bookmark for \(comic.fileName): \(error)"
-                    )
-                    print("[ATTEMPT #\(currentAttempt)]    Attempting fallback to raw URL")
+                    AppLog.reader.error("[ATTEMPT #\(currentAttempt)] ⚠️ Failed to resolve bookmark for \(comic.fileName): \(error)")
+                    AppLog.reader.debug("[ATTEMPT #\(currentAttempt)]    Attempting fallback to raw URL")
                     return try refreshAndReturnURL(staleURL: comic.resolvedURL, comic: comic)
                 }
             } else {
-                print("[ATTEMPT #\(currentAttempt)] No bookmark data — attempting to create one")
+                AppLog.reader.debug("[ATTEMPT #\(currentAttempt)] No bookmark data — attempting to create one")
                 return try refreshAndReturnURL(staleURL: comic.resolvedURL, comic: comic)
             }
         #else
             // iOS / iPadOS: resolve bookmark and start security-scoped access
             if let bookmarkData = comic.bookmarkData {
-                print(
-                    "[ATTEMPT #\(currentAttempt)] [iOS] Attempting to resolve bookmark (\(bookmarkData.count) bytes)"
-                )
+                AppLog.reader.debug("[ATTEMPT #\(currentAttempt)] [iOS] Attempting to resolve bookmark (\(bookmarkData.count) bytes)")
                 var isStale = false
                 do {
                     let resolvedURL = try URL(
@@ -236,12 +215,10 @@ class ReaderViewModel: ObservableObject {
                         relativeTo: nil,
                         bookmarkDataIsStale: &isStale
                     )
-                    print(
-                        "[ATTEMPT #\(currentAttempt)] [iOS] Bookmark resolved. Is stale: \(isStale)"
-                    )
+                    AppLog.reader.debug("[ATTEMPT #\(currentAttempt)] [iOS] Bookmark resolved. Is stale: \(isStale)")
 
                     let started = resolvedURL.startAccessingSecurityScopedResource()
-                    print("[ATTEMPT #\(currentAttempt)] [iOS] Security access started: \(started)")
+                    AppLog.reader.debug("[ATTEMPT #\(currentAttempt)] [iOS] Security access started: \(started)")
                     if started {
                         cleanupURL = resolvedURL
                     }
@@ -263,14 +240,12 @@ class ReaderViewModel: ObservableObject {
 
                     return resolvedURL
                 } catch {
-                    print(
-                        "[ATTEMPT #\(currentAttempt)] [iOS] Failed to resolve bookmark: \(error). Falling back to raw URL."
-                    )
+                    AppLog.reader.error("[ATTEMPT #\(currentAttempt)] [iOS] Failed to resolve bookmark: \(error). Falling back to raw URL.")
                 }
             }
 
             // iOS fallback: raw URL (works for bundled files; handled above for non-bundled)
-            print("[ATTEMPT #\(currentAttempt)] [iOS] Using original URL (no bookmark / fallback)")
+            AppLog.reader.debug("[ATTEMPT #\(currentAttempt)] [iOS] Using original URL (no bookmark / fallback)")
             return comic.resolvedURL
         #endif
     }
@@ -281,9 +256,7 @@ class ReaderViewModel: ObservableObject {
         private func refreshAndReturnURL(staleURL: URL, comic: Comic) throws -> URL {
             // Check the file is reachable at all
             guard FileManager.default.fileExists(atPath: staleURL.path) else {
-                print(
-                    "[ATTEMPT #\(currentAttempt)] ❌ File not accessible at \(staleURL.path) — throwing accessDenied"
-                )
+                AppLog.reader.error("[ATTEMPT #\(currentAttempt)] ❌ File not accessible at \(staleURL.path) — throwing accessDenied")
                 throw ComicReaderError.accessDenied
             }
 
@@ -294,9 +267,7 @@ class ReaderViewModel: ObservableObject {
                     includingResourceValuesForKeys: nil,
                     relativeTo: nil
                 )
-                print(
-                    "[ATTEMPT #\(currentAttempt)] ✅ Created fresh bookmark (\(freshBookmark.count) bytes)"
-                )
+                AppLog.reader.info("[ATTEMPT #\(currentAttempt)] ✅ Created fresh bookmark (\(freshBookmark.count) bytes)")
 
                 // Notify LibraryViewModel to persist the refreshed bookmark
                 NotificationCenter.default.post(
@@ -314,9 +285,7 @@ class ReaderViewModel: ObservableObject {
             } catch let err as ComicReaderError {
                 throw err
             } catch {
-                print(
-                    "[ATTEMPT #\(currentAttempt)] ⚠️ Could not create fresh bookmark: \(error). Trying raw access."
-                )
+                AppLog.reader.error("[ATTEMPT #\(currentAttempt)] ⚠️ Could not create fresh bookmark: \(error). Trying raw access.")
                 // Final fallback: use the URL as-is (may work for iCloud Drive files)
                 guard staleURL.startAccessingSecurityScopedResource() else {
                     throw ComicReaderError.accessDenied
@@ -335,11 +304,9 @@ class ReaderViewModel: ObservableObject {
         currentAttempt = Self.attemptCounter
 
         let startTime = Date().timeIntervalSince1970
-        print("\n" + String(repeating: "=", count: 80))
-        print("[ATTEMPT #\(currentAttempt)] [\(startTime)] [ReaderViewModel] loadComic() ENTRY")
-        print("[ATTEMPT #\(currentAttempt)] Comic: \(comic.fileName)")
-        print("[ATTEMPT #\(currentAttempt)] File type: \(comic.fileType.rawValue)")
-        print(String(repeating: "=", count: 80))
+        AppLog.reader.debug("[ATTEMPT #\(currentAttempt)] [\(startTime)] [ReaderViewModel] loadComic() ENTRY")
+        AppLog.reader.debug("[ATTEMPT #\(currentAttempt)] Comic: \(comic.fileName)")
+        AppLog.reader.debug("[ATTEMPT #\(currentAttempt)] File type: \(comic.fileType.rawValue)")
 
         isLoading = true
         errorMessage = nil
@@ -347,35 +314,29 @@ class ReaderViewModel: ObservableObject {
 
         do {
             // Resolve the file URL from bookmark (critical for security access!)
-            print(
-                "[ATTEMPT #\(currentAttempt)] [\(Date().timeIntervalSince1970)] Calling resolveFileURL()..."
-            )
+            AppLog.reader.debug("[ATTEMPT #\(currentAttempt)] [\(Date().timeIntervalSince1970)] Calling resolveFileURL()...")
             let fileURL = try resolveFileURL(from: comic)
-            print(
-                "[ATTEMPT #\(currentAttempt)] [\(Date().timeIntervalSince1970)] resolveFileURL() SUCCESS"
-            )
-            print("[ATTEMPT #\(currentAttempt)] Resolved URL: \(fileURL.path)")
+            AppLog.reader.info("[ATTEMPT #\(currentAttempt)] [\(Date().timeIntervalSince1970)] resolveFileURL() SUCCESS")
+            AppLog.reader.debug("[ATTEMPT #\(currentAttempt)] Resolved URL: \(fileURL.path)")
             resolvedURL = fileURL
 
             let reader: ComicReaderProtocol
 
             // Select appropriate reader based on file type
-            print(
-                "[ATTEMPT #\(currentAttempt)] Selecting reader for type: \(comic.fileType.rawValue)"
-            )
+            AppLog.reader.debug("[ATTEMPT #\(currentAttempt)] Selecting reader for type: \(comic.fileType.rawValue)")
             switch comic.fileType {
             case .cbz:
                 reader = cbzReader
-                print("[ATTEMPT #\(currentAttempt)] Using CBZReader")
+                AppLog.reader.debug("[ATTEMPT #\(currentAttempt)] Using CBZReader")
             case .pdf:
                 reader = pdfReader
-                print("[ATTEMPT #\(currentAttempt)] Using PDFReader")
+                AppLog.reader.debug("[ATTEMPT #\(currentAttempt)] Using PDFReader")
             case .cbr:
                 reader = cbrReader
-                print("[ATTEMPT #\(currentAttempt)] Using CBRReader")
+                AppLog.reader.debug("[ATTEMPT #\(currentAttempt)] Using CBRReader")
             case .epub:
                 // EPUBs are handled by EPUBContentView, not ReaderViewModel
-                print("[ATTEMPT #\(currentAttempt)] ⚠️ EPUB reached ReaderViewModel — not supported")
+                AppLog.reader.error("[ATTEMPT #\(currentAttempt)] ⚠️ EPUB reached ReaderViewModel — not supported")
                 throw ComicReaderError.invalidFormat
             }
 
@@ -384,9 +345,7 @@ class ReaderViewModel: ObservableObject {
             loadingProgress = 0.2
             let fullComic = try await reader.loadComic(from: fileURL)
             #if DEBUG
-                print(
-                    "[ATTEMPT #\(currentAttempt)] reader.loadComic() SUCCESS — \(fullComic.totalPages) pages"
-                )
+                AppLog.reader.info("[ATTEMPT #\(currentAttempt)] reader.loadComic() SUCCESS — \(fullComic.totalPages) pages")
             #endif
 
             loadingProgress = 1.0
@@ -427,20 +386,15 @@ class ReaderViewModel: ObservableObject {
             schedulePrefetch(around: currentPage)
 
             let endTime = Date().timeIntervalSince1970
-            print(
-                "[ATTEMPT #\(currentAttempt)] [\(endTime)] ✅ loadComic() SUCCESS - Total time: \(String(format: "%.3f", endTime - startTime))s"
-            )
-            print(String(repeating: "=", count: 80) + "\n")
+            AppLog.reader.info("[ATTEMPT #\(currentAttempt)] [\(endTime)] ✅ loadComic() SUCCESS - Total time: \(String(format: "%.3f", endTime - startTime))s")
 
         } catch let error as ComicReaderError {
-            print(
-                "[ATTEMPT #\(currentAttempt)] ❌ ComicReaderError: \(error.errorDescription ?? "Unknown")"
-            )
+            AppLog.reader.error("[ATTEMPT #\(currentAttempt)] ❌ ComicReaderError: \(error.errorDescription ?? "Unknown")")
             errorMessage = error.errorDescription
         } catch {
-            print("[ATTEMPT #\(currentAttempt)] ❌ Unexpected error: \(error.localizedDescription)")
-            print("[ATTEMPT #\(currentAttempt)] Error type: \(type(of: error))")
-            print("[ATTEMPT #\(currentAttempt)] Error details: \(error)")
+            AppLog.reader.error("[ATTEMPT #\(currentAttempt)] ❌ Unexpected error: \(error.localizedDescription)")
+            AppLog.reader.error("[ATTEMPT #\(currentAttempt)] Error type: \(type(of: error))")
+            AppLog.reader.error("[ATTEMPT #\(currentAttempt)] Error details: \(error)")
             errorMessage = "An unexpected error occurred: \(error.localizedDescription)"
         }
 
@@ -448,10 +402,7 @@ class ReaderViewModel: ObservableObject {
         loadingProgress = 0.0
 
         let endTime = Date().timeIntervalSince1970
-        print(
-            "[ATTEMPT #\(currentAttempt)] [\(endTime)] loadComic() EXIT - Total time: \(String(format: "%.3f", endTime - startTime))s"
-        )
-        print(String(repeating: "=", count: 80) + "\n")
+        AppLog.reader.debug("[ATTEMPT #\(currentAttempt)] [\(endTime)] loadComic() EXIT - Total time: \(String(format: "%.3f", endTime - startTime))s")
     }
 
     // MARK: - Accept Pre-fetched Comic (iOS fast-path)
@@ -505,7 +456,7 @@ class ReaderViewModel: ObservableObject {
             schedulePrefetch(around: currentPage)
 
             #if DEBUG
-                print("[ReaderViewModel] ⚡ Accepted pre-fetched comic — no spinner shown")
+                AppLog.reader.debug("[ReaderViewModel] ⚡ Accepted pre-fetched comic — no spinner shown")
             #endif
         }
     #endif
@@ -528,7 +479,7 @@ class ReaderViewModel: ObservableObject {
         // Applies to both macOS and iOS — each platform starts access in resolveFileURL.
         if let url = cleanupURL {
             url.stopAccessingSecurityScopedResource()
-            print("🧹 Released security access for: \(url.lastPathComponent)")
+            AppLog.reader.debug("🧹 Released security access for: \(url.lastPathComponent)")
         }
     }
 
@@ -588,7 +539,7 @@ class ReaderViewModel: ObservableObject {
         }
 
         #if DEBUG
-            print("[ReaderViewModel] turn(by: \(steps)) -> page \(target) (spread:\(isSpreadMode), rtl:\(isMangaRTL))")
+            AppLog.reader.debug("[ReaderViewModel] turn(by: \(steps)) -> page \(target) (spread:\(isSpreadMode), rtl:\(isMangaRTL))")
         #endif
     }
     
@@ -709,7 +660,7 @@ class ReaderViewModel: ObservableObject {
             }
         } catch {
             #if DEBUG
-                print("[ReaderViewModel] ⚠️ Prefetch failed for page \(pageIndex + 1): \(error)")
+                AppLog.reader.error("[ReaderViewModel] ⚠️ Prefetch failed for page \(pageIndex + 1): \(error)")
             #endif
         }
     }
@@ -790,7 +741,7 @@ class ReaderViewModel: ObservableObject {
             let fileURL = resolvedURL
         else {
             #if DEBUG
-                print("[ReaderViewModel] ⚠️ Missing comic or URL for lazy loading")
+                AppLog.reader.error("[ReaderViewModel] ⚠️ Missing comic or URL for lazy loading")
             #endif
             return
         }
@@ -914,14 +865,14 @@ extension ReaderViewModel {
     private func pageTurnHaptic() {
         #if os(iOS)
             #if DEBUG
-                print("🔊 [Haptic] Firing haptic feedback")
+                AppLog.reader.debug("🔊 [Haptic] Firing haptic feedback")
             #endif
             let g = UIImpactFeedbackGenerator(style: .light)
             g.prepare()
             g.impactOccurred()
         #else
             #if DEBUG
-                print("⚠️ [Haptic] Skipped (not iOS)")
+                AppLog.reader.error("⚠️ [Haptic] Skipped (not iOS)")
             #endif
         #endif
     }
