@@ -102,6 +102,11 @@ struct ContentView: View {
                 }
             }
         #else
+            // macOS: the window's NSToolbar floats ABOVE our SwiftUI overlay
+            // and silently swallows clicks across the whole top band — the
+            // reader's Close/Settings/ToC buttons never received them. Hide
+            // the toolbar while a book is open.
+            .toolbar(libraryViewModel.readingComic != nil ? .hidden : .automatic, for: .windowToolbar)
             // macOS: overlay on top of the split view
             .overlay {
                 if let comic = libraryViewModel.readingComic {

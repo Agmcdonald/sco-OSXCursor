@@ -490,6 +490,16 @@ struct EPUBTableOfContentsView: View {
     @Binding var currentChapter: Int
     @Binding var isPresented: Bool
 
+    /// macOS: keep the drawer header (and its close button) below the
+    /// window's title-bar drag region, which swallows clicks.
+    private var drawerTopPadding: CGFloat {
+        #if os(macOS)
+        return 38
+        #else
+        return 0
+        #endif
+    }
+
     var body: some View {
         ZStack(alignment: .leading) {
             // Dismiss overlay
@@ -513,6 +523,7 @@ struct EPUBTableOfContentsView: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 16)
+                .padding(.top, drawerTopPadding)
                 .background(Color(hex: "#26262E"))
 
                 Divider().background(Color.white.opacity(0.08))

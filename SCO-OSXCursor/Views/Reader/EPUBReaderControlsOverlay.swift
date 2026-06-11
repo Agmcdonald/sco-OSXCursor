@@ -42,23 +42,17 @@ struct EPUBReaderControlsOverlay: View {
 
     // MARK: - Top Bar
 
+    // macOS NOTE: the window's titlebar container swallows clicks across the
+    // entire top band even when the toolbar is hidden, so on macOS the top
+    // bar carries NO interactive controls — Close/Settings/ToC live in the
+    // bottom bar instead (which reliably receives clicks). Esc still closes.
+
     private var topBar: some View {
         HStack(spacing: 12) {
+            #if !os(macOS)
             // Close button
-            Button(action: {
-                onUserInteraction()
-                onClose()
-            }) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(width: 36, height: 36)
-                    .background(.ultraThinMaterial)
-                    .clipShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .keyboardShortcut(.escape, modifiers: [])
-            .help("Close reader")
+            closeButton
+            #endif
 
             Spacer()
 
@@ -77,39 +71,10 @@ struct EPUBReaderControlsOverlay: View {
 
             Spacer()
 
-            // Settings button
-            Button(action: {
-                onUserInteraction()
-                onShowSettings()
-            }) {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundColor(.white)
-                    .frame(width: 36, height: 36)
-                    .contentShape(Circle())
-            }
-            .background(AnyShapeStyle(.ultraThinMaterial))
-            .clipShape(Circle())
-            .buttonStyle(.plain)
-            .help("Reader Settings")
-
-            // Table of contents button
-            Button(action: {
-                onUserInteraction()
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                    showTableOfContents.toggle()
-                }
-            }) {
-                Image(systemName: "list.bullet.indent")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundColor(.white)
-                    .frame(width: 36, height: 36)
-                    .contentShape(Circle())
-            }
-            .background(showTableOfContents ? AnyShapeStyle(Color(hex: "#9B8FE8").opacity(0.3)) : AnyShapeStyle(.ultraThinMaterial))
-            .clipShape(Circle())
-            .buttonStyle(.plain)
-            .help("Table of Contents")
+            #if !os(macOS)
+            settingsButton
+            tocButton
+            #endif
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
@@ -123,6 +88,61 @@ struct EPUBReaderControlsOverlay: View {
         )
     }
 
+    // MARK: - Shared Buttons
+
+    private var closeButton: some View {
+        Button(action: {
+            onUserInteraction()
+            onClose()
+        }) {
+            Image(systemName: "xmark")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(.white)
+                .frame(width: 36, height: 36)
+                .background(.ultraThinMaterial)
+                .clipShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(.escape, modifiers: [])
+        .help("Close reader")
+    }
+
+    private var settingsButton: some View {
+        Button(action: {
+            onUserInteraction()
+            onShowSettings()
+        }) {
+            Image(systemName: "gearshape")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundColor(.white)
+                .frame(width: 36, height: 36)
+                .contentShape(Circle())
+        }
+        .background(AnyShapeStyle(.ultraThinMaterial))
+        .clipShape(Circle())
+        .buttonStyle(.plain)
+        .help("Reader Settings (theme, font)")
+    }
+
+    private var tocButton: some View {
+        Button(action: {
+            onUserInteraction()
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                showTableOfContents.toggle()
+            }
+        }) {
+            Image(systemName: "list.bullet.indent")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundColor(.white)
+                .frame(width: 36, height: 36)
+                .contentShape(Circle())
+        }
+        .background(showTableOfContents ? AnyShapeStyle(Color(hex: "#9B8FE8").opacity(0.3)) : AnyShapeStyle(.ultraThinMaterial))
+        .clipShape(Circle())
+        .buttonStyle(.plain)
+        .help("Table of Contents")
+    }
+
     // MARK: - Bottom Bar
 
     private var bottomBar: some View {
@@ -131,6 +151,17 @@ struct EPUBReaderControlsOverlay: View {
             progressScrubber
 
             HStack(spacing: 0) {
+                #if os(macOS)
+                // Close — lives down here on macOS because the window's
+                // titlebar swallows clicks in the top band (see topBar note)
+                closeButton
+                    .padding(.horizontal, 10)
+
+                Divider()
+                    .frame(height: 24)
+                    .background(Color.white.opacity(0.15))
+                #endif
+
                 // Previous chapter
                 Button(action: {
                     onUserInteraction()
@@ -182,6 +213,18 @@ struct EPUBReaderControlsOverlay: View {
                 .buttonStyle(.plain)
                 .disabled(currentChapter >= totalChapters - 1)
                 .help("Next chapter")
+
+                #if os(macOS)
+                Divider()
+                    .frame(height: 24)
+                    .background(Color.white.opacity(0.15))
+
+                // Settings (theme/font) + ToC — also relocated from the top
+                settingsButton
+                    .padding(.leading, 10)
+                tocButton
+                    .padding(.horizontal, 10)
+                #endif
             }
             .background(.ultraThinMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 14))
@@ -292,7 +335,12 @@ struct EPUBReaderControlsOverlay: View {
 
     private var safeTopPadding: CGFloat {
         #if os(macOS)
-        return 0
+        // The window's invisible title-bar drag region swallows clicks in
+        // the top ~28pt (and the traffic lights sit top-left). Push the
+        // bar's content below it so Close/Settings/ToC are actually
+        // clickable and the X doesn't collide with close/minimize/zoom.
+        // The gradient background still extends to the window edge.
+        return 38
         #else
         return 0  // SwiftUI safe area handles this
         #endif
