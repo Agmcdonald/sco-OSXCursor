@@ -56,9 +56,14 @@ struct PagedReaderView: View {
             #if os(iOS)
                 if effectiveTransition == .curl {
                     // Apple Books-style page curl via UIPageViewController
-                    PageCurlView(pages: pages, currentPage: $currentPage)
-                        .background(Color.black)
-                        .ignoresSafeArea()
+                    PageCurlView(
+                        pages: pages,
+                        currentPage: $currentPage,
+                        isRTL: viewModel?.isMangaRTL ?? false,
+                        initialScale: CGFloat(comic?.zoomScale ?? 1.0)
+                    )
+                    .background(Color.black)
+                    .ignoresSafeArea()
                 } else {
                     standardPageView
                 }
@@ -101,7 +106,8 @@ struct PagedReaderView: View {
                     onBeginDragging: onBeginDragging,
                     onEndDragging: onEndDragging,
                     onBeginPinching: onBeginPinching,
-                    onEndPinching: onEndPinching
+                    onEndPinching: onEndPinching,
+                    initialScale: CGFloat(comic?.zoomScale ?? 1.0)
                 )
                 .background(Color.black)
                 .id(safeIndex)

@@ -97,9 +97,16 @@ Noted from Stage 1 testing (Andrew, June 9): fade and zoom transitions feel too 
 
 DONE (June 10): slide is a true spring push (the .animation(nil) on the
 transitioning view was suppressing it); fade/zoom retimed to 0.35s; zoom
-made asymmetric (incoming grows, outgoing expands+fades). Remaining Stage 5
-candidates: tap-zone tuning, per-book zoom memory, EPUB typography, page-curl
-refinement — define with Andrew on-device.
+made asymmetric (incoming grows, outgoing expands+fades).
+
+DONE (June 12): page-curl refinement — interactive Books-style curl (finger-
+tracked, tap-to-turn, spread curl with center spine, RTL mirroring, zoom
+coexistence, swipe-down-dismiss fix, double-tap zoom-out); tap-zone tuning —
+adjustable width (Narrow/Medium/Wide) with a flash-on-change zone overlay;
+per-book zoom memory — zoom_scale column (v15), saved on pinch/double-tap
+settle, reapplied across pages, reopen, and all reader modes.
+
+Remaining Stage 5 candidate: EPUB typography controls — define on-device.
 
 ## Backlog (from Stage 2 testing, June 9)
 
@@ -120,6 +127,25 @@ refinement — define with Andrew on-device.
 - **Mac ↔ iPad transfer**: send books (with their metadata) between devices;
   pairs with the long-term "remote access to your own library" vision. iPad
   stays the lighter reading/metadata app; Mac owns file organization.
+
+## Backlog (added June 12, Andrew — nice-to-haves, not current-stage work)
+
+- **Reader settings in the app Settings page**: set the app-default reader
+  settings (transition, reading style, tap-zone width, etc.) from the main
+  Settings screen, not only from the in-reader sheet.
+- **Genre field on books**: e.g. western, vertical/webtoon, manga/manhwa,
+  ebook/novel — plus the ability to associate a genre with a default reader
+  style and transition (genre → reader-settings preset).
+- **Pick a page as cover**: choose any page of a book to act as its cover;
+  the same mechanism should drive the cover image of the future
+  longbox/folder browse feature.
+- **Amazon books API**: investigate pulling ebook and comic metadata from
+  Amazon's API as an additional metadata source alongside the existing
+  matching pipeline.
+- **Flush pages in vertical scroll**: remove the gap between pages in
+  vertical-scroll (webtoon) mode so they sit flush. Webtoons are drawn as one
+  continuous strip, so any spacing shows as black lines cutting through
+  artwork mid-image.
 
 ## Verification per stage
 

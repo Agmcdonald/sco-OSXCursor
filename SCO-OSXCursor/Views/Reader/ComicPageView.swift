@@ -20,6 +20,12 @@ struct ComicPageView: View {
     @GestureState private var isDragging = false
     @State private var hasReportedDragStart = false
     @State private var hasReportedPinchStart = false
+    // Double-tap-to-unzoom detection (zoomed taps only)
+    @State private var lastZoomedTapDate: Date? = nil
+    @State private var pendingToggleWorkItem: DispatchWorkItem? = nil
+
+    /// Two zoomed taps within this window = double tap → zoom out
+    private let doubleTapWindow: TimeInterval = 0.3
 
     // Swipe callbacks provided by parent
     var onSwipeLeft: () -> Void = {}
@@ -30,6 +36,24 @@ struct ComicPageView: View {
     var onEndDragging: () -> Void = {}
     var onBeginPinching: () -> Void = {}
     var onEndPinching: () -> Void = {}
+
+    /// Curl mode (iOS): UIPageViewController owns the page-turn pan gesture,
+    /// so our drag gesture must stand down while unzoomed — otherwise it
+    /// claims the touch and the interactive curl never tracks the finger.
+    /// While zoomed (scale > 1.01) the drag re-engages for panning and the
+    /// host disables the curl pan via `onZoomStateChanged`.
+    var isCurlMode: Bool = false
+    /// Reports zoom state crossings so the curl host can toggle its pan gesture.
+    var onZoomStateChanged: (Bool) -> Void = { _ in }
+
+    /// Per-book zoom memory: the scale this page starts at (and returns to on
+    /// page change). 1.0 = no remembered zoom.
+    var initialScale: CGFloat = 1.0
+
+    /// Mask for the unified drag gesture: detached in curl mode while unzoomed.
+    private var dragGestureMask: GestureMask {
+        (isCurlMode && scale <= 1.01) ? .none : .all
+    }
 
     // MARK: - FIXED GESTURE CONSTANTS
 
@@ -96,7 +120,7 @@ struct ComicPageView: View {
                         .scaleEffect(scale)
                         .offset(offset)
                         .clipped()
-                        .highPriorityGesture(unifiedDragGesture(geo: geo))  // High priority so it wins over overlay
+                        .highPriorityGesture(unifiedDragGesture(geo: geo), including: dragGestureMask)  // High priority so it wins over overlay; stands down in curl mode while unzoomed
                         .simultaneousGesture(magnificationGesture(geo: geo))
                         .onReceive(NotificationCenter.default.publisher(for: .scoToggleZoom)) { _ in
                             withAnimation(.easeInOut(duration: 0.25)) {
@@ -110,6 +134,11 @@ struct ComicPageView: View {
                                     offset = .zero
                                 }
                             }
+                            // NOTE: deliberately NOT posting scoZoomScaleSettled
+                            // here — this notification reaches every live page
+                            // view (incl. curl-cached neighbors at other
+                            // scales), so posting would save racing, conflicting
+                            // values. Pinch + double-tap own the zoom memory.
                         }
                         .accessibilityLabel(Text("Page \(page.pageNumber)"))
                         .accessibilityAddTraits(.isImage)
@@ -142,22 +171,43 @@ struct ComicPageView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
-                    .highPriorityGesture(unifiedDragGesture(geo: geo))
+                    .highPriorityGesture(unifiedDragGesture(geo: geo), including: dragGestureMask)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .onAppear {
+            // Apply the book's remembered zoom (no animation — the page
+            // should simply open at its zoom level)
+            if initialScale > 1.01 && scale == 1.0 {
+                scale = initialScale
+                lastScale = initialScale
+            }
+        }
         .onChange(of: page.id) {
-            // Reset zoom when page changes
+            // Reset zoom to the book's remembered level when pages change
             withAnimation(.easeInOut(duration: 0.3)) {
-                scale = 1.0
+                scale = max(1.0, initialScale)
                 offset = .zero
             }
-            lastScale = 1.0
+            lastScale = max(1.0, initialScale)
             lastOffset = .zero
             hasReportedDragStart = false
             hasReportedPinchStart = false
+            // Don't let a pending zoomed-tap toggle fire after the page turned
+            pendingToggleWorkItem?.cancel()
+            pendingToggleWorkItem = nil
+            lastZoomedTapDate = nil
             debugLog("[\(platform)][ComicPageView] 🔄 Page reset: scale→1.0, offset→.zero")
+        }
+        .onChange(of: scale) { _, newScale in
+            let zoomed = newScale > 1.01
+            // Curl host uses this to disable the curl pan while zoomed
+            onZoomStateChanged(zoomed)
+            // Reader container uses this to suspend swipe-down-to-dismiss
+            NotificationCenter.default.post(
+                name: .scoZoomStateChanged, object: nil, userInfo: ["zoomed": zoomed]
+            )
         }
     }
 
@@ -210,8 +260,25 @@ struct ComicPageView: View {
                 // Compute distance once — used both by the zoom guard and iOS swipe fallback below
                 let distance = hypot(dx, dy)
 
-                // If zoomed, finish pan and return (no page turn, no swipe detection)
+                // If zoomed, finish pan and return — UNLESS the pan was already
+                // at the horizontal limit and this is a fresh swipe in the same
+                // direction: then turn the page (Books/Panels behavior)
                 if scale > 1.01 {
+                    let maxX = max(0, (scale - 1) * geo.size.width / 2)
+                    let isHorizontal = abs(dx) > abs(dy)
+                    if isHorizontal && abs(dx) >= swipeThreshold {
+                        if dx < 0 && lastOffset.width <= -maxX + 1 {
+                            debugLog("[\(platform)][ComicPageView] ⬅️ Zoomed swipe at right edge → next page")
+                            onSwipeLeft()
+                            return
+                        }
+                        if dx > 0 && lastOffset.width >= maxX - 1 {
+                            debugLog("[\(platform)][ComicPageView] ➡️ Zoomed swipe at left edge → previous page")
+                            onSwipeRight()
+                            return
+                        }
+                    }
+
                     debugLog("[\(platform)][ComicPageView] → Finishing pan (zoomed)")
                     let finalOffset = CGSize(
                         width: lastOffset.width + value.translation.width,
@@ -219,13 +286,39 @@ struct ComicPageView: View {
                     )
                     lastOffset = clamped(offset: finalOffset, in: geo, scale: scale)
 
-                    // When zoomed, a tiny movement is a tap → toggle controls only
-                    // (no page turn regardless of tap position)
+                    // When zoomed, a tiny movement is a tap. A quick second tap
+                    // zooms back out (Books-style); a lone tap toggles controls
+                    // after a short window so the double tap can preempt it.
                     if distance < 5 {
-                        debugLog(
-                            "[\(platform)][ComicPageView] 👆 Tap while zoomed → toggle controls only"
-                        )
-                        NotificationCenter.default.post(name: .scoToggleControls, object: nil)
+                        let now = Date()
+                        if let last = lastZoomedTapDate, now.timeIntervalSince(last) < doubleTapWindow {
+                            // Double tap → zoom out
+                            debugLog("[\(platform)][ComicPageView] 👆👆 Double tap while zoomed → zoom out")
+                            lastZoomedTapDate = nil
+                            pendingToggleWorkItem?.cancel()
+                            pendingToggleWorkItem = nil
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                scale = 1.0
+                                offset = .zero
+                            }
+                            lastScale = 1.0
+                            lastOffset = .zero
+                            // Deliberate zoom-out — clear the book's zoom memory
+                            NotificationCenter.default.post(
+                                name: .scoZoomScaleSettled, object: nil, userInfo: ["scale": CGFloat(1.0)]
+                            )
+                        } else {
+                            // Possible single tap — toggle controls unless a
+                            // second tap lands inside the window
+                            debugLog("[\(platform)][ComicPageView] 👆 Tap while zoomed → toggle controls (debounced)")
+                            lastZoomedTapDate = now
+                            pendingToggleWorkItem?.cancel()
+                            let work = DispatchWorkItem {
+                                NotificationCenter.default.post(name: .scoToggleControls, object: nil)
+                            }
+                            pendingToggleWorkItem = work
+                            DispatchQueue.main.asyncAfter(deadline: .now() + doubleTapWindow, execute: work)
+                        }
                     }
                     return
                 }
@@ -318,6 +411,11 @@ struct ComicPageView: View {
 
                 lastScale = scale
                 debugLog("[\(platform)][ComicPageView] ✅ Magnification ended: final scale=\(scale)")
+
+                // Per-book zoom memory: a deliberate pinch settles the zoom
+                NotificationCenter.default.post(
+                    name: .scoZoomScaleSettled, object: nil, userInfo: ["scale": scale]
+                )
 
                 // Reset all state when returning to 1.0
                 if scale == 1.0 {

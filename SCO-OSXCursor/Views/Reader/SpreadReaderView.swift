@@ -51,7 +51,24 @@ struct SpreadReaderView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            standardSpreadView
+            #if os(iOS)
+                if effectiveTransition == .curl {
+                    // Apple Books-style spread curl — spine at center, the back
+                    // of the curling page shows the next page
+                    SpreadCurlView(
+                        spreads: spreads,
+                        currentSpreadIndex: $currentSpreadIndex,
+                        isRTL: viewModel?.isMangaRTL ?? false,
+                        initialScale: CGFloat(comic?.zoomScale ?? 1.0)
+                    )
+                    .background(Color.black)
+                    .ignoresSafeArea()
+                } else {
+                    standardSpreadView
+                }
+            #else
+                standardSpreadView
+            #endif
         }
     }
 
@@ -67,6 +84,7 @@ struct SpreadReaderView: View {
 
                 SpreadView(
                     spread: spreads[safeIndex],
+                    initialScale: CGFloat(comic?.zoomScale ?? 1.0),
                     onSwipeLeft: {
                         if let viewModel = viewModel {
                             viewModel.turn(by: +1)  // +1 spread = +2 pages (VM handles conversion)
@@ -144,6 +162,8 @@ struct SpreadReaderView: View {
 @MainActor
 struct SpreadView: View {
     let spread: PageSpread
+    /// Per-book zoom memory, threaded down to each page
+    var initialScale: CGFloat = 1.0
     var onSwipeLeft: () -> Void = {}  // Next page/spread
     var onSwipeRight: () -> Void = {}  // Previous page/spread
 
@@ -182,7 +202,8 @@ struct SpreadView: View {
                         onBeginDragging: onBeginDragging,
                         onEndDragging: onEndDragging,
                         onBeginPinching: onBeginPinching,
-                        onEndPinching: onEndPinching
+                        onEndPinching: onEndPinching,
+                        initialScale: initialScale
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -195,7 +216,8 @@ struct SpreadView: View {
                             onBeginDragging: onBeginDragging,
                             onEndDragging: onEndDragging,
                             onBeginPinching: onBeginPinching,
-                            onEndPinching: onEndPinching
+                            onEndPinching: onEndPinching,
+                            initialScale: initialScale
                         )
                         .frame(width: geometry.size.width / 2)
 
@@ -207,7 +229,8 @@ struct SpreadView: View {
                                 onBeginDragging: onBeginDragging,
                                 onEndDragging: onEndDragging,
                                 onBeginPinching: onBeginPinching,
-                                onEndPinching: onEndPinching
+                                onEndPinching: onEndPinching,
+                                initialScale: initialScale
                             )
                             .frame(width: geometry.size.width / 2)
                         }

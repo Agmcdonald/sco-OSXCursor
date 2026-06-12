@@ -100,6 +100,15 @@ struct ComicReaderView: View {
         // Swipe-down-to-dismiss gesture state
         @State private var dragOffset: CGFloat = 0
         @State private var dismissDragActive = false
+        // While a page is zoomed, vertical drags PAN the page — the dismiss
+        // gesture must stand down or it closes the book mid-pan
+        @State private var isPageZoomed = false
+        // Tap-zone hint overlay — flashes the current zones after the user
+        // changes the width setting
+        @ObservedObject private var readerSettings = ReaderSettings.shared
+        @State private var showTapZoneHint = false
+        @State private var tapZoneHintWorkItem: DispatchWorkItem? = nil
+        @State private var tapZoneChangedWhileSheetOpen = false
     #endif
 
     init(comic: Comic) {
@@ -145,6 +154,8 @@ struct ComicReaderView: View {
                     // Never hijack drags while an overlay (All Pages grid, menu)
                     // is open — its scroll view needs vertical drags.
                     guard !showingThumbnails, !showingMenu else { return }
+                    // Zoomed pages own vertical drags (panning) — don't dismiss
+                    guard !isPageZoomed, !isPinching else { return }
                     // In vertical-scroll mode, downward drags SCROLL BACKWARD —
                     // only allow dismissal when the pull starts near the top edge.
                     if viewModel.isVerticalScroll {
@@ -277,6 +288,40 @@ struct ComicReaderView: View {
         .onReceive(NotificationCenter.default.publisher(for: .scoToggleControls)) { _ in
             handleTapToToggleControls()
         }
+        // Per-book zoom memory: persist deliberate zoom changes
+        .onReceive(NotificationCenter.default.publisher(for: .scoZoomScaleSettled)) { note in
+            guard let scale = note.userInfo?["scale"] as? CGFloat else { return }
+            let newValue: Double? = scale > 1.01 ? Double(scale) : nil
+            guard currentComic.zoomScale != newValue else { return }
+            currentComic.zoomScale = newValue
+            currentComic.dateModified = Date()
+            libraryViewModel.updateComic(currentComic)
+            AppLog.reader.debug("🔍 [ComicReaderView] Saved zoom memory: \(newValue.map { String(format: "%.2f", $0) } ?? "cleared")")
+        }
+        #if os(iOS)
+        .onReceive(NotificationCenter.default.publisher(for: .scoZoomStateChanged)) { note in
+            if let zoomed = note.userInfo?["zoomed"] as? Bool {
+                isPageZoomed = zoomed
+            }
+        }
+        // A zoomed page can be discarded by a turn without ever reporting
+        // zoom-out (curl mode recreates page VCs) — clear the flag on turns
+        .onChange(of: viewModel.currentPage) { _, _ in
+            isPageZoomed = false
+        }
+        // Flash the tap-zone hint when the width setting changes, and again
+        // when the settings sheet closes (so it's seen over the page itself)
+        .onChange(of: readerSettings.tapZoneWidth) { _, _ in
+            if showingReaderSettings { tapZoneChangedWhileSheetOpen = true }
+            flashTapZoneHint()
+        }
+        .onChange(of: showingReaderSettings) { _, isShowing in
+            if !isShowing && tapZoneChangedWhileSheetOpen {
+                tapZoneChangedWhileSheetOpen = false
+                flashTapZoneHint()
+            }
+        }
+        #endif
         .onReceive(NotificationCenter.default.publisher(for: .scoOpenReaderSettings)) { _ in
             showingReaderSettings = true
         }
@@ -441,6 +486,13 @@ struct ComicReaderView: View {
                 if showingMenu {
                     navigationMenuOverlay
                 }
+
+                // Tap-zone hint — flashes after the zone-width setting changes
+                if showTapZoneHint {
+                    tapZoneHintOverlay
+                        .transition(.opacity)
+                        .zIndex(1500)
+                }
             #endif
 
             // Hidden Keyboard Shortcuts
@@ -497,7 +549,7 @@ struct ComicReaderView: View {
                 AppLog.reader.debug("👆 [ComicReaderView] Global tap x=\(Int(location.x))/\(Int(screenWidth)) (\(String(format: "%.0f", percent * 100))%)")
             #endif
 
-            let outerZone: CGFloat = 0.15
+            let outerZone: CGFloat = ReaderSettings.shared.tapZoneWidth.fraction
 
             switch percent {
             case ..<outerZone:
@@ -513,11 +565,84 @@ struct ComicReaderView: View {
                 viewModel.turn(by: +1)
 
             default:
+                // While zoomed, ComicPageView owns center taps (debounced
+                // toggle + double-tap-to-unzoom) — don't double-fire here
+                guard !isPageZoomed else {
+                    #if DEBUG
+                        AppLog.reader.debug("🎛️ [ComicReaderView] Centre zone (zoomed) → deferred to page")
+                    #endif
+                    return
+                }
                 #if DEBUG
                     AppLog.reader.debug("🎛️ [ComicReaderView] Centre zone → toggle controls")
                 #endif
                 NotificationCenter.default.post(name: .scoToggleControls, object: nil)
             }
+        }
+    #endif
+
+    // MARK: - Tap Zone Hint (iOS)
+    #if os(iOS)
+        /// Translucent bands over the live tap zones, with RTL-aware labels.
+        /// Purely visual — never intercepts touches.
+        private var tapZoneHintOverlay: some View {
+            GeometryReader { geo in
+                let zoneWidth = geo.size.width * readerSettings.tapZoneWidth.fraction
+                let isRTL = viewModel.isMangaRTL
+
+                HStack(spacing: 0) {
+                    tapZoneBand(
+                        width: zoneWidth,
+                        systemImage: "chevron.left",
+                        label: isRTL ? "Next" : "Previous"
+                    )
+
+                    VStack(spacing: Spacing.sm) {
+                        Image(systemName: "hand.tap")
+                            .font(.system(size: 22, weight: .medium))
+                        Text("Controls")
+                            .font(Typography.caption)
+                    }
+                    .foregroundColor(.white.opacity(0.85))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    tapZoneBand(
+                        width: zoneWidth,
+                        systemImage: "chevron.right",
+                        label: isRTL ? "Previous" : "Next"
+                    )
+                }
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+        }
+
+        private func tapZoneBand(width: CGFloat, systemImage: String, label: String) -> some View {
+            VStack(spacing: Spacing.sm) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 28, weight: .semibold))
+                Text(label)
+                    .font(Typography.caption)
+            }
+            .foregroundColor(.white)
+            .frame(width: width)
+            .frame(maxHeight: .infinity)
+            .background(AccentColors.primary.opacity(0.30))
+        }
+
+        /// Show the hint and (re)start the auto-hide timer
+        private func flashTapZoneHint() {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                showTapZoneHint = true
+            }
+            tapZoneHintWorkItem?.cancel()
+            let work = DispatchWorkItem {
+                withAnimation(.easeInOut(duration: 0.4)) {
+                    showTapZoneHint = false
+                }
+            }
+            tapZoneHintWorkItem = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5, execute: work)
         }
     #endif
 

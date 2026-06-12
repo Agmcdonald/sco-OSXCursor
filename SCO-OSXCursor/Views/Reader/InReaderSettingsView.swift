@@ -249,6 +249,28 @@ struct InReaderSettingsView: View {
                 } header: {
                     Text("Transition Preview")
                 }
+
+                #if os(iOS)
+                // MARK: - Tap Zones Section (app-wide)
+                Section {
+                    Picker("Tap Zone Width", selection: $settings.tapZoneWidth) {
+                        ForEach(TapZoneWidth.allCases, id: \.self) { width in
+                            Text(width.rawValue).tag(width)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    Text(settings.tapZoneWidth.description)
+                        .font(Typography.caption)
+                        .foregroundColor(TextColors.secondary)
+                } header: {
+                    Text("Tap Zones")
+                } footer: {
+                    Text("How much of each screen edge turns the page when tapped; the middle toggles controls. Applies to all books. In Manga/RTL books the zones follow reading direction automatically.")
+                        .font(Typography.caption)
+                        .foregroundColor(TextColors.tertiary)
+                }
+                #endif
             }
     }
 

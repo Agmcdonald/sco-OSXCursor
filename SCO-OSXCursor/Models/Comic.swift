@@ -61,6 +61,7 @@ struct Comic: Identifiable, Codable {
     var readingStyle: String?         // Per-book reading style override (ReadingStyle.rawValue)
     var epubFontSize: Int?            // Per-book EPUB font size (pt), nil = default (16pt)
     var epubTheme: String?            // Per-book EPUB theme (EPUBTheme.rawValue)
+    var zoomScale: Double?            // Per-book remembered zoom, nil = 1× (no zoom)
     var contentRating: ContentRating
 
     // MARK: - File Info
@@ -105,6 +106,7 @@ struct Comic: Identifiable, Codable {
         readingStyle: String? = nil,
         epubFontSize: Int? = nil,
         epubTheme: String? = nil,
+        zoomScale: Double? = nil,
         contentRating: ContentRating = .allAges,
         fileSize: Int64 = 0,
         fileType: FileType = .cbz,
@@ -143,6 +145,7 @@ struct Comic: Identifiable, Codable {
         self.readingStyle = readingStyle
         self.epubFontSize = epubFontSize
         self.epubTheme = epubTheme
+        self.zoomScale = zoomScale
         self.contentRating = contentRating
         self.fileSize = fileSize
         self.fileType = fileType
@@ -535,6 +538,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         static let readingStyle = Column("reading_style")
         static let epubFontSize = Column("epub_font_size")
         static let epubTheme = Column("epub_theme")
+        static let zoomScale = Column("zoom_scale")
         static let contentRating = Column("content_rating")
         static let fileSize = Column("file_size")
         static let fileType = Column("file_type")
@@ -576,6 +580,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         container[Columns.readingStyle] = readingStyle
         container[Columns.epubFontSize] = epubFontSize
         container[Columns.epubTheme] = epubTheme
+        container[Columns.zoomScale] = zoomScale
         container[Columns.contentRating] = contentRating.rawValue
         container[Columns.fileSize] = fileSize
         container[Columns.fileType] = fileType.rawValue
@@ -642,6 +647,7 @@ extension Comic: FetchableRecord, PersistableRecord {
             readingStyle: row["reading_style"],
             epubFontSize: row["epub_font_size"],
             epubTheme: row["epub_theme"],
+            zoomScale: row["zoom_scale"],
             contentRating: ContentRating(rawValue: row["content_rating"] ?? 0) ?? .allAges,
             fileSize: fileSize,
             fileType: fileType,

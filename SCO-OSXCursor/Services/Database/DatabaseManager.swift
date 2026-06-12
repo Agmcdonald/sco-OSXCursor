@@ -338,6 +338,23 @@ final class DatabaseManager {
             AppLog.database.info("[DatabaseManager] ✅ Migration v14_epub_theme complete")
         }
 
+        // Version 15: per-book zoom memory — remembered pinch-zoom scale,
+        // reapplied on every page and on reopen. NULL = no zoom (1×).
+        migrator.registerMigration("v15_zoom_scale") { db in
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v15_zoom_scale")
+            if try db.tableExists("comics") {
+                do {
+                    try db.alter(table: "comics") { t in
+                        t.add(column: "zoom_scale", .double)
+                    }
+                    AppLog.database.info("[DatabaseManager] ✅ Added zoom_scale column")
+                } catch {
+                    AppLog.database.error("[DatabaseManager] ℹ️ zoom_scale column may already exist: \(error.localizedDescription)")
+                }
+            }
+            AppLog.database.info("[DatabaseManager] ✅ Migration v15_zoom_scale complete")
+        }
+
         return migrator
     }
 

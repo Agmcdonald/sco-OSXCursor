@@ -140,12 +140,39 @@ enum PageTransition: String, CaseIterable, Codable {
     }
 }
 
+// MARK: - Tap Zone Width
+
+/// How much of each screen edge acts as a page-turn tap zone (per side).
+enum TapZoneWidth: String, CaseIterable, Codable {
+    case narrow = "Narrow"
+    case medium = "Medium"
+    case wide = "Wide"
+
+    /// Fraction of screen width per side
+    var fraction: CGFloat {
+        switch self {
+        case .narrow: return 0.10
+        case .medium: return 0.15
+        case .wide: return 0.30
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .narrow: return "10% per side"
+        case .medium: return "15% per side"
+        case .wide: return "30% per side"
+        }
+    }
+}
+
 class ReaderSettings: ObservableObject {
     static let shared = ReaderSettings()
 
     @Published var pageTransition: PageTransition  // Global default transition
     @Published var defaultReadingStyle: ReadingStyle  // Global default reading style
     @Published var defaultEPUBTheme: EPUBTheme        // Global default EPUB theme
+    @Published var tapZoneWidth: TapZoneWidth         // Edge tap-zone width (app-wide)
     private var cancellables = Set<AnyCancellable>()
 
     private init() {
@@ -170,6 +197,13 @@ class ReaderSettings: ObservableObject {
             self.defaultEPUBTheme = .dark
         }
 
+        if let saved = UserDefaults.standard.string(forKey: "tapZoneWidth"),
+           let width = TapZoneWidth(rawValue: saved) {
+            self.tapZoneWidth = width
+        } else {
+            self.tapZoneWidth = .medium
+        }
+
         // Debounced save on main thread (macOS 26 safe)
         $pageTransition
             .removeDuplicates()
@@ -192,6 +226,14 @@ class ReaderSettings: ObservableObject {
             .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
             .sink { value in
                 UserDefaults.standard.set(value.rawValue, forKey: "defaultEPUBTheme")
+            }
+            .store(in: &cancellables)
+
+        $tapZoneWidth
+            .removeDuplicates()
+            .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
+            .sink { value in
+                UserDefaults.standard.set(value.rawValue, forKey: "tapZoneWidth")
             }
             .store(in: &cancellables)
     }
