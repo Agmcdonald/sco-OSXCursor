@@ -63,6 +63,11 @@ struct LibraryView: View {
     @State private var focusedComic: Comic?
     @State private var isInspectorPresented = false
 
+    // ComicVine fetch (no-sheet single + batch)
+    @State private var pendingPickerComicID: ComicID?
+    @State private var comicVineStatus: String?
+    @State private var isBatchFetching = false
+
     // MARK: - Derived Data
 
     var filteredAndSortedComics: [Comic] {
@@ -101,7 +106,8 @@ struct LibraryView: View {
             delete: { viewModel.deleteComics([$0]) },
             selectRange: { selectRange(to: $0) },
             handleSelectionTap: { handleSelectionTap($0) },
-            focus: { focusedComic = $0 }
+            focus: { focusedComic = $0 },
+            fetchMetadata: { fetchMetadataSingle($0) }
         )
     }
 
@@ -147,7 +153,9 @@ struct LibraryView: View {
                 onEditFields: { showingBulkEdit = true },
                 onAddToList: addSelectedToReadingList,
                 onRegenerateCovers: regenerateCoversForSelected,
-                onDelete: { showingDeleteConfirmation = true }
+                onFetchMetadata: fetchMetadataForSelected,
+                onDelete: { showingDeleteConfirmation = true },
+                isFetchingMetadata: isBatchFetching
             )
 
             Divider()
@@ -266,6 +274,26 @@ struct LibraryView: View {
                 }
                 .frame(width: 400, height: 200)
                 .padding()
+            }
+        }
+        // ComicVine match picker for an ambiguous no-sheet fetch
+        .sheet(item: $pendingPickerComicID) { wrapper in
+            if let comic = viewModel.comics.first(where: { $0.id == wrapper.id }) {
+                ComicVineMatchPicker(comic: comic, viewModel: viewModel)
+            }
+        }
+        // Transient ComicVine fetch status (auto-dismisses)
+        .overlay(alignment: .bottom) {
+            if let status = comicVineStatus {
+                Text(status)
+                    .font(Typography.bodySmall)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, Spacing.lg)
+                    .padding(.vertical, Spacing.md)
+                    .background(Color.black.opacity(0.85))
+                    .clipShape(Capsule())
+                    .padding(.bottom, Spacing.xl)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .onChange(of: focusedComic) { _, _ in
@@ -468,6 +496,60 @@ struct LibraryView: View {
     private func editComic(_ comic: Comic) {
         AppLog.library.debug("[LibraryView] 📝 Opening editor for: \(comic.fileName)")
         editingComicID = ComicID(id: comic.id)
+    }
+
+    // MARK: - ComicVine Fetch (no edit sheet)
+
+    /// Show a status message that auto-dismisses after a few seconds.
+    private func flashComicVineStatus(_ message: String) {
+        withAnimation { comicVineStatus = message }
+        let token = message
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) {
+            if comicVineStatus == token {
+                withAnimation { comicVineStatus = nil }
+            }
+        }
+    }
+
+    /// Context-menu fetch on a single book: fills and saves directly. If the
+    /// search is ambiguous, opens the match picker.
+    private func fetchMetadataSingle(_ comic: Comic) {
+        Task {
+            let outcome = await viewModel.fetchComicVineMetadata(for: comic, force: false)
+            switch outcome {
+            case .updated:
+                flashComicVineStatus("\(comic.displayTitle): metadata updated.")
+            case .needsChoice:
+                pendingPickerComicID = ComicID(id: comic.id)
+            case .alreadyFetched:
+                // Explicit single action → user likely wants a refresh
+                let forced = await viewModel.fetchComicVineMetadata(for: comic, force: true)
+                if case .needsChoice = forced {
+                    pendingPickerComicID = ComicID(id: comic.id)
+                } else {
+                    flashComicVineStatus("\(comic.displayTitle): metadata refreshed.")
+                }
+            case .noKey:
+                flashComicVineStatus("Add a ComicVine API key in Settings first.")
+            case .noMatches:
+                flashComicVineStatus("\(comic.displayTitle): no ComicVine match found.")
+            case .failed(let reason):
+                flashComicVineStatus("Fetch failed: \(reason)")
+            }
+        }
+    }
+
+    /// Selection-bar batch fetch across every selected book.
+    private func fetchMetadataForSelected() {
+        guard !selectedComics.isEmpty, !isBatchFetching else { return }
+        let comics = viewModel.comics.filter { selectedComics.contains($0.id) }
+        isBatchFetching = true
+        flashComicVineStatus("Fetching metadata for \(comics.count) book\(comics.count == 1 ? "" : "s")…")
+        Task {
+            let result = await viewModel.fetchComicVineMetadataBatch(for: comics)
+            isBatchFetching = false
+            flashComicVineStatus(result.summary)
+        }
     }
 
     // MARK: - Import

@@ -20,8 +20,11 @@ struct LibrarySelectionBar: View {
     let onEditFields: () -> Void
     let onAddToList: () -> Void
     let onRegenerateCovers: () -> Void
+    let onFetchMetadata: () -> Void
     let onDelete: () -> Void
     let onCancel: () -> Void
+    /// Disables the metadata button + shows a spinner while a batch runs.
+    var isFetchingMetadata: Bool = false
 
     var body: some View {
         HStack(spacing: Spacing.md) {
@@ -94,6 +97,35 @@ struct LibrarySelectionBar: View {
             }
             .buttonStyle(.plain)
             .disabled(selectedComics.isEmpty)
+
+            // Fetch ComicVine metadata for the whole selection
+            Button(action: {
+                if !selectedComics.isEmpty && !isFetchingMetadata {
+                    onFetchMetadata()
+                }
+            }) {
+                HStack(spacing: Spacing.xs) {
+                    if isFetchingMetadata {
+                        ProgressView().scaleEffect(0.6)
+                    } else {
+                        Image(systemName: "network")
+                    }
+                    Text("Fetch Metadata")
+                        .font(Typography.bodySmall)
+                }
+                .foregroundColor(
+                    selectedComics.isEmpty ? TextColors.tertiary : AccentColors.primary
+                )
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .background(
+                    selectedComics.isEmpty
+                        ? BackgroundColors.elevated : AccentColors.primary.opacity(0.1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+            .disabled(selectedComics.isEmpty || isFetchingMetadata)
 
             // Regenerate Cover button
             Button(action: {

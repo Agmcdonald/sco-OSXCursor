@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DashboardOverviewView: View {
     @ObservedObject var libraryViewModel: LibraryViewModel
+    @ObservedObject private var comicVineQuota = ComicVineQuota.shared
     @State private var topPublishers: [(String, Int)] = []
 
     var body: some View {
@@ -168,9 +169,55 @@ struct DashboardOverviewView: View {
                     }
                     .padding(.top, Spacing.md)
                 }
+
+                // ComicVine API quota
+                DashboardSectionCard(
+                    title: "ComicVine API",
+                    subtitle: "Metadata calls used this hour."
+                ) {
+                    comicVineQuotaContent
+                }
             }
             .frame(maxWidth: .infinity)
         }
+    }
+
+    private var comicVineQuotaContent: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("\(comicVineQuota.callsInLastHour)")
+                    .font(.system(size: 32, weight: .bold))
+                    .foregroundColor(
+                        comicVineQuota.callsInLastHour >= ComicVineQuota.hourlyLimit
+                            ? AccentColors.error : TextColors.primary
+                    )
+                Text("/ \(ComicVineQuota.hourlyLimit) calls")
+                    .font(Typography.caption)
+                    .foregroundColor(TextColors.secondary)
+                Spacer()
+            }
+
+            ProgressView(
+                value: Double(min(comicVineQuota.callsInLastHour, ComicVineQuota.hourlyLimit)),
+                total: Double(ComicVineQuota.hourlyLimit)
+            )
+            .tint(comicVineQuota.callsInLastHour >= ComicVineQuota.hourlyLimit ? AccentColors.error : AccentColors.primary)
+
+            if let reset = comicVineQuota.nextReset {
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 11))
+                    Text("More budget at \(reset.formatted(date: .omitted, time: .shortened))")
+                        .font(Typography.caption)
+                }
+                .foregroundColor(TextColors.tertiary)
+            } else {
+                Text("No calls yet this hour.")
+                    .font(Typography.caption)
+                    .foregroundColor(TextColors.tertiary)
+            }
+        }
+        .padding(.top, Spacing.md)
     }
 
     private func calculateStats() {

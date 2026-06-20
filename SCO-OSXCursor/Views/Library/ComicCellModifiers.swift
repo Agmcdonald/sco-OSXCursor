@@ -22,6 +22,8 @@ struct ComicCellActions {
     let selectRange: (Comic) -> Void
     let handleSelectionTap: (Comic) -> Void
     let focus: (Comic) -> Void
+    /// Fetch ComicVine metadata directly (no edit sheet) — fills and saves.
+    var fetchMetadata: (Comic) -> Void = { _ in }
 }
 
 // MARK: - Cell Interaction Modifier
@@ -78,6 +80,10 @@ struct ComicCellInteraction: ViewModifier {
 
                 Button(action: { actions.editComic(comic) }) {
                     Label("Edit Metadata", systemImage: "pencil")
+                }
+
+                Button(action: { actions.fetchMetadata(comic) }) {
+                    Label("Fetch from ComicVine", systemImage: "network")
                 }
 
                 Button(action: { actions.markAsRead(comic) }) {

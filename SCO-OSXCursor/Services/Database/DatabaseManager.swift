@@ -355,6 +355,30 @@ final class DatabaseManager {
             AppLog.database.info("[DatabaseManager] ✅ Migration v15_zoom_scale complete")
         }
 
+        // Version 16: ComicVine metadata — matched volume/issue ids, the
+        // last-fetched timestamp (so a book is never auto re-fetched), and a
+        // JSON blob of candidate matches for ambiguous searches.
+        migrator.registerMigration("v16_comicvine_metadata") { db in
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v16_comicvine_metadata")
+            if try db.tableExists("comics") {
+                let columns: [(String, Database.ColumnType)] = [
+                    ("comicvine_volume_id", .integer),
+                    ("comicvine_issue_id", .integer),
+                    ("metadata_fetched_at", .datetime),
+                    ("metadata_candidates", .text),
+                ]
+                for (name, type) in columns {
+                    do {
+                        try db.alter(table: "comics") { t in t.add(column: name, type) }
+                        AppLog.database.info("[DatabaseManager] ✅ Added \(name) column")
+                    } catch {
+                        AppLog.database.error("[DatabaseManager] ℹ️ \(name) column may already exist: \(error.localizedDescription)")
+                    }
+                }
+            }
+            AppLog.database.info("[DatabaseManager] ✅ Migration v16_comicvine_metadata complete")
+        }
+
         return migrator
     }
 

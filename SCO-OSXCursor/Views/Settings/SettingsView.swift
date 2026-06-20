@@ -106,6 +106,14 @@ struct SettingsView: View {
                 }
 
                 // Reader Settings Section
+                settingsSection(title: "Reader", icon: "book.fill") {
+                    readerDefaultsSettings
+                }
+
+                // ComicVine Metadata Section
+                settingsSection(title: "ComicVine Metadata", icon: "network") {
+                    comicVineSettings
+                }
 
                 // Organization Settings Section
                 settingsSection(title: "Organization", icon: "folder.badge.gearshape") {
@@ -168,6 +176,283 @@ struct SettingsView: View {
         }
         .onAppear {
             homeLibraryStatus = viewModel.homeLibraryStatus()
+        }
+    }
+
+    // MARK: - Reader Defaults
+    //
+    // App-wide defaults. Individual books can still override transition,
+    // reading style, and EPUB theme from the in-reader settings sheet —
+    // those overrides always win over these defaults.
+
+    private var readerDefaultsSettings: some View {
+        VStack(alignment: .leading, spacing: Spacing.xl) {
+            // Default page transition
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                Text("Default Page Transition")
+                    .font(Typography.h3)
+                    .foregroundColor(TextColors.primary)
+
+                Text("Used by books without a custom transition")
+                    .font(Typography.bodySmall)
+                    .foregroundColor(TextColors.secondary)
+
+                Picker("", selection: $readerSettings.pageTransition) {
+                    ForEach(
+                        PageTransition.allCases.filter { $0.isAvailableOnCurrentPlatform },
+                        id: \.self
+                    ) { transition in
+                        Label(transition.rawValue, systemImage: transition.icon)
+                            .tag(transition)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+            .padding(Spacing.md)
+            .background(BackgroundColors.elevated)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+            // Default reading style
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                Text("Default Reading Style")
+                    .font(Typography.h3)
+                    .foregroundColor(TextColors.primary)
+
+                Text(readerSettings.defaultReadingStyle.description)
+                    .font(Typography.bodySmall)
+                    .foregroundColor(TextColors.secondary)
+
+                Picker("", selection: $readerSettings.defaultReadingStyle) {
+                    ForEach(ReadingStyle.allCases, id: \.self) { style in
+                        Label(style.displayName, systemImage: style.icon)
+                            .tag(style)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+            .padding(Spacing.md)
+            .background(BackgroundColors.elevated)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+            // Default EPUB theme
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                Text("Default eBook Theme")
+                    .font(Typography.h3)
+                    .foregroundColor(TextColors.primary)
+
+                Text("Used by EPUBs without a custom theme")
+                    .font(Typography.bodySmall)
+                    .foregroundColor(TextColors.secondary)
+
+                Picker("", selection: $readerSettings.defaultEPUBTheme) {
+                    ForEach(EPUBTheme.allCases, id: \.self) { theme in
+                        Label(theme.displayName, systemImage: theme.icon)
+                            .tag(theme)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+            .padding(Spacing.md)
+            .background(BackgroundColors.elevated)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+            // eBook typography (applies to all EPUBs; font size stays per-book)
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                Text("eBook Typography")
+                    .font(Typography.h3)
+                    .foregroundColor(TextColors.primary)
+
+                Text("Font, line spacing, and margins for all eBooks. Text size is adjusted per book from the reader bar.")
+                    .font(Typography.bodySmall)
+                    .foregroundColor(TextColors.secondary)
+
+                // Live preview — re-renders as the pickers below change
+                typographyPreview
+
+                HStack {
+                    Text("Font")
+                        .font(Typography.body)
+                        .foregroundColor(TextColors.primary)
+                    Spacer()
+                    Picker("", selection: $readerSettings.epubFontFamily) {
+                        ForEach(EPUBFontFamily.allCases, id: \.self) { family in
+                            Text(family.displayName).tag(family)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text("Line Spacing")
+                        .font(Typography.body)
+                        .foregroundColor(TextColors.primary)
+                    Picker("", selection: $readerSettings.epubLineSpacing) {
+                        ForEach(EPUBLineSpacing.allCases, id: \.self) { spacing in
+                            Text(spacing.displayName).tag(spacing)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                .padding(.top, Spacing.xs)
+
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text("Margins")
+                        .font(Typography.body)
+                        .foregroundColor(TextColors.primary)
+                    Picker("", selection: $readerSettings.epubMargins) {
+                        ForEach(EPUBMargins.allCases, id: \.self) { margin in
+                            Text(margin.displayName).tag(margin)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                .padding(.top, Spacing.xs)
+            }
+            .padding(Spacing.md)
+            .background(BackgroundColors.elevated)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+            #if os(iOS)
+                // Tap-zone width (touch only)
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    Text("Tap Zone Width")
+                        .font(Typography.h3)
+                        .foregroundColor(TextColors.primary)
+
+                    Text("How much of each screen edge turns the page when tapped (\(readerSettings.tapZoneWidth.description)); the middle toggles controls")
+                        .font(Typography.bodySmall)
+                        .foregroundColor(TextColors.secondary)
+
+                    Picker("", selection: $readerSettings.tapZoneWidth) {
+                        ForEach(TapZoneWidth.allCases, id: \.self) { width in
+                            Text(width.rawValue).tag(width)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                .padding(Spacing.md)
+                .background(BackgroundColors.elevated)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            #endif
+        }
+    }
+
+    // MARK: - ComicVine Settings
+
+    @AppStorage(ComicVineConfig.apiKeyDefaultsKey) private var comicVineAPIKey: String = ""
+    @ObservedObject private var comicVineQuota = ComicVineQuota.shared
+
+    private var comicVineSettings: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            Text("Pull publisher, creators, summary, and cover dates for your comics from ComicVine. Free for personal use — get a key by signing in at comicvine.gamespot.com/api.")
+                .font(Typography.bodySmall)
+                .foregroundColor(TextColors.secondary)
+
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("API Key")
+                    .font(Typography.h3)
+                    .foregroundColor(TextColors.primary)
+
+                SecureField("Paste your ComicVine API key", text: $comicVineAPIKey)
+                    .textFieldStyle(.plain)
+                    .font(Typography.body)
+                    .foregroundColor(TextColors.primary)
+                    .padding(Spacing.md)
+                    .background(BackgroundColors.secondary)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(BorderColors.subtle, lineWidth: 1)
+                    )
+                    #if os(iOS)
+                    .autocorrectionDisabled(true)
+                    .textInputAutocapitalization(.never)
+                    #endif
+
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: comicVineAPIKey.isEmpty ? "exclamationmark.circle" : "checkmark.circle.fill")
+                        .font(.system(size: 11))
+                    Text(comicVineAPIKey.isEmpty ? "No key set — fetching is disabled" : "Key saved")
+                        .font(Typography.caption)
+                }
+                .foregroundColor(comicVineAPIKey.isEmpty ? TextColors.tertiary : AccentColors.success)
+            }
+
+            Divider()
+                .background(BorderColors.subtle)
+                .padding(.vertical, Spacing.xs)
+
+            // Live quota readout (mirrors the dashboard widget)
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                HStack {
+                    Text("API Calls This Hour")
+                        .font(Typography.h3)
+                        .foregroundColor(TextColors.primary)
+                    Spacer()
+                    Text("\(comicVineQuota.callsInLastHour) / \(ComicVineQuota.hourlyLimit)")
+                        .font(Typography.body)
+                        .foregroundColor(AccentColors.primary)
+                }
+
+                ProgressView(
+                    value: Double(min(comicVineQuota.callsInLastHour, ComicVineQuota.hourlyLimit)),
+                    total: Double(ComicVineQuota.hourlyLimit)
+                )
+                .tint(comicVineQuota.callsInLastHour >= ComicVineQuota.hourlyLimit ? AccentColors.error : AccentColors.primary)
+
+                if let reset = comicVineQuota.nextReset {
+                    Text("Budget starts replenishing \(reset.formatted(date: .omitted, time: .shortened))")
+                        .font(Typography.caption)
+                        .foregroundColor(TextColors.tertiary)
+                } else {
+                    Text("Limited to ~1 request/second and 200 calls per hour per ComicVine's terms.")
+                        .font(Typography.caption)
+                        .foregroundColor(TextColors.tertiary)
+                }
+            }
+        }
+    }
+
+    // MARK: - Typography Preview
+
+    /// Sample paragraph rendered with the chosen eBook typography, in the
+    /// default eBook theme's colors — a small stand-in for a real page.
+    private var typographyPreview: some View {
+        let colors = readerSettings.defaultEPUBTheme.cssColors
+        let size: CGFloat = 16
+        // CSS line-height is a multiplier of font size; SwiftUI lineSpacing
+        // is EXTRA space between lines, so subtract an approximate natural
+        // leading (~0.2 em) from the multiplier
+        let extraLeading = max(0, size * (readerSettings.epubLineSpacing.value - 1.2))
+
+        return Text("She opened the book to its first page, and the quiet room filled with somewhere else entirely — salt air, distant bells, a road she had never walked.")
+            .font(previewFont(size: size))
+            .lineSpacing(extraLeading)
+            .foregroundColor(Color(hex: colors.text))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 18)
+            .padding(.horizontal, CGFloat(readerSettings.epubMargins.verticalPadding))
+            .background(Color(hex: colors.background))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(BorderColors.subtle, lineWidth: 1)
+            )
+            .animation(.easeInOut(duration: 0.2), value: readerSettings.epubFontFamily)
+            .animation(.easeInOut(duration: 0.2), value: readerSettings.epubLineSpacing)
+            .animation(.easeInOut(duration: 0.2), value: readerSettings.epubMargins)
+            .animation(.easeInOut(duration: 0.2), value: readerSettings.defaultEPUBTheme)
+    }
+
+    /// SwiftUI stand-ins for the CSS font stacks used in the reader
+    private func previewFont(size: CGFloat) -> Font {
+        switch readerSettings.epubFontFamily {
+        case .system: return .system(size: size)
+        case .newYork: return .system(size: size, design: .serif)  // New York
+        case .georgia: return .custom("Georgia", size: size)
+        case .palatino: return .custom("Palatino", size: size)
+        case .charter: return .custom("Charter", size: size)
         }
     }
 

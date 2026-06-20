@@ -64,6 +64,16 @@ struct Comic: Identifiable, Codable {
     var zoomScale: Double?            // Per-book remembered zoom, nil = 1× (no zoom)
     var contentRating: ContentRating
 
+    // MARK: - ComicVine Metadata
+    var comicVineVolumeID: Int?       // Matched ComicVine volume (series) id
+    var comicVineIssueID: Int?        // Matched ComicVine issue id (if resolved)
+    /// When ComicVine metadata was last fetched. Non-nil = don't auto re-fetch
+    /// (responses must be cached per ComicVine's terms) unless the user forces it.
+    var metadataFetchedAt: Date?
+    /// JSON [CVCandidate] stored when a search was ambiguous, so the user can
+    /// resolve it later from the match picker at zero additional API cost.
+    var metadataCandidates: String?
+
     // MARK: - File Info
     var fileSize: Int64  // in bytes
     var fileType: FileType
@@ -107,6 +117,10 @@ struct Comic: Identifiable, Codable {
         epubFontSize: Int? = nil,
         epubTheme: String? = nil,
         zoomScale: Double? = nil,
+        comicVineVolumeID: Int? = nil,
+        comicVineIssueID: Int? = nil,
+        metadataFetchedAt: Date? = nil,
+        metadataCandidates: String? = nil,
         contentRating: ContentRating = .allAges,
         fileSize: Int64 = 0,
         fileType: FileType = .cbz,
@@ -146,6 +160,10 @@ struct Comic: Identifiable, Codable {
         self.epubFontSize = epubFontSize
         self.epubTheme = epubTheme
         self.zoomScale = zoomScale
+        self.comicVineVolumeID = comicVineVolumeID
+        self.comicVineIssueID = comicVineIssueID
+        self.metadataFetchedAt = metadataFetchedAt
+        self.metadataCandidates = metadataCandidates
         self.contentRating = contentRating
         self.fileSize = fileSize
         self.fileType = fileType
@@ -278,8 +296,17 @@ extension Comic {
 
 // MARK: - Computed Properties
 extension Comic {
-    /// Display name for the comic/book (uses title → series → cleaned filename)
+    /// Display name shown on library cards and used as the alphabetical sort
+    /// key. Comics use the SERIES so the grid stays grouped by series and
+    /// sorts predictably — the per-issue storyline title (e.g. ComicVine's
+    /// issue name) is shown separately in the Info panel and editor, and would
+    /// otherwise scatter the library (e.g. "Action Comics" sorting under its
+    /// storyline "Future Shock"). eBooks/novels prefer their title, since they
+    /// often have no distinct series.
     var displayName: String {
+        if fileType != .epub, let series = series, !series.isEmpty {
+            return series
+        }
         if let title = title, !title.isEmpty {
             return title
         }
@@ -539,6 +566,10 @@ extension Comic: FetchableRecord, PersistableRecord {
         static let epubFontSize = Column("epub_font_size")
         static let epubTheme = Column("epub_theme")
         static let zoomScale = Column("zoom_scale")
+        static let comicVineVolumeID = Column("comicvine_volume_id")
+        static let comicVineIssueID = Column("comicvine_issue_id")
+        static let metadataFetchedAt = Column("metadata_fetched_at")
+        static let metadataCandidates = Column("metadata_candidates")
         static let contentRating = Column("content_rating")
         static let fileSize = Column("file_size")
         static let fileType = Column("file_type")
@@ -581,6 +612,10 @@ extension Comic: FetchableRecord, PersistableRecord {
         container[Columns.epubFontSize] = epubFontSize
         container[Columns.epubTheme] = epubTheme
         container[Columns.zoomScale] = zoomScale
+        container[Columns.comicVineVolumeID] = comicVineVolumeID
+        container[Columns.comicVineIssueID] = comicVineIssueID
+        container[Columns.metadataFetchedAt] = metadataFetchedAt
+        container[Columns.metadataCandidates] = metadataCandidates
         container[Columns.contentRating] = contentRating.rawValue
         container[Columns.fileSize] = fileSize
         container[Columns.fileType] = fileType.rawValue
@@ -648,6 +683,10 @@ extension Comic: FetchableRecord, PersistableRecord {
             epubFontSize: row["epub_font_size"],
             epubTheme: row["epub_theme"],
             zoomScale: row["zoom_scale"],
+            comicVineVolumeID: row["comicvine_volume_id"],
+            comicVineIssueID: row["comicvine_issue_id"],
+            metadataFetchedAt: row["metadata_fetched_at"],
+            metadataCandidates: row["metadata_candidates"],
             contentRating: ContentRating(rawValue: row["content_rating"] ?? 0) ?? .allAges,
             fileSize: fileSize,
             fileType: fileType,

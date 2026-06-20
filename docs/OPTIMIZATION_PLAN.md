@@ -139,9 +139,19 @@ Remaining Stage 5 candidate: EPUB typography controls — define on-device.
 - **Pick a page as cover**: choose any page of a book to act as its cover;
   the same mechanism should drive the cover image of the future
   longbox/folder browse feature.
-- **Amazon books API**: investigate pulling ebook and comic metadata from
-  Amazon's API as an additional metadata source alongside the existing
-  matching pipeline.
+- **Amazon books API** — INVESTIGATED June 12, not viable: Amazon retired
+  PA-API (May 2026) and its Creators API replacement requires an affiliate
+  account with 10+ qualified sales every 30 days. Recommendation: ComicVine
+  for comics + Google Books/Open Library for ebooks instead. See
+  `docs/RESEARCH_amazon_books_api_2026-06.md`.
+- **ComicVine metadata** — BUILT June 12 (needs build + API-key testing):
+  API client with 1 req/sec throttle, hourly quota counter on Dashboard +
+  Settings, per-book caching (no auto re-fetch), and an ambiguous-match
+  picker. Entry point is the Edit Metadata sheet. Follow-ups: cover-image
+  download, library-cell context-menu action, batch fetch. See
+  `docs/COMICVINE_INTEGRATION.md`.
+  - eBook side still open: Google Books / Open Library for novels (no key,
+    no affiliate gate) — not built yet.
 - **Flush pages in vertical scroll**: remove the gap between pages in
   vertical-scroll (webtoon) mode so they sit flush. Webtoons are drawn as one
   continuous strip, so any spacing shows as black lines cutting through

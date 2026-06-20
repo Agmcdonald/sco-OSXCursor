@@ -42,7 +42,9 @@ struct LibraryHeaderView: View {
     let onEditFields: () -> Void
     let onAddToList: () -> Void
     let onRegenerateCovers: () -> Void
+    let onFetchMetadata: () -> Void
     let onDelete: () -> Void
+    var isFetchingMetadata: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
@@ -204,11 +206,13 @@ struct LibraryHeaderView: View {
             onEditFields: onEditFields,
             onAddToList: onAddToList,
             onRegenerateCovers: onRegenerateCovers,
+            onFetchMetadata: onFetchMetadata,
             onDelete: onDelete,
             onCancel: {
                 isSelectionMode = false
                 selectedComics.removeAll()
-            }
+            },
+            isFetchingMetadata: isFetchingMetadata
         )
     }
 

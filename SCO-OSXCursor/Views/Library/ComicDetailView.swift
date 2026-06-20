@@ -49,6 +49,17 @@ struct ComicDetailView: View {
     @State private var showingSaveConfirmation = false
     @State private var saveError: String?
 
+    // ComicVine fetch state
+    @State private var isFetchingMetadata = false
+    @State private var showingMatchPicker = false
+    @State private var fetchMessage: String?
+
+    /// Freshest copy of this comic from the library (the fetch updates the
+    /// store, not our local `comic` constant) — used by the match picker.
+    private var liveComic: Comic {
+        libraryViewModel.comics.first(where: { $0.id == comic.id }) ?? comic
+    }
+
     // Track focus to force-commit TextEditor on macOS before saving
     enum Field: Hashable {
         case title, publisher, series, issue, volume, year, writer, artist, coverArtist, colorist,
@@ -107,6 +118,12 @@ struct ComicDetailView: View {
                     Divider()
                         .background(BorderColors.subtle)
 
+                    // ComicVine metadata fetch
+                    comicVineSection
+
+                    Divider()
+                        .background(BorderColors.subtle)
+
                     // Metadata Fields
                     metadataFields
 
@@ -156,6 +173,132 @@ struct ComicDetailView: View {
         } message: {
             Text(saveError ?? "Unknown error")
         }
+        .sheet(isPresented: $showingMatchPicker, onDismiss: {
+            // A pick applies metadata to the stored comic — reflect it in the
+            // open drafts so it's visible and survives Save.
+            resyncDrafts()
+            if liveComic.metadataFetchedAt != nil {
+                fetchMessage = "Metadata updated from ComicVine. Review and Save to keep."
+            }
+        }) {
+            ComicVineMatchPicker(comic: liveComic, viewModel: libraryViewModel)
+        }
+    }
+
+    // MARK: - ComicVine Section
+
+    private var comicVineSection: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(spacing: Spacing.sm) {
+                Image(systemName: "network")
+                    .foregroundColor(AccentColors.primary)
+                Text("ComicVine Metadata")
+                    .font(Typography.h3)
+                    .foregroundColor(TextColors.primary)
+                Spacer()
+                if let fetchedAt = liveComic.metadataFetchedAt {
+                    Text("Fetched \(fetchedAt.formatted(date: .abbreviated, time: .omitted))")
+                        .font(Typography.caption)
+                        .foregroundColor(TextColors.tertiary)
+                }
+            }
+
+            if !ComicVineConfig.hasKey {
+                Text("Add a ComicVine API key in Settings to fetch publisher, creators, and summary automatically.")
+                    .font(Typography.caption)
+                    .foregroundColor(TextColors.secondary)
+            }
+
+            HStack(spacing: Spacing.md) {
+                Button {
+                    runFetch(force: liveComic.metadataFetchedAt != nil)
+                } label: {
+                    HStack(spacing: Spacing.xs) {
+                        if isFetchingMetadata {
+                            ProgressView().scaleEffect(0.7)
+                        } else {
+                            Image(systemName: "arrow.down.circle")
+                        }
+                        Text(liveComic.metadataFetchedAt != nil ? "Re-fetch from ComicVine" : "Fetch from ComicVine")
+                            .font(Typography.button)
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.sm)
+                    .background(ComicVineConfig.hasKey ? AccentColors.primary : TextColors.tertiary)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+                .disabled(isFetchingMetadata || !ComicVineConfig.hasKey)
+
+                // Offer the picker whenever ambiguous candidates are pending
+                if !CVCandidate.decodeList(liveComic.metadataCandidates).isEmpty {
+                    Button {
+                        showingMatchPicker = true
+                    } label: {
+                        Label("Choose Match…", systemImage: "questionmark.circle")
+                            .font(Typography.button)
+                            .foregroundColor(AccentColors.primary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            if let message = fetchMessage {
+                Text(message)
+                    .font(Typography.caption)
+                    .foregroundColor(TextColors.secondary)
+            }
+        }
+    }
+
+    private func runFetch(force: Bool) {
+        guard !isFetchingMetadata else { return }
+        isFetchingMetadata = true
+        fetchMessage = nil
+        Task {
+            let outcome = await libraryViewModel.fetchComicVineMetadata(for: liveComic, force: force)
+            isFetchingMetadata = false
+            switch outcome {
+            case .updated:
+                resyncDrafts()
+                fetchMessage = "Metadata updated from ComicVine. Review and Save to keep."
+            case .needsChoice:
+                showingMatchPicker = true
+            case .alreadyFetched:
+                fetchMessage = "Already fetched — use Re-fetch to update."
+            case .noKey:
+                fetchMessage = "No API key. Add one in Settings."
+            case .noMatches:
+                fetchMessage = "No ComicVine matches found for this book."
+            case .failed(let reason):
+                fetchMessage = "Fetch failed: \(reason)"
+            }
+        }
+    }
+
+    /// Pull the on-disk values back into the editable drafts. Called after a
+    /// ComicVine fetch/pick updates the stored comic, so the open sheet shows
+    /// the new data — and, critically, so pressing Save writes the fetched
+    /// values rather than the stale drafts captured when the sheet opened.
+    private func resyncDrafts() {
+        let c = liveComic
+        editedComic = c
+        draftTitle = c.title ?? ""
+        draftPublisher = c.publisher ?? ""
+        draftSeries = c.series ?? ""
+        draftIssueNumber = c.issueNumber ?? ""
+        draftVolume = c.volume.map { String($0) } ?? ""
+        draftYear = c.year.map { String($0) } ?? ""
+        draftContentRating = c.contentRating
+        draftWriter = c.writer ?? ""
+        draftArtist = c.artist ?? ""
+        draftCoverArtist = c.coverArtist ?? ""
+        draftColorist = c.colorist ?? ""
+        draftInker = c.inker ?? ""
+        draftEditor = c.editor ?? ""
+        draftSummary = c.summary ?? ""
+        draftRating = c.rating ?? 0
     }
 
     // MARK: - Header View
