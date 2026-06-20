@@ -59,6 +59,10 @@ struct ContentView: View {
                 #if os(iOS)
                 // Sidebar-recall button in the navigation bar zone (above content) —
                 // only visible on iPad when the sidebar is hidden.
+                // The system ALSO surfaces its own sidebar toggle in the detail
+                // bar when the sidebar is hidden, duplicating ours — remove it
+                // (the sidebar column keeps its built-in collapse button).
+                .toolbar(removing: .sidebarToggle)
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         if columnVisibility != .all {

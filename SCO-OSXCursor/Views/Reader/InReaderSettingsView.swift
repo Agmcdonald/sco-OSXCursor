@@ -163,6 +163,38 @@ struct InReaderSettingsView: View {
                             .font(Typography.caption)
                             .foregroundColor(TextColors.tertiary)
                     }
+
+                    // MARK: - Typography Section (app-wide)
+                    Section {
+                        Picker("Font", selection: $settings.epubFontFamily) {
+                            ForEach(EPUBFontFamily.allCases, id: \.self) { family in
+                                Text(family.displayName).tag(family)
+                            }
+                        }
+                        #if os(macOS)
+                        .pickerStyle(.menu)
+                        #endif
+
+                        Picker("Line Spacing", selection: $settings.epubLineSpacing) {
+                            ForEach(EPUBLineSpacing.allCases, id: \.self) { spacing in
+                                Text(spacing.displayName).tag(spacing)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+
+                        Picker("Margins", selection: $settings.epubMargins) {
+                            ForEach(EPUBMargins.allCases, id: \.self) { margin in
+                                Text(margin.displayName).tag(margin)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    } header: {
+                        Text("Typography")
+                    } footer: {
+                        Text("Font, line spacing, and margins apply to all eBooks and take effect immediately. Text size is per-book, from the reader bar.")
+                            .font(Typography.caption)
+                            .foregroundColor(TextColors.tertiary)
+                    }
                 }
 
                 // MARK: - Page Transition Section

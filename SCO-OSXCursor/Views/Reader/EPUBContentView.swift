@@ -23,6 +23,12 @@ struct EPUBContentView: View {
     @State private var totalChapters: Int
     @State private var fontSize: Int
 
+    #if os(iOS)
+        // Swipe-down-to-dismiss gesture state (parity with ComicReaderView)
+        @State private var dragOffset: CGFloat = 0
+        @State private var dismissDragActive = false
+    #endif
+
     init(comic: Comic) {
         self.initialComic = comic
         _localComic = State(initialValue: comic)
@@ -41,6 +47,57 @@ struct EPUBContentView: View {
             onShowSettings: { showSettings = true },
             onCycleTheme: cycleTheme
         )
+        #if os(iOS)
+        // Swipe-down drag handle pill — fades in as the user pulls down
+        .overlay(alignment: .top) {
+            Capsule()
+                .fill(Color.white.opacity(0.5))
+                .frame(width: 36, height: 5)
+                .padding(.top, 10)
+                .opacity(Double(min(dragOffset / 40.0, 1.0)))
+                .allowsHitTesting(false)
+        }
+        .offset(y: max(0, dragOffset))
+        .scaleEffect(dragOffset > 0 ? max(0.92, 1.0 - dragOffset / 1800.0) : 1.0)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 16)
+                .onChanged { value in
+                    // In vertical-scroll style the page itself scrolls
+                    // vertically — only dismiss when the pull starts near
+                    // the top edge (same rule as the comic reader)
+                    let style = ReadingStyle(rawValue: localComic.readingStyle ?? "") ?? .verticalScroll
+                    if style == .verticalScroll {
+                        guard value.startLocation.y < 120 else { return }
+                    }
+                    guard value.translation.height > 0,
+                          value.translation.height > abs(value.translation.width) * 1.2
+                    else { return }
+                    dismissDragActive = true
+                    dragOffset = value.translation.height
+                }
+                .onEnded { value in
+                    guard dismissDragActive else { return }
+                    dismissDragActive = false
+
+                    let predictedEnd = value.predictedEndTranslation.height
+                    let shouldDismiss = dragOffset > 130 || predictedEnd > 400
+
+                    if shouldDismiss {
+                        withAnimation(.easeIn(duration: 0.22)) {
+                            dragOffset = 900
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+                            closeReader()
+                            dragOffset = 0
+                        }
+                    } else {
+                        withAnimation(.spring(response: 0.38, dampingFraction: 0.75)) {
+                            dragOffset = 0
+                        }
+                    }
+                }
+        )
+        #endif
         .sheet(isPresented: $showSettings) {
             InReaderSettingsView(
                 comic: $localComic,

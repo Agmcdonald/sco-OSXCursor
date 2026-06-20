@@ -140,6 +140,83 @@ enum PageTransition: String, CaseIterable, Codable {
     }
 }
 
+// MARK: - EPUB Typography
+
+/// Reader font for EPUBs. `.system` preserves the original stack
+/// (`-apple-system` first, so it renders San Francisco).
+enum EPUBFontFamily: String, CaseIterable, Codable {
+    case system = "System"
+    case newYork = "New York"
+    case georgia = "Georgia"
+    case palatino = "Palatino"
+    case charter = "Charter"
+
+    var displayName: String { rawValue }
+
+    var cssFontFamily: String {
+        switch self {
+        case .system: return "-apple-system, 'Georgia', serif"  // original default stack
+        case .newYork: return "ui-serif, 'Georgia', serif"      // Apple New York via WebKit ui-serif
+        case .georgia: return "'Georgia', serif"
+        case .palatino: return "'Palatino', 'Book Antiqua', ui-serif, serif"
+        case .charter: return "'Charter', ui-serif, serif"
+        }
+    }
+}
+
+/// Line spacing for EPUB text. `.normal` matches the original 1.75.
+enum EPUBLineSpacing: String, CaseIterable, Codable {
+    case compact = "Compact"
+    case normal = "Normal"
+    case relaxed = "Relaxed"
+
+    var displayName: String { rawValue }
+
+    var value: Double {
+        switch self {
+        case .compact: return 1.5
+        case .normal: return 1.75   // original hard-coded value
+        case .relaxed: return 2.05
+        }
+    }
+}
+
+/// Page margins for EPUB text. `.normal` matches the original layout values.
+enum EPUBMargins: String, CaseIterable, Codable {
+    case narrow = "Narrow"
+    case normal = "Normal"
+    case wide = "Wide"
+
+    var displayName: String { rawValue }
+
+    /// Vertical-scroll mode: horizontal text inset (pt)
+    var verticalPadding: Int {
+        switch self {
+        case .narrow: return 16
+        case .normal: return 24    // original
+        case .wide: return 40
+        }
+    }
+
+    /// Vertical-scroll mode: max text column width (pt)
+    var maxTextWidth: Int {
+        switch self {
+        case .narrow: return 780
+        case .normal: return 680   // original
+        case .wide: return 560
+        }
+    }
+
+    /// Horizontal (paged) mode: page inset; column width/gap derive from it
+    var horizontalPadding: Int {
+        switch self {
+        case .narrow: return 12
+        case .normal: return 20    // original
+        case .wide: return 32
+        }
+    }
+}
+
 // MARK: - Tap Zone Width
 
 /// How much of each screen edge acts as a page-turn tap zone (per side).
@@ -173,6 +250,10 @@ class ReaderSettings: ObservableObject {
     @Published var defaultReadingStyle: ReadingStyle  // Global default reading style
     @Published var defaultEPUBTheme: EPUBTheme        // Global default EPUB theme
     @Published var tapZoneWidth: TapZoneWidth         // Edge tap-zone width (app-wide)
+    // EPUB typography (app-wide; font SIZE stays per-book via epubFontSize)
+    @Published var epubFontFamily: EPUBFontFamily
+    @Published var epubLineSpacing: EPUBLineSpacing
+    @Published var epubMargins: EPUBMargins
     private var cancellables = Set<AnyCancellable>()
 
     private init() {
@@ -203,6 +284,13 @@ class ReaderSettings: ObservableObject {
         } else {
             self.tapZoneWidth = .medium
         }
+
+        self.epubFontFamily = UserDefaults.standard.string(forKey: "epubFontFamily")
+            .flatMap { EPUBFontFamily(rawValue: $0) } ?? .system
+        self.epubLineSpacing = UserDefaults.standard.string(forKey: "epubLineSpacing")
+            .flatMap { EPUBLineSpacing(rawValue: $0) } ?? .normal
+        self.epubMargins = UserDefaults.standard.string(forKey: "epubMargins")
+            .flatMap { EPUBMargins(rawValue: $0) } ?? .normal
 
         // Debounced save on main thread (macOS 26 safe)
         $pageTransition
@@ -235,6 +323,24 @@ class ReaderSettings: ObservableObject {
             .sink { value in
                 UserDefaults.standard.set(value.rawValue, forKey: "tapZoneWidth")
             }
+            .store(in: &cancellables)
+
+        $epubFontFamily
+            .removeDuplicates()
+            .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
+            .sink { UserDefaults.standard.set($0.rawValue, forKey: "epubFontFamily") }
+            .store(in: &cancellables)
+
+        $epubLineSpacing
+            .removeDuplicates()
+            .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
+            .sink { UserDefaults.standard.set($0.rawValue, forKey: "epubLineSpacing") }
+            .store(in: &cancellables)
+
+        $epubMargins
+            .removeDuplicates()
+            .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
+            .sink { UserDefaults.standard.set($0.rawValue, forKey: "epubMargins") }
             .store(in: &cancellables)
     }
 

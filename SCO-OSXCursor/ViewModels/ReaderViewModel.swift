@@ -698,6 +698,21 @@ class ReaderViewModel: ObservableObject {
         let bookPath = url.path
 
         Task { [weak self] in
+            // Fast path: a thumbnail persisted from a previous session (or
+            // evicted from memory) reloads from disk without re-extracting the
+            // page from the archive. `diskThumbnail` promotes it back into the
+            // in-memory grid cache, so the next render picks it up.
+            let onDisk = await Task.detached(priority: .utility) {
+                PageImageCache.shared.diskThumbnail(bookPath: bookPath, pageIndex: pageIndex)
+            }.value
+            if onDisk != nil {
+                await MainActor.run {
+                    self?.thumbnailRequestsInFlight.remove(pageIndex)
+                    self?.thumbnailVersion += 1
+                }
+                return
+            }
+
             // If the page data is already in the window, use it; otherwise
             // extract just this page from the archive.
             var data: Data? = await MainActor.run { self?.loadedPages[pageIndex]?.imageData }

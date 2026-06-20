@@ -107,8 +107,17 @@ final class PageImageCache {
     static let shared = PageImageCache()
 
     private let imageCache = NSCache<NSString, PlatformImage>()
-    private let thumbnailCache = NSCache<NSString, PlatformImage>()
+    /// Per-page thumbnails decoded from in-window page data (`thumbnail(for:)`).
+    private let pageThumbnailCache = NSCache<NSString, PlatformImage>()
+    /// Book-keyed thumbnails for the All Pages grid / filmstrip. Kept in its own
+    /// cache so large library covers can never evict a book's grid thumbnails
+    /// (which previously caused most cells to stay stuck on the spinner).
+    private let gridThumbnailCache = NSCache<NSString, PlatformImage>()
+    /// Library / dashboard cover images (decoded at up to 640 px, ~2.4 MB each).
+    private let coverCache = NSCache<NSString, PlatformImage>()
     private let sizeCache = NSCache<NSString, NSValue>()
+    /// Serial queue for best-effort disk persistence of grid thumbnails.
+    private let diskQueue = DispatchQueue(label: "PageImageCache.gridThumbnailDisk", qos: .utility)
 
     /// Maximum pixel dimension for full-page decodes.
     /// Large enough for 4x zoom on retina displays without holding raw scan sizes.
@@ -123,7 +132,18 @@ final class PageImageCache {
             maxPageDimension = 2600
             imageCache.totalCostLimit = 160 * 1024 * 1024  // 160 MB
         #endif
-        thumbnailCache.totalCostLimit = 64 * 1024 * 1024
+        // Per-page thumbnails are transient; a modest budget is plenty.
+        pageThumbnailCache.totalCostLimit = 48 * 1024 * 1024  // 48 MB
+        // Grid thumbnails need to hold a whole book at once (~0.6 MB each at
+        // 320 px → ~300+ pages at 192 MB). Sized so a book's grid never evicts
+        // itself mid-scroll. Disk persistence backs this up across evictions.
+        #if os(macOS)
+            gridThumbnailCache.totalCostLimit = 192 * 1024 * 1024  // 192 MB
+            coverCache.totalCostLimit = 96 * 1024 * 1024  // 96 MB
+        #else
+            gridThumbnailCache.totalCostLimit = 96 * 1024 * 1024  // 96 MB
+            coverCache.totalCostLimit = 48 * 1024 * 1024  // 48 MB
+        #endif
         sizeCache.countLimit = 4096
     }
 
@@ -151,11 +171,11 @@ final class PageImageCache {
     func thumbnail(for page: ComicPage) -> PlatformImage? {
         guard page.isLoaded else { return nil }
         let k = key(for: page)
-        if let cached = thumbnailCache.object(forKey: k) { return cached }
+        if let cached = pageThumbnailCache.object(forKey: k) { return cached }
         guard let decoded = Self.decodeDownsampled(page.imageData, maxDimension: maxThumbnailDimension) else {
             return nil
         }
-        thumbnailCache.setObject(decoded, forKey: k, cost: Self.cost(of: decoded))
+        pageThumbnailCache.setObject(decoded, forKey: k, cost: Self.cost(of: decoded))
         return decoded
     }
 
@@ -206,13 +226,33 @@ final class PageImageCache {
         "\(bookPath)#\(pageIndex)" as NSString
     }
 
+    /// Memory-only grid-thumbnail lookup. Safe to call synchronously on the
+    /// main thread during rendering (no disk I/O here — see `diskThumbnail`).
     func cachedThumbnail(bookPath: String, pageIndex: Int) -> PlatformImage? {
-        thumbnailCache.object(forKey: bookKey(bookPath, pageIndex))
+        gridThumbnailCache.object(forKey: bookKey(bookPath, pageIndex))
     }
 
     func storeThumbnail(_ image: PlatformImage, bookPath: String, pageIndex: Int) {
-        thumbnailCache.setObject(
+        gridThumbnailCache.setObject(
             image, forKey: bookKey(bookPath, pageIndex), cost: Self.cost(of: image))
+        // Best-effort persistence so an eviction reloads from disk instead of
+        // re-extracting the page from the archive.
+        diskQueue.async { [weak self] in
+            self?.writeGridThumbnailToDisk(image, bookPath: bookPath, pageIndex: pageIndex)
+        }
+    }
+
+    /// Disk lookup for a grid thumbnail. Decodes from disk, so callers MUST
+    /// invoke this off the main thread. On a hit it promotes the image back
+    /// into the in-memory grid cache so later renders are instant.
+    func diskThumbnail(bookPath: String, pageIndex: Int) -> PlatformImage? {
+        guard let url = gridThumbnailDiskURL(bookPath: bookPath, pageIndex: pageIndex),
+            let data = try? Data(contentsOf: url), !data.isEmpty,
+            let image = Self.platformImage(from: data)
+        else { return nil }
+        gridThumbnailCache.setObject(
+            image, forKey: bookKey(bookPath, pageIndex), cost: Self.cost(of: image))
+        return image
     }
 
     /// Decode a small thumbnail directly from raw image bytes.
@@ -228,9 +268,9 @@ final class PageImageCache {
     func coverImage(from data: Data, cacheKey: String) -> PlatformImage? {
         guard !data.isEmpty else { return nil }
         let k = "cover|\(cacheKey)|\(data.count)" as NSString
-        if let cached = thumbnailCache.object(forKey: k) { return cached }
+        if let cached = coverCache.object(forKey: k) { return cached }
         guard let decoded = Self.decodeDownsampled(data, maxDimension: 640) else { return nil }
-        thumbnailCache.setObject(decoded, forKey: k, cost: Self.cost(of: decoded))
+        coverCache.setObject(decoded, forKey: k, cost: Self.cost(of: decoded))
         return decoded
     }
 
@@ -257,8 +297,57 @@ final class PageImageCache {
 
     func removeAll() {
         imageCache.removeAllObjects()
-        thumbnailCache.removeAllObjects()
+        pageThumbnailCache.removeAllObjects()
+        gridThumbnailCache.removeAllObjects()
+        coverCache.removeAllObjects()
         sizeCache.removeAllObjects()
+    }
+
+    // MARK: Disk-backed grid thumbnails
+
+    /// Directory holding persisted grid thumbnails. A `static let` so it is
+    /// initialized exactly once in a thread-safe way (this cache is touched
+    /// from several background threads).
+    private static let gridThumbnailDir: URL? = {
+        let fm = FileManager.default
+        guard let base = fm.urls(for: .cachesDirectory, in: .userDomainMask).first
+        else { return nil }
+        let dir = base.appendingPathComponent("GridThumbnails", isDirectory: true)
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }()
+
+    private func gridThumbnailDiskURL(bookPath: String, pageIndex: Int) -> URL? {
+        guard let dir = Self.gridThumbnailDir else { return nil }
+        return dir.appendingPathComponent("\(Self.stableHash(bookPath))-\(pageIndex).jpg")
+    }
+
+    private func writeGridThumbnailToDisk(
+        _ image: PlatformImage, bookPath: String, pageIndex: Int
+    ) {
+        guard let url = gridThumbnailDiskURL(bookPath: bookPath, pageIndex: pageIndex),
+            let data = Self.jpegData(from: image, quality: 0.8)
+        else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+
+    /// Stable (launch-independent) hash for keying disk files by book path.
+    /// Swift's `Hasher` is randomized per process, so it can't be used here.
+    private static func stableHash(_ string: String) -> String {
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325  // FNV-1a 64-bit offset basis
+        for byte in string.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 0x0000_0100_0000_01b3  // FNV prime
+        }
+        return String(hash, radix: 16)
+    }
+
+    private static func platformImage(from data: Data) -> PlatformImage? {
+        #if os(macOS)
+            return NSImage(data: data)
+        #else
+            return UIImage(data: data)
+        #endif
     }
 
     // MARK: Decoding

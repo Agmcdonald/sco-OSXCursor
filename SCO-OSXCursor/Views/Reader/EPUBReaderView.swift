@@ -10,6 +10,7 @@ import SwiftUI
 import WebKit
 import os
 
+
 // MARK: - EPUB Reader View
 
 struct EPUBReaderView: View {
@@ -30,6 +31,9 @@ struct EPUBReaderView: View {
     @State private var showControls = true
     @State private var autoHideTimer: Timer?
     @State private var showTableOfContents = false
+
+    /// Observed so typography changes re-render the open chapter live
+    @ObservedObject private var readerSettings = ReaderSettings.shared
 
     /// Active theme for this book (per-book override or global setting).
     private var theme: EPUBTheme {
@@ -53,9 +57,13 @@ struct EPUBReaderView: View {
                     fontSize: fontSize,
                     readingStyle: comic.readingStyle,
                     theme: theme,
+                    fontFamily: readerSettings.epubFontFamily,
+                    lineSpacing: readerSettings.epubLineSpacing,
+                    margins: readerSettings.epubMargins,
                     onTap: { handleTap() },
                     onNavigate: { delta in navigateChapter(by: delta) },
-                    onEscape: { handleEscape() }
+                    onEscape: { handleEscape() },
+                    onChapterLink: { url in navigateToChapterFile(url) }
                 )
                 .ignoresSafeArea()
             }
@@ -209,6 +217,24 @@ struct EPUBReaderView: View {
         resetAutoHideTimer()
     }
 
+    /// In-book link (e.g. a ToC page) → jump to that chapter. Returns false
+    /// if the URL doesn't match a chapter file (caller decides what to do).
+    /// Fragments land at the chapter top for now.
+    private func navigateToChapterFile(_ url: URL) -> Bool {
+        let targetPath = url.standardizedFileURL.path
+        guard let index = chapters.firstIndex(where: {
+            $0.fileURL.standardizedFileURL.path == targetPath
+        }) else { return false }
+
+        if index != currentChapter {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                currentChapter = index
+            }
+        }
+        resetAutoHideTimer()
+        return true
+    }
+
     // MARK: - Controls Visibility
 
     private func handleTap() {
@@ -296,6 +322,9 @@ private struct EPUBWebViewHelper {
     let fontSize: Int
     let readingStyle: String?
     let theme: EPUBTheme
+    let fontFamily: EPUBFontFamily
+    let lineSpacing: EPUBLineSpacing
+    let margins: EPUBMargins
 
     func makeWebView(coordinator: EPUBWebView.Coordinator) -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -305,16 +334,19 @@ private struct EPUBWebViewHelper {
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = coordinator
 
+        // NOTE: taps/clicks are handled by injected JS (zone paging, controls
+        // toggle, link passthrough) — native gesture recognizers on WKWebView
+        // cancel the touches WebKit needs to complete link clicks, which made
+        // in-book links dead while the recognizer was attached.
         #if os(macOS)
         webView.setValue(false, forKey: "drawsBackground")
-        let click = NSClickGestureRecognizer(target: coordinator, action: #selector(EPUBWebView.Coordinator.handleTap))
-        webView.addGestureRecognizer(click)
         #else
         webView.isOpaque = false
         webView.backgroundColor = .clear
         webView.scrollView.backgroundColor = .clear
-        let tap = UITapGestureRecognizer(target: coordinator, action: #selector(EPUBWebView.Coordinator.handleTap))
-        webView.addGestureRecognizer(tap)
+        // Don't rubber-band vertically when content fits (paged mode) — the
+        // bounce otherwise claims vertical drags meant for swipe-to-dismiss
+        webView.scrollView.alwaysBounceVertical = false
         #endif
 
         loadContent(into: webView, coordinator: coordinator)
@@ -327,7 +359,7 @@ private struct EPUBWebViewHelper {
     /// chapter each time reset the scroll position and dropped keyboard
     /// focus, which is why arrow keys "stopped working" mid-book.
     var loadKey: String {
-        "\(chapter.index)|\(chapter.fileURL.path)|\(fontSize)|\(readingStyle ?? "")|\(theme.rawValue)"
+        "\(chapter.index)|\(chapter.fileURL.path)|\(fontSize)|\(readingStyle ?? "")|\(theme.rawValue)|\(fontFamily.rawValue)|\(lineSpacing.rawValue)|\(margins.rawValue)|\(ReaderSettings.shared.tapZoneWidth.rawValue)"
     }
 
     func loadContent(into webView: WKWebView, coordinator: EPUBWebView.Coordinator) {
@@ -355,6 +387,11 @@ private struct EPUBWebViewHelper {
         let styleStr = ReadingStyle(rawValue: readingStyle ?? "") ?? .verticalScroll
         let isHorizontal = styleStr == .standard || styleStr == .mangaRTL
         
+        // Margin presets (defaults reproduce the original hard-coded layout)
+        let hPad = margins.horizontalPadding
+        let vPad = margins.verticalPadding
+        let maxWidth = margins.maxTextWidth
+
         let layoutCSS = isHorizontal ? """
         html, body {
             height: 100vh !important;
@@ -365,11 +402,11 @@ private struct EPUBWebViewHelper {
             padding: 0 !important;
         }
         body {
-            column-width: calc(100vw - 40px) !important;
-            column-gap: 40px !important;
+            column-width: calc(100vw - \(hPad * 2)px) !important;
+            column-gap: \(hPad * 2)px !important;
             column-fill: auto !important;
             box-sizing: border-box !important;
-            padding: 20px !important;
+            padding: \(hPad)px !important;
         }
         img {
             max-width: 100% !important;
@@ -382,8 +419,8 @@ private struct EPUBWebViewHelper {
             padding: 0 !important;
         }
         body {
-            padding: 32px 24px 64px 24px !important;
-            max-width: 680px;
+            padding: 32px \(vPad)px 64px \(vPad)px !important;
+            max-width: \(maxWidth)px;
         }
         """
 
@@ -391,23 +428,37 @@ private struct EPUBWebViewHelper {
         // Escape is also handled here because the WKWebView holds keyboard
         // focus while reading — without this the key fell through unhandled
         // (system beep) unless the controls overlay happened to be visible.
+        // scoPageForward/scoPageBackward are shared by the arrow keys AND the
+        // native edge-tap zones (evaluated from the tap coordinator), so both
+        // input methods page identically.
+        // NOTE: every injected <script> is wrapped in CDATA guards. EPUB
+        // chapters are often XHTML (strict XML), where raw `&&` or `<` in
+        // script text is a fatal parse error (`xmlParseEntityRef: no name`)
+        // that blanks the whole page. The `//` prefixes keep the guards
+        // valid as plain-HTML JS comments too.
         let js = isHorizontal ? """
         <script>
+        //<![CDATA[
+        window.scoPageForward = function() {
+            if (window.scrollX + window.innerWidth >= document.documentElement.scrollWidth - 10) {
+                window.webkit.messageHandlers.epubNavigation.postMessage('nextChapter');
+            } else {
+                window.scrollBy({ left: window.innerWidth, behavior: 'smooth' });
+            }
+        };
+        window.scoPageBackward = function() {
+            if (window.scrollX <= 0) {
+                window.webkit.messageHandlers.epubNavigation.postMessage('prevChapter');
+            } else {
+                window.scrollBy({ left: -window.innerWidth, behavior: 'smooth' });
+            }
+        };
         document.addEventListener('keydown', function(e) {
-            const scrollAmt = window.innerWidth;
             if (e.key === 'ArrowRight') {
-                if (window.scrollX + window.innerWidth >= document.documentElement.scrollWidth - 10) {
-                    window.webkit.messageHandlers.epubNavigation.postMessage('nextChapter');
-                } else {
-                    window.scrollBy({ left: scrollAmt, behavior: 'smooth' });
-                }
+                window.scoPageForward();
                 e.preventDefault();
             } else if (e.key === 'ArrowLeft') {
-                if (window.scrollX <= 0) {
-                    window.webkit.messageHandlers.epubNavigation.postMessage('prevChapter');
-                } else {
-                    window.scrollBy({ left: -scrollAmt, behavior: 'smooth' });
-                }
+                window.scoPageBackward();
                 e.preventDefault();
             } else if (e.key === 'Escape') {
                 window.webkit.messageHandlers.epubNavigation.postMessage('closeReader');
@@ -416,15 +467,23 @@ private struct EPUBWebViewHelper {
         });
         // Auto-focus body so keys are caught immediately
         window.onload = function() { window.focus(); document.body.focus(); };
+        //]]>
         </script>
         """ : """
         <script>
+        //<![CDATA[
+        window.scoPageForward = function() {
+            window.webkit.messageHandlers.epubNavigation.postMessage('nextChapter');
+        };
+        window.scoPageBackward = function() {
+            window.webkit.messageHandlers.epubNavigation.postMessage('prevChapter');
+        };
         document.addEventListener('keydown', function(e) {
             if (e.key === 'ArrowRight') {
-                window.webkit.messageHandlers.epubNavigation.postMessage('nextChapter');
+                window.scoPageForward();
                 e.preventDefault();
             } else if (e.key === 'ArrowLeft') {
-                window.webkit.messageHandlers.epubNavigation.postMessage('prevChapter');
+                window.scoPageBackward();
                 e.preventDefault();
             } else if (e.key === 'Escape') {
                 window.webkit.messageHandlers.epubNavigation.postMessage('closeReader');
@@ -432,18 +491,46 @@ private struct EPUBWebViewHelper {
             }
         });
         window.onload = function() { window.focus(); document.body.focus(); };
+        //]]>
         </script>
         """
-        
+
+        // Tap/click zones, handled in-page so they can't interfere with link
+        // clicks (native recognizers cancelled WebKit's touch processing and
+        // killed in-book links). Links pass through to the navigation policy;
+        // edge taps page; center taps toggle the controls overlay.
+        let tapZoneFraction = ReaderSettings.shared.tapZoneWidth.fraction
+        let tapZonesJS = """
+        <script>
+        //<![CDATA[
+        document.addEventListener('click', function(e) {
+            // Let real link clicks through untouched
+            if (e.target && e.target.closest && e.target.closest('a[href]')) { return; }
+            var f = \(tapZoneFraction);
+            var x = e.clientX, w = window.innerWidth;
+            if (x < w * f) {
+                window.scoPageBackward && window.scoPageBackward();
+            } else if (x > w * (1 - f)) {
+                window.scoPageForward && window.scoPageForward();
+            } else {
+                window.webkit.messageHandlers.epubNavigation.postMessage('toggleControls');
+            }
+        });
+        //]]>
+        </script>
+        """
+
         let colors = theme.cssColors
         let stripInlineColorsJS = """
         <script>
+        //<![CDATA[
         document.addEventListener("DOMContentLoaded", function() {
             document.querySelectorAll('*').forEach(el => {
                 el.style.setProperty('color', '\(colors.text)', 'important');
                 el.style.setProperty('background-color', 'transparent', 'important');
             });
         });
+        //]]>
         </script>
         """
 
@@ -454,9 +541,9 @@ private struct EPUBWebViewHelper {
         html, body {
             background-color: \(colors.background) !important;
             color: \(colors.text) !important;
-            font-family: -apple-system, 'Georgia', serif !important;
+            font-family: \(fontFamily.cssFontFamily) !important;
             font-size: \(fontSize)px !important;
-            line-height: 1.75 !important;
+            line-height: \(lineSpacing.value) !important;
         }
         \(layoutCSS)
         p, li, div, span, td, th { font-size: inherit !important; color: \(colors.text) !important; }
@@ -473,7 +560,7 @@ private struct EPUBWebViewHelper {
         </style>
         """
         
-        let headInjection = "\(css)\n\(js)\n\(stripInlineColorsJS)"
+        let headInjection = "\(css)\n\(js)\n\(tapZonesJS)\n\(stripInlineColorsJS)"
         
         if let range = html.range(of: "</head>", options: .caseInsensitive) {
             return html.replacingCharacters(in: range, with: "\(headInjection)</head>")
@@ -492,13 +579,18 @@ struct EPUBWebView {
     let fontSize: Int
     let readingStyle: String?
     let theme: EPUBTheme
+    let fontFamily: EPUBFontFamily
+    let lineSpacing: EPUBLineSpacing
+    let margins: EPUBMargins
     var onTap: () -> Void
     var onNavigate: (Int) -> Void
     /// Esc pressed while the page has keyboard focus (sent from injected JS).
     var onEscape: () -> Void
+    /// In-book link to another chapter file — return true if handled.
+    var onChapterLink: (URL) -> Bool
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onTap: onTap, onNavigate: onNavigate, onEscape: onEscape)
+        Coordinator(onTap: onTap, onNavigate: onNavigate, onEscape: onEscape, onChapterLink: onChapterLink)
     }
 
     // MARK: - Coordinator (shared)
@@ -506,6 +598,7 @@ struct EPUBWebView {
         let onTap: () -> Void
         let onNavigate: (Int) -> Void
         let onEscape: () -> Void
+        let onChapterLink: (URL) -> Bool
         /// What's currently loaded — lets updateNSView/updateUIView skip
         /// reloads when nothing the page depends on actually changed.
         var lastLoadKey: String?
@@ -513,12 +606,15 @@ struct EPUBWebView {
         init(
             onTap: @escaping () -> Void,
             onNavigate: @escaping (Int) -> Void,
-            onEscape: @escaping () -> Void
+            onEscape: @escaping () -> Void,
+            onChapterLink: @escaping (URL) -> Bool
         ) {
             self.onTap = onTap
             self.onNavigate = onNavigate
             self.onEscape = onEscape
+            self.onChapterLink = onChapterLink
         }
+
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             if message.name == "epubNavigation", let action = message.body as? String {
@@ -528,22 +624,55 @@ struct EPUBWebView {
                     onNavigate(-1)
                 } else if action == "closeReader" {
                     onEscape()
+                } else if action == "toggleControls" {
+                    onTap()
                 }
             }
         }
 
-        #if os(macOS)
-        @objc func handleTap(_ recognizer: NSGestureRecognizer) { onTap() }
-        #else
-        @objc func handleTap(_ recognizer: UIGestureRecognizer) { onTap() }
-        #endif
 
         func webView(
             _ webView: WKWebView,
             decidePolicyFor navigationAction: WKNavigationAction,
             decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
         ) {
-            decisionHandler(navigationAction.navigationType == .linkActivated ? .cancel : .allow)
+            // Non-click navigation (our own loadFileURL, redirects) — allow
+            guard navigationAction.navigationType == .linkActivated else {
+                decisionHandler(.allow)
+                return
+            }
+            guard let url = navigationAction.request.url else {
+                decisionHandler(.cancel)
+                return
+            }
+
+            if url.isFileURL {
+                // In-book link: if it maps to a chapter, navigate via SwiftUI
+                // (which loads the STYLED copy — allowing the raw navigation
+                // would render the chapter without injected styles)
+                if onChapterLink(url) {
+                    decisionHandler(.cancel)
+                    return
+                }
+                // Same-document anchor (#fragment) — allow the jump
+                if url.fragment != nil,
+                   url.standardizedFileURL.deletingLastPathComponent() ==
+                   webView.url?.standardizedFileURL.deletingLastPathComponent()
+                {
+                    decisionHandler(.allow)
+                    return
+                }
+                // Unknown file target — don't navigate away from the book
+                decisionHandler(.cancel)
+            } else {
+                // External link — open in the system browser, keep the book
+                #if os(macOS)
+                NSWorkspace.shared.open(url)
+                #else
+                UIApplication.shared.open(url)
+                #endif
+                decisionHandler(.cancel)
+            }
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -565,12 +694,14 @@ extension EPUBWebView: NSViewRepresentable {
     typealias NSViewType = WKWebView
 
     func makeNSView(context: Context) -> WKWebView {
-        EPUBWebViewHelper(chapter: chapter, fontSize: fontSize, readingStyle: readingStyle, theme: theme)
+        EPUBWebViewHelper(chapter: chapter, fontSize: fontSize, readingStyle: readingStyle, theme: theme,
+                          fontFamily: fontFamily, lineSpacing: lineSpacing, margins: margins)
             .makeWebView(coordinator: context.coordinator)
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
-        EPUBWebViewHelper(chapter: chapter, fontSize: fontSize, readingStyle: readingStyle, theme: theme)
+        EPUBWebViewHelper(chapter: chapter, fontSize: fontSize, readingStyle: readingStyle, theme: theme,
+                          fontFamily: fontFamily, lineSpacing: lineSpacing, margins: margins)
             .loadContent(into: webView, coordinator: context.coordinator)
     }
 }
@@ -579,12 +710,14 @@ extension EPUBWebView: UIViewRepresentable {
     typealias UIViewType = WKWebView
 
     func makeUIView(context: Context) -> WKWebView {
-        EPUBWebViewHelper(chapter: chapter, fontSize: fontSize, readingStyle: readingStyle, theme: theme)
+        EPUBWebViewHelper(chapter: chapter, fontSize: fontSize, readingStyle: readingStyle, theme: theme,
+                          fontFamily: fontFamily, lineSpacing: lineSpacing, margins: margins)
             .makeWebView(coordinator: context.coordinator)
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
-        EPUBWebViewHelper(chapter: chapter, fontSize: fontSize, readingStyle: readingStyle, theme: theme)
+        EPUBWebViewHelper(chapter: chapter, fontSize: fontSize, readingStyle: readingStyle, theme: theme,
+                          fontFamily: fontFamily, lineSpacing: lineSpacing, margins: margins)
             .loadContent(into: webView, coordinator: context.coordinator)
     }
 }

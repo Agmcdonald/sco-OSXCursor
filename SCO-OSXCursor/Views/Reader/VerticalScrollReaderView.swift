@@ -133,33 +133,36 @@ struct VerticalScrollReaderView: View {
         // the scroll position jumps as pages stream in.
         let knownAspect = pageAspects[index]
 
+        // NO vertical padding and whole-point heights: webtoon strips are one
+        // continuous drawing, so any gap (or sub-pixel fractional height)
+        // renders as a black/hairline seam cutting through the artwork.
         Group {
             if let image = page.image {
                 let imageAspect = image.size.width > 0
                     ? image.size.height / image.size.width
                     : 1.5
                 let aspectRatio = knownAspect ?? imageAspect
+                let cellHeight = (columnWidth * aspectRatio).rounded()
 
                 #if os(macOS)
                 Image(nsImage: image)
                     .resizable()
-                    .scaledToFit()
-                    .frame(width: columnWidth, height: columnWidth * aspectRatio)
-                    .padding(.vertical, 4)
+                    .scaledToFill()
+                    .frame(width: columnWidth, height: cellHeight)
+                    .clipped()
                 #else
                 Image(uiImage: image)
                     .resizable()
-                    .scaledToFit()
-                    .frame(width: columnWidth, height: columnWidth * aspectRatio)
-                    .padding(.vertical, 4)
+                    .scaledToFill()
+                    .frame(width: columnWidth, height: cellHeight)
+                    .clipped()
                 #endif
             } else {
                 // Placeholder for loading pages — sized with the real aspect
                 // ratio when we know it
                 Rectangle()
                     .fill(Color.white.opacity(0.05))
-                    .frame(width: columnWidth, height: columnWidth * (knownAspect ?? 1.5))
-                    .padding(.vertical, 4)
+                    .frame(width: columnWidth, height: (columnWidth * (knownAspect ?? 1.5)).rounded())
                     .overlay(
                         ProgressView()
                             .tint(.white.opacity(0.4))
