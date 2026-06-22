@@ -48,7 +48,7 @@ struct AppSettings: Codable {
         autoOrganize: Bool = false,
         confidenceThreshold: Double = 0.7,
         readingMode: ReadingMode = .fitToWidth,
-        pageTransition: PageTransition = .slide,
+        pageTransition: PageTransition = .none,
         enableDoublePage: Bool = true,
         fitToScreen: Bool = true,
         theme: Theme = .dark,

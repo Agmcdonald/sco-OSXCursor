@@ -261,7 +261,16 @@ class ReaderSettings: ObservableObject {
            let transition = PageTransition(rawValue: saved) {
             self.pageTransition = transition
         } else {
-            self.pageTransition = .slide
+            self.pageTransition = .none
+        }
+
+        // One-time reset: make "None" the global default for everyone, including
+        // existing installs that still have an older default (e.g. "Slide")
+        // saved. Runs once; the user is free to change it afterwards.
+        if !UserDefaults.standard.bool(forKey: "didResetTransitionToNoneV1") {
+            self.pageTransition = .none
+            UserDefaults.standard.set(PageTransition.none.rawValue, forKey: "pageTransition")
+            UserDefaults.standard.set(true, forKey: "didResetTransitionToNoneV1")
         }
 
         if let saved = UserDefaults.standard.string(forKey: "defaultReadingStyle"),

@@ -51,6 +51,8 @@ struct LibraryListView: View {
 struct ComicRowView: View {
     let comic: Comic
     @State private var isHovered = false
+    /// Master toggle for the metadata status tags (Settings → Library).
+    @AppStorage("showMetadataTags") private var showMetadataTags = true
 
     var body: some View {
         HStack(spacing: Spacing.lg) {
@@ -90,12 +92,18 @@ struct ComicRowView: View {
                     .foregroundColor(TextColors.primary)
                     .lineLimit(1)
 
-                if let publisher = comic.publisher {
-                    HStack(spacing: Spacing.xs) {
-                        Circle()
-                            .fill(comic.publisherColor)
-                            .frame(width: 8, height: 8)
+                HStack(spacing: Spacing.xs) {
+                    // Metadata-completeness tag (green check / amber ! / red ✕).
+                    // Hidden when never attempted, or when turned off in Settings.
+                    if showMetadataTags, let asset = comic.metadataStatus.assetName {
+                        Image(asset)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 15, height: 15)
+                            .help(comic.metadataStatus.label)
+                    }
 
+                    if let publisher = comic.publisher {
                         Text(publisher)
                             .font(Typography.bodySmall)
                             .foregroundColor(TextColors.secondary)

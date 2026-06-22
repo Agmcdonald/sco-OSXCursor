@@ -669,7 +669,15 @@ struct ComicDetailView: View {
         ]
 
         for (value, type) in fieldsToCheck {
-            if let name = value, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            // Creator credits can list several people in one field
+            // ("Claire Roe, J. Bone & Nicola Scott") — store one entry per
+            // person. Series/publisher are single values and stay intact.
+            let names = type.isCreatorType
+                ? KnowledgeEntry.splitCreditNames(value)
+                : [value?.trimmingCharacters(in: .whitespacesAndNewlines)]
+                    .compactMap { $0 }.filter { !$0.isEmpty }
+
+            for name in names {
                 let exists = try? await DatabaseManager.shared.knowledgeEntryExists(
                     type: type, name: name)
                 if exists == false {

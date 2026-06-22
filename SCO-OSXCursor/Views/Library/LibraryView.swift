@@ -67,6 +67,9 @@ struct LibraryView: View {
     @State private var pendingPickerComicID: ComicID?
     @State private var comicVineStatus: String?
     @State private var isBatchFetching = false
+    // Batch match review queue
+    @State private var batchReviewIDs: [Comic.ID] = []
+    @State private var showingBatchReview = false
 
     // MARK: - Derived Data
 
@@ -281,6 +284,10 @@ struct LibraryView: View {
             if let comic = viewModel.comics.first(where: { $0.id == wrapper.id }) {
                 ComicVineMatchPicker(comic: comic, viewModel: viewModel)
             }
+        }
+        // Batch match review queue (after a multi-book fetch)
+        .sheet(isPresented: $showingBatchReview) {
+            ComicVineBatchReviewView(comicIDs: batchReviewIDs, viewModel: viewModel)
         }
         // Transient ComicVine fetch status (auto-dismisses)
         .overlay(alignment: .bottom) {
@@ -544,11 +551,19 @@ struct LibraryView: View {
         guard !selectedComics.isEmpty, !isBatchFetching else { return }
         let comics = viewModel.comics.filter { selectedComics.contains($0.id) }
         isBatchFetching = true
-        flashComicVineStatus("Fetching metadata for \(comics.count) book\(comics.count == 1 ? "" : "s")…")
+        let total = comics.count
+        flashComicVineStatus("Fetching metadata for \(total) book\(total == 1 ? "" : "s")…")
         Task {
-            let result = await viewModel.fetchComicVineMetadataBatch(for: comics)
+            let result = await viewModel.fetchComicVineMetadataBatch(for: comics) { done, total in
+                comicVineStatus = "Fetching metadata… \(done) of \(total)"
+            }
             isBatchFetching = false
             flashComicVineStatus(result.summary)
+            // Surface the review queue for any books that need a decision.
+            if !result.pendingReviewIDs.isEmpty {
+                batchReviewIDs = result.pendingReviewIDs
+                showingBatchReview = true
+            }
         }
     }
 

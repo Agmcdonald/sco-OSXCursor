@@ -27,6 +27,7 @@ struct SettingsView: View {
     @State private var libraryPublishers: [String] = []
     
     @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
+    @AppStorage("showMetadataTags") private var showMetadataTags = true
 
     var body: some View {
         ScrollView {
@@ -67,6 +68,27 @@ struct SettingsView: View {
                                 set: { hasSeenWelcome = !$0 }
                             ))
                             .labelsHidden()
+                        }
+
+                        Divider()
+                            .background(BorderColors.subtle)
+                            .padding(.vertical, Spacing.xs)
+
+                        HStack {
+                            VStack(alignment: .leading, spacing: Spacing.xs) {
+                                Text("Show Metadata Status Tags")
+                                    .font(Typography.h3)
+                                    .foregroundColor(TextColors.primary)
+
+                                Text("Display the green / amber / red bubble on each book showing how complete its metadata is")
+                                    .font(Typography.bodySmall)
+                                    .foregroundColor(TextColors.secondary)
+                            }
+
+                            Spacer()
+
+                            Toggle("", isOn: $showMetadataTags)
+                                .labelsHidden()
                         }
                     }
                 }
@@ -341,6 +363,7 @@ struct SettingsView: View {
     // MARK: - ComicVine Settings
 
     @AppStorage(ComicVineConfig.apiKeyDefaultsKey) private var comicVineAPIKey: String = ""
+    @AppStorage("autoApplyConfidentMatches") private var autoApplyConfidentMatches = true
     @ObservedObject private var comicVineQuota = ComicVineQuota.shared
 
     private var comicVineSettings: some View {
@@ -410,6 +433,29 @@ struct SettingsView: View {
                         .font(Typography.caption)
                         .foregroundColor(TextColors.tertiary)
                 }
+            }
+
+            Divider()
+                .background(BorderColors.subtle)
+                .padding(.vertical, Spacing.xs)
+
+            // Batch match-review behavior
+            HStack {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text("Auto-Apply Confident Matches")
+                        .font(Typography.h3)
+                        .foregroundColor(TextColors.primary)
+
+                    Text("When fetching metadata for several books at once, apply high-confidence matches automatically and only stop to review the uncertain ones. Turn off to review every book before anything is saved.")
+                        .font(Typography.bodySmall)
+                        .foregroundColor(TextColors.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+
+                Toggle("", isOn: $autoApplyConfidentMatches)
+                    .labelsHidden()
             }
         }
     }

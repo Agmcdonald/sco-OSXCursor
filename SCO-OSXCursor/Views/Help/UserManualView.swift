@@ -62,6 +62,44 @@ struct UserManualView: View {
                         )
 
                         FeatureRow(
+                            icon: "checkmark.bubble.fill",
+                            title: "Metadata Status Tags",
+                            description:
+                                "A small speech-bubble tag next to each book shows how complete its metadata is at a glance. Books that have never had a metadata lookup show no tag at all. You can turn these tags off entirely in Settings → Appearance."
+                        )
+
+                        // Metadata status legend
+                        VStack(alignment: .leading, spacing: Spacing.sm) {
+                            MetadataDotLegendRow(
+                                assetName: "MetaComplete",
+                                label: "Green check — Complete",
+                                detail: "Series, publisher, issue #, year, writer, artist, cover artist, and colorist are all filled."
+                            )
+                            MetadataDotLegendRow(
+                                assetName: "MetaPartial",
+                                label: "Yellow ! — Partial",
+                                detail: "Some fields are filled, but not the full set (includes books with only series & publisher)."
+                            )
+                            MetadataDotLegendRow(
+                                assetName: "MetaFailed",
+                                label: "Red ✕ — Lookup failed",
+                                detail: "A metadata search was attempted but came back empty."
+                            )
+                            MetadataDotLegendRow(
+                                assetName: nil,
+                                label: "No tag — Not attempted",
+                                detail: "No metadata lookup has been run yet and nothing is filled in."
+                            )
+                        }
+                        .padding(Spacing.md)
+                        .background(BackgroundColors.secondary.opacity(0.5))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(BorderColors.subtle, lineWidth: 1)
+                        )
+
+                        FeatureRow(
                             icon: "folder.badge.gearshape",
                             title: "Auto-Organization",
                             description:
@@ -282,6 +320,20 @@ struct UserManualView: View {
                         )
 
                         FeatureRow(
+                            icon: "sparkle.magnifyingglass",
+                            title: "Fetching from ComicVine",
+                            description:
+                                "Add a ComicVine API key in Settings, then right-click a book (or select several and use 'Fetch Metadata') to pull publisher, creators, summary, and cover dates automatically."
+                        )
+
+                        FeatureRow(
+                            icon: "checklist",
+                            title: "Reviewing Batch Matches",
+                            description:
+                                "When you fetch metadata for several books across different series, SCO can stop and let you confirm each match before saving. By default it auto-applies high-confidence matches and only opens the review queue for the uncertain ones — step through them with Confirm, Choose a different match, or Skip. Turn off 'Auto-Apply Confident Matches' in Settings → ComicVine Metadata to review every book instead."
+                        )
+
+                        FeatureRow(
                             icon: "photo.artframe",
                             title: "Publisher Banners",
                             description:
@@ -412,6 +464,40 @@ private struct FeatureRow: View {
                     .font(Typography.bodySmall)
                     .foregroundColor(TextColors.secondary)
                     .lineSpacing(4)
+            }
+        }
+    }
+}
+
+private struct MetadataDotLegendRow: View {
+    let assetName: String?
+    let label: String
+    let detail: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Group {
+                if let assetName {
+                    Image(assetName)
+                        .resizable()
+                        .scaledToFit()
+                } else {
+                    // "No tag" state — show a faint dashed placeholder
+                    RoundedRectangle(cornerRadius: 3)
+                        .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [2, 2]))
+                        .foregroundColor(TextColors.tertiary)
+                }
+            }
+            .frame(width: 18, height: 18)
+            .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(Typography.bodySmall.weight(.semibold))
+                    .foregroundColor(TextColors.primary)
+                Text(detail)
+                    .font(Typography.caption)
+                    .foregroundColor(TextColors.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }

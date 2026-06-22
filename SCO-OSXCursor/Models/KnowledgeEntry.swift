@@ -56,6 +56,43 @@ extension KnowledgeEntry {
             case .editor: return "Editors"
             }
         }
+
+        /// Whether this type names an individual person (a creator credit).
+        /// Creator credits can list several people in one field ("A, B & C")
+        /// and should be stored as one Knowledge entry per person. Series and
+        /// publisher names are single values and must never be split (e.g.
+        /// "Boom! Studios" or a series with a comma in its title).
+        var isCreatorType: Bool {
+            switch self {
+            case .series, .publisher: return false
+            case .writer, .artist, .coverArtist, .colorist, .inker, .editor: return true
+            }
+        }
+    }
+}
+
+// MARK: - Credit Name Splitting
+extension KnowledgeEntry {
+    /// Separators ComicVine and ComicInfo.xml use to join multiple creators
+    /// into one field. Kept in sync with the de-dupe logic in KnowledgeDetailView.
+    private static let creditSeparators = CharacterSet(charactersIn: ",&;")
+
+    /// Split a combined credit field ("Claire Roe, J. Bone & Nicola Scott")
+    /// into individual, trimmed, de-duplicated names. Order is preserved and
+    /// the first spelling/casing seen for a name wins. Returns `[value]` when
+    /// there is nothing to split.
+    static func splitCreditNames(_ value: String?) -> [String] {
+        guard let value else { return [] }
+        var seen = Set<String>()
+        var result: [String] = []
+        for part in value.components(separatedBy: creditSeparators) {
+            let name = part.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { continue }
+            if seen.insert(name.lowercased()).inserted {
+                result.append(name)
+            }
+        }
+        return result
     }
 }
 

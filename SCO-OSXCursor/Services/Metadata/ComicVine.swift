@@ -148,6 +148,13 @@ struct CVIssueDetail: Decodable {
     }
 }
 
+/// Minimal projection of an issue used to resolve its parent volume ID when
+/// the user pastes an *issue* link instead of a volume link.
+struct CVIssueVolumeRef: Decodable {
+    struct VolumeRef: Decodable { let id: Int }
+    let volume: VolumeRef?
+}
+
 /// Stored on the Comic record (JSON) when a search is ambiguous, so the
 /// user can resolve it now or any time later without another API call.
 struct CVCandidate: Codable, Identifiable, Hashable {
@@ -241,13 +248,19 @@ final class ComicVineService {
     }
 
     /// Search volumes (series) by name. 1 API call.
+    ///
+    /// Uses a wide limit because ComicVine's relevance ranking buries small or
+    /// brand-new series behind long-running ones with the same name (e.g. a
+    /// 2026 "Iron Man" lands far below the 1968 run). Pulling more rows lets the
+    /// local matcher sort by year/publisher rather than trusting that ranking.
+    /// It's still a single request — only the response is larger.
     func searchVolumes(_ name: String) async throws -> [CVVolumeResult] {
         try await request(
             path: "search/",
             query: [
                 URLQueryItem(name: "resources", value: "volume"),
                 URLQueryItem(name: "query", value: name),
-                URLQueryItem(name: "limit", value: "10"),
+                URLQueryItem(name: "limit", value: "50"),
                 URLQueryItem(name: "field_list", value: "id,name,start_year,publisher,count_of_issues"),
             ]
         )
@@ -292,6 +305,30 @@ final class ComicVineService {
             ]
         )
     }
+
+    /// Fetch one volume directly by its ComicVine volume ID. 1 API call.
+    /// Used by the "paste a ComicVine link" override so a known volume can be
+    /// matched without relying on search ranking (which buries small/new series).
+    func volume(id: Int) async throws -> CVVolumeResult {
+        try await request(
+            path: "volume/4050-\(id)/",
+            query: [
+                URLQueryItem(name: "field_list", value: "id,name,start_year,publisher,count_of_issues"),
+            ]
+        )
+    }
+
+    /// Resolve the parent volume ID for an issue, so a pasted *issue* link can
+    /// be turned into a volume match. 1 API call.
+    func volumeID(forIssueID id: Int) async throws -> Int? {
+        let ref: CVIssueVolumeRef = try await request(
+            path: "issue/4000-\(id)/",
+            query: [
+                URLQueryItem(name: "field_list", value: "volume"),
+            ]
+        )
+        return ref.volume?.id
+    }
 }
 
 // MARK: - Fetch Flow
@@ -313,8 +350,16 @@ extension LibraryViewModel {
     ///   and it protects the 200-calls/hour budget.
     /// - Ambiguous searches store candidates on the record for the user to
     ///   resolve via the match picker (now or later) at zero extra API cost.
+    /// - Parameter autoApplyConfident: when `true` (default), a high-confidence
+    ///   match is applied immediately. When `false`, even a confident match is
+    ///   stored as a candidate (best first) and returned as `.needsChoice` so
+    ///   the caller can ask the user to confirm it. Used by batch review.
     @MainActor
-    func fetchComicVineMetadata(for comic: Comic, force: Bool) async -> ComicVineFetchOutcome {
+    func fetchComicVineMetadata(
+        for comic: Comic,
+        force: Bool,
+        autoApplyConfident: Bool = true
+    ) async -> ComicVineFetchOutcome {
         guard ComicVineConfig.hasKey else { return .noKey }
         if !force, comic.metadataFetchedAt != nil { return .alreadyFetched }
         if !force, comic.metadataCandidates != nil { return .needsChoice }
@@ -335,11 +380,12 @@ extension LibraryViewModel {
             let second = scored.count > 1 ? scored[1].score : 0
             let confident = scored.count == 1 || (best.score >= 0.75 && best.score - second >= 0.2)
 
-            if confident {
+            if confident && autoApplyConfident {
                 return await applyVolume(best.volume, to: comic)
             }
 
-            // Ambiguous — store the top candidates for the user to resolve
+            // Either ambiguous, or a confident match the caller wants confirmed:
+            // store the top candidates (best first) for the user to resolve.
             let candidates = scored.prefix(5).map { item in
                 CVCandidate(
                     id: item.volume.id,
@@ -370,12 +416,15 @@ extension LibraryViewModel {
         var failed = 0
         var skipped = 0
         var noKey = false
+        /// Books with stored candidates that the user should review/confirm,
+        /// in the order they were fetched. Drives the batch review sheet.
+        var pendingReviewIDs: [Comic.ID] = []
 
         var summary: String {
             if noKey { return "Add a ComicVine API key in Settings first." }
             var parts: [String] = []
             if updated > 0 { parts.append("\(updated) updated") }
-            if needChoice > 0 { parts.append("\(needChoice) need a match choice") }
+            if needChoice > 0 { parts.append("\(needChoice) to review") }
             if noMatch > 0 { parts.append("\(noMatch) no match") }
             if skipped > 0 { parts.append("\(skipped) already fetched") }
             if failed > 0 { parts.append("\(failed) failed") }
@@ -383,26 +432,41 @@ extension LibraryViewModel {
         }
     }
 
+    /// Batch fetch over several books (selection), throttled by the API client.
+    /// Honors the "Auto-Apply Confident Matches" setting: when off, every book is
+    /// routed to the review queue; when on, only ambiguous books are.
+    /// - Parameter onProgress: called on the main actor after each book with
+    ///   (completed, total) so the caller can show progress.
     @MainActor
-    func fetchComicVineMetadataBatch(for comics: [Comic]) async -> BatchResult {
+    func fetchComicVineMetadataBatch(
+        for comics: [Comic],
+        onProgress: @MainActor (Int, Int) -> Void = { _, _ in }
+    ) async -> BatchResult {
         var result = BatchResult()
         guard ComicVineConfig.hasKey else {
             result.noKey = true
             return result
         }
-        for comic in comics {
+        let autoApply = UserDefaults.standard.object(forKey: "autoApplyConfidentMatches") as? Bool ?? true
+        let total = comics.count
+        for (index, comic) in comics.enumerated() {
             // Re-read the latest copy in case an earlier book in the loop
             // changed the array.
             let latest = self.comics.first(where: { $0.id == comic.id }) ?? comic
-            let outcome = await fetchComicVineMetadata(for: latest, force: false)
+            let outcome = await fetchComicVineMetadata(
+                for: latest, force: false, autoApplyConfident: autoApply
+            )
             switch outcome {
             case .updated: result.updated += 1
-            case .needsChoice: result.needChoice += 1
+            case .needsChoice:
+                result.needChoice += 1
+                result.pendingReviewIDs.append(latest.id)
             case .alreadyFetched: result.skipped += 1
             case .noMatches: result.noMatch += 1
             case .failed: result.failed += 1
             case .noKey: result.noKey = true
             }
+            onProgress(index + 1, total)
         }
         return result
     }
@@ -418,6 +482,35 @@ extension LibraryViewModel {
             countOfIssues: candidate.issueCount
         )
         return await applyVolume(volume, to: comic)
+    }
+
+    /// Apply a match from a pasted ComicVine link, slug, or numeric ID.
+    /// Bypasses search ranking entirely: a volume link is fetched directly; an
+    /// issue link is resolved to its parent volume first. The existing
+    /// `applyVolume` path then fills issue-level fields from `comic.issueNumber`.
+    @MainActor
+    func applyComicVineLink(_ raw: String, to comic: Comic) async -> ComicVineFetchOutcome {
+        guard ComicVineConfig.hasKey else { return .noKey }
+        guard let ref = CVLinkParser.parse(raw) else {
+            return .failed("That doesn't look like a ComicVine link or ID.")
+        }
+        do {
+            let volumeID: Int
+            switch ref {
+            case .volume(let id):
+                volumeID = id
+            case .issue(let id):
+                guard let resolved = try await ComicVineService.shared.volumeID(forIssueID: id) else {
+                    return .failed("Couldn't find the series for that issue link.")
+                }
+                volumeID = resolved
+            }
+            let volume = try await ComicVineService.shared.volume(id: volumeID)
+            return await applyVolume(volume, to: comic)
+        } catch {
+            AppLog.metadata.error("[ComicVine] Link match failed: \(error.localizedDescription)")
+            return .failed(error.localizedDescription)
+        }
     }
 
     /// User rejected all candidates — clear them so the menu stops offering.
@@ -499,21 +592,60 @@ extension LibraryViewModel {
     }
 }
 
+// MARK: - Link / ID parsing
+
+/// A reference parsed out of a pasted ComicVine link or ID.
+enum CVReference: Equatable {
+    case volume(Int)   // 4050-<id>
+    case issue(Int)    // 4000-<id>
+}
+
+/// Extracts a ComicVine volume/issue reference from whatever the user pastes:
+/// a full URL, the bare "4050-170313" slug, or a plain numeric ID.
+///
+/// ComicVine encodes a type prefix in the slug — 4050 = volume, 4000 = issue.
+/// A bare number is treated as a volume ID (the common case for this override).
+enum CVLinkParser {
+    static func parse(_ raw: String) -> CVReference? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        // Look for a "<4-digit-prefix>-<id>" token anywhere in the string.
+        if let range = trimmed.range(of: #"\d{4}-\d+"#, options: .regularExpression) {
+            let parts = trimmed[range].split(separator: "-")
+            if parts.count == 2, let prefix = Int(parts[0]), let id = Int(parts[1]) {
+                switch prefix {
+                case 4050: return .volume(id)
+                case 4000: return .issue(id)
+                default:   return nil   // some other resource type — not matchable here
+                }
+            }
+        }
+
+        // Bare numeric input → assume a volume ID.
+        if let id = Int(trimmed) { return .volume(id) }
+        return nil
+    }
+}
+
 // MARK: - Matching helpers
 
 enum ComicVineMatcher {
 
     /// 0…1ish similarity score between a search result and the book.
+    ///
+    /// Among volumes that share a name (e.g. the many "Iron Man" series), the
+    /// name component is a wash, so year is the primary discriminator: a book
+    /// tagged "(2026)" almost always belongs to the volume that *started* in
+    /// 2026, and a volume that began many years earlier is almost certainly the
+    /// wrong one. Year is weighted heavily for that reason.
     static func score(_ volume: CVVolumeResult, against comic: Comic, query: String) -> Double {
         var score = nameSimilarity(volume.name ?? "", query)
 
-        if let comicYear = comic.year,
-           let volumeYear = volume.startYear.flatMap({ Int($0) }) {
-            let diff = abs(comicYear - volumeYear)
-            if diff == 0 { score += 0.2 }
-            else if diff <= 2 { score += 0.1 }
-            else if diff > 15 { score -= 0.1 }
-        }
+        score += yearScore(
+            comicYear: comic.year,
+            volumeYear: volume.startYear.flatMap { Int($0) }
+        )
 
         if let comicPublisher = comic.publisher?.lowercased(),
            let volumePublisher = volume.publisher?.name?.lowercased(),
@@ -525,6 +657,21 @@ enum ComicVineMatcher {
         }
 
         return score
+    }
+
+    /// Strong, graduated year agreement. Returns 0 when either year is unknown
+    /// so books without a year fall back to name/publisher matching unchanged.
+    /// An exact match outweighs a publisher match; a gap of many years applies a
+    /// penalty large enough to sink an otherwise same-name, same-publisher hit.
+    static func yearScore(comicYear: Int?, volumeYear: Int?) -> Double {
+        guard let comicYear, let volumeYear else { return 0 }
+        switch abs(comicYear - volumeYear) {
+        case 0:      return  0.35
+        case 1:      return  0.15
+        case 2...3:  return  0.05
+        case 4...10: return -0.15
+        default:     return -0.35   // >10 years apart — different volume
+        }
     }
 
     static func nameSimilarity(_ a: String, _ b: String) -> Double {
@@ -596,6 +743,8 @@ struct ComicVineMatchPicker: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var isApplying = false
+    @State private var linkText = ""
+    @State private var linkError: String?
 
     private var candidates: [CVCandidate] {
         CVCandidate.decodeList(comic.metadataCandidates)
@@ -660,6 +809,10 @@ struct ComicVineMatchPicker: View {
 
             Divider()
 
+            linkSection
+
+            Divider()
+
             HStack {
                 Button("None of These") {
                     viewModel.clearComicVineCandidates(for: comic)
@@ -679,6 +832,32 @@ struct ComicVineMatchPicker: View {
         .frame(minWidth: 420, minHeight: 380)
     }
 
+    /// Manual override: paste a ComicVine volume/issue link (or ID) to match a
+    /// series that search ranking didn't surface.
+    private var linkSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("None match? Paste a ComicVine link")
+                .font(Typography.caption)
+                .foregroundColor(TextColors.secondary)
+            HStack(spacing: Spacing.sm) {
+                TextField("comicvine.gamespot.com/…/4050-170313/", text: $linkText)
+                    .textFieldStyle(.roundedBorder)
+                    .font(Typography.caption)
+                    .disabled(isApplying)
+                    .onSubmit { applyLink() }
+                Button("Use Link", action: applyLink)
+                    .disabled(isApplying || linkText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            if let linkError {
+                Text(linkError)
+                    .font(Typography.caption)
+                    .foregroundColor(AccentColors.error)
+            }
+        }
+        .padding(.horizontal, Spacing.lg)
+        .padding(.vertical, Spacing.md)
+    }
+
     private func candidateSubtitle(_ candidate: CVCandidate) -> String {
         var parts: [String] = []
         if let year = candidate.startYear { parts.append(String(year)) }
@@ -693,6 +872,242 @@ struct ComicVineMatchPicker: View {
         Task {
             _ = await viewModel.applyComicVineCandidate(candidate, to: comic)
             isApplying = false
+            dismiss()
+        }
+    }
+
+    private func applyLink() {
+        let raw = linkText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !isApplying, !raw.isEmpty else { return }
+        linkError = nil
+        isApplying = true
+        Task {
+            let outcome = await viewModel.applyComicVineLink(raw, to: comic)
+            isApplying = false
+            switch outcome {
+            case .updated:
+                dismiss()
+            case .failed(let message):
+                linkError = message
+            case .noKey:
+                linkError = "Add a ComicVine API key in Settings first."
+            default:
+                dismiss()
+            }
+        }
+    }
+}
+
+// MARK: - Batch Match Review Sheet
+
+/// Steps through every book that needs a match decision after a batch fetch,
+/// one at a time, so the user can confirm or change each match before anything
+/// extra is written. Confident matches that were auto-applied never appear here;
+/// when "Auto-Apply Confident Matches" is off, every book is routed through.
+struct ComicVineBatchReviewView: View {
+    /// IDs of the books queued for review, in fetch order.
+    let comicIDs: [Comic.ID]
+    @ObservedObject var viewModel: LibraryViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var index = 0
+    @State private var isApplying = false
+
+    private var currentComic: Comic? {
+        guard index >= 0, index < comicIDs.count else { return nil }
+        return viewModel.comics.first(where: { $0.id == comicIDs[index] })
+    }
+
+    private var candidates: [CVCandidate] {
+        CVCandidate.decodeList(currentComic?.metadataCandidates)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+
+            Divider()
+
+            if let comic = currentComic {
+                lookingForBar(for: comic)
+                Divider()
+
+                if candidates.isEmpty {
+                    emptyState
+                } else {
+                    candidateList
+                }
+            } else {
+                emptyState
+            }
+
+            Divider()
+
+            footer
+        }
+        .frame(minWidth: 460, minHeight: 460)
+    }
+
+    // MARK: Sections
+
+    private var header: some View {
+        VStack(spacing: Spacing.xs) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Review Matches")
+                        .font(Typography.h3)
+                        .foregroundColor(TextColors.primary)
+                    Text("Book \(min(index + 1, comicIDs.count)) of \(comicIDs.count)")
+                        .font(Typography.caption)
+                        .foregroundColor(TextColors.secondary)
+                }
+                Spacer()
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+            }
+
+            ProgressView(
+                value: Double(min(index, comicIDs.count)),
+                total: Double(max(comicIDs.count, 1))
+            )
+            .tint(AccentColors.primary)
+        }
+        .padding(Spacing.lg)
+    }
+
+    private func lookingForBar(for comic: Comic) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(comic.displayTitle)
+                .font(Typography.body)
+                .foregroundColor(TextColors.primary)
+                .lineLimit(1)
+            Text("Looking for: \(lookingForDescription(comic))")
+                .font(Typography.caption)
+                .foregroundColor(TextColors.secondary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Spacing.lg)
+        .padding(.vertical, Spacing.md)
+    }
+
+    private var candidateList: some View {
+        List {
+            ForEach(Array(candidates.enumerated()), id: \.element.id) { offset, candidate in
+                Button {
+                    apply(candidate)
+                } label: {
+                    HStack(spacing: Spacing.sm) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(candidate.name)
+                                .font(Typography.body)
+                                .foregroundColor(TextColors.primary)
+                            Text(candidateSubtitle(candidate))
+                                .font(Typography.caption)
+                                .foregroundColor(TextColors.secondary)
+                        }
+                        Spacer()
+                        if offset == 0 {
+                            Text("Best match")
+                                .font(Typography.caption)
+                                .foregroundColor(AccentColors.success)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(isApplying)
+            }
+        }
+        #if os(macOS)
+        .listStyle(.inset)
+        #else
+        .listStyle(.insetGrouped)
+        #endif
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: Spacing.md) {
+            Image(systemName: "checkmark.circle")
+                .font(.system(size: 40))
+                .foregroundColor(TextColors.tertiary)
+            Text("No candidates for this book.")
+                .font(Typography.body)
+                .foregroundColor(TextColors.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var footer: some View {
+        HStack(spacing: Spacing.md) {
+            Button("None of These") {
+                if let comic = currentComic {
+                    viewModel.clearComicVineCandidates(for: comic)
+                }
+                advance()
+            }
+            .foregroundColor(AccentColors.error)
+            .disabled(isApplying || currentComic == nil)
+
+            Spacer()
+
+            if isApplying {
+                ProgressView().scaleEffect(0.7)
+                Text("Fetching details…")
+                    .font(Typography.caption)
+                    .foregroundColor(TextColors.secondary)
+            }
+
+            Button("Skip") { advance() }
+                .disabled(isApplying)
+
+            if index + 1 >= comicIDs.count {
+                Button("Finish") { dismiss() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isApplying)
+            } else {
+                Button("Skip All") { dismiss() }
+                    .disabled(isApplying)
+            }
+        }
+        .padding(Spacing.lg)
+    }
+
+    // MARK: Helpers
+
+    private func lookingForDescription(_ comic: Comic) -> String {
+        var parts: [String] = []
+        if let series = comic.series, !series.isEmpty { parts.append(series) }
+        if let issue = comic.issueNumber, !issue.isEmpty { parts.append("#\(issue)") }
+        if let year = comic.year { parts.append("(\(year))") }
+        if parts.isEmpty { return (comic.fileName as NSString).deletingPathExtension }
+        return parts.joined(separator: " ")
+    }
+
+    private func candidateSubtitle(_ candidate: CVCandidate) -> String {
+        var parts: [String] = []
+        if let year = candidate.startYear { parts.append(String(year)) }
+        if let publisher = candidate.publisher { parts.append(publisher) }
+        if let count = candidate.issueCount { parts.append("\(count) issues") }
+        return parts.isEmpty ? "ComicVine volume #\(candidate.id)" : parts.joined(separator: " • ")
+    }
+
+    private func apply(_ candidate: CVCandidate) {
+        guard !isApplying, let comic = currentComic else { return }
+        isApplying = true
+        Task {
+            _ = await viewModel.applyComicVineCandidate(candidate, to: comic)
+            isApplying = false
+            advance()
+        }
+    }
+
+    /// Move to the next book, or dismiss when the queue is exhausted.
+    private func advance() {
+        if index + 1 < comicIDs.count {
+            index += 1
+        } else {
             dismiss()
         }
     }

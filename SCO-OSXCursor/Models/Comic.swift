@@ -432,6 +432,102 @@ extension Comic {
     var normalizedPublisher: String? {
         return PublisherDetector.normalize(publisher)
     }
+
+    // MARK: - Metadata Status
+
+    /// Completeness state of a book's metadata, surfaced as a small speech-bubble
+    /// tag in the library. Replaces the old publisher-color dot.
+    enum MetadataStatus {
+        /// All key fields present — green check bubble.
+        case complete
+        /// Some fields filled, but not the full set — amber "!" bubble.
+        case partial
+        /// A metadata fetch was attempted but the book is still essentially empty
+        /// — red "✕" bubble.
+        case failed
+        /// No metadata fetch has been attempted and nothing is filled in. No tag
+        /// is shown for this state.
+        case notAttempted
+
+        /// Asset-catalog image name for the tag, or `nil` when no indicator
+        /// should be shown.
+        var assetName: String? {
+            switch self {
+            case .complete: return "MetaComplete"
+            case .partial:  return "MetaPartial"
+            case .failed:   return "MetaFailed"
+            case .notAttempted: return nil
+            }
+        }
+
+        /// Tint color for the tag.
+        var color: Color {
+            switch self {
+            case .complete: return AccentColors.success  // green
+            case .partial:  return AccentColors.warning  // amber
+            case .failed:   return AccentColors.error    // red
+            case .notAttempted: return .clear
+            }
+        }
+
+        /// Human-readable label (for tooltips / accessibility).
+        var label: String {
+            switch self {
+            case .complete: return "Metadata complete"
+            case .partial:  return "Partial metadata"
+            case .failed:   return "Metadata lookup failed"
+            case .notAttempted: return "No metadata yet"
+            }
+        }
+    }
+
+    /// Treats a nil or whitespace-only string as absent.
+    private static func isFilled(_ value: String?) -> Bool {
+        guard let value = value else { return false }
+        return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Derived metadata-completeness state driving the library status tag.
+    var metadataStatus: MetadataStatus {
+        let hasSeries = Comic.isFilled(series)
+        let hasPublisher = Comic.isFilled(publisher)
+
+        // Fields required for a "complete" (green) book.
+        let hasIssue = Comic.isFilled(issueNumber)
+        let hasYear = year != nil
+        let hasWriter = Comic.isFilled(writer)
+        let hasArtist = Comic.isFilled(artist)
+        let hasCoverArtist = Comic.isFilled(coverArtist)
+        let hasColorist = Comic.isFilled(colorist)
+
+        let attempted = metadataFetchedAt != nil
+        let hasAnyMeta = hasSeries || hasPublisher || hasIssue || hasYear
+            || hasWriter || hasArtist || hasCoverArtist || hasColorist
+
+        // GREEN: every key field is present (however it got filled).
+        if hasSeries && hasPublisher && hasIssue && hasYear
+            && hasWriter && hasArtist && hasCoverArtist && hasColorist {
+            return .complete
+        }
+
+        // RED: a lookup was attempted but the book is still essentially empty.
+        if attempted && !hasSeries && !hasPublisher {
+            return .failed
+        }
+
+        // NOTHING: never attempted and nothing meaningful filled in.
+        if !attempted && !hasAnyMeta {
+            return .notAttempted
+        }
+
+        // AMBER: anything in between (partial / incomplete).
+        return .partial
+    }
+
+    /// Tag tint color reflecting metadata completeness.
+    var metadataStatusColor: Color {
+        return metadataStatus.color
+    }
 }
 
 // MARK: - Sample Data

@@ -11,6 +11,8 @@ import SwiftUI
 struct ComicCardView: View {
     let comic: Comic
     @State private var isHovered = false
+    /// Master toggle for the metadata status tags (Settings → Library).
+    @AppStorage("showMetadataTags") private var showMetadataTags = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
@@ -51,15 +53,22 @@ struct ComicCardView: View {
                             .layoutPriority(1)
                     }
 
-                    if let publisher = comic.publisher {
+                    // Metadata-completeness tag (green check / amber ! / red ✕).
+                    // Hidden entirely when metadata was never attempted, or when
+                    // the user turns the tags off in Settings.
+                    if showMetadataTags, let asset = comic.metadataStatus.assetName {
                         if comic.issueNumber != nil || comic.year != nil {
                             Text("•")
                                 .font(Typography.caption)
                                 .foregroundColor(TextColors.tertiary)
                         }
-                        Circle()
-                            .fill(comic.publisherColor)
-                            .frame(width: 6, height: 6)
+                        Image(asset)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 13, height: 13)
+                            .help(comic.metadataStatus.label)
+                    }
+                    if let publisher = comic.publisher {
                         Text(publisher)
                             .font(Typography.caption)
                             .foregroundColor(TextColors.secondary)

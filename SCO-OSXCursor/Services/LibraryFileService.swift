@@ -155,11 +155,20 @@ final class LibraryFileService {
             throw LibraryFileError.cannotCreateDirectory(destFolder, underlying: error)
         }
 
-        // Perform the move (atomic on same volume; copy+verify+delete cross-volume)
-        if isCrossVolume(from: source, to: destination) {
-            try crossVolumeMove(from: source, to: destination)
-        } else {
-            try fm.moveItem(at: source, to: destination)
+        // Perform the move (atomic on same volume; copy+verify+delete cross-volume).
+        // If the source lives in a cloud-synced folder, the sandbox blocks the move
+        // with an opaque permission error — translate it into a clear message.
+        do {
+            if isCrossVolume(from: source, to: destination) {
+                try crossVolumeMove(from: source, to: destination)
+            } else {
+                try fm.moveItem(at: source, to: destination)
+            }
+        } catch {
+            if LibraryFileService.isCloudDriveURL(source) {
+                throw LibraryFileError.cloudDriveSource(source)
+            }
+            throw error
         }
 
         // Refresh security-scoped bookmark for the new location (read-write)
@@ -224,6 +233,32 @@ final class LibraryFileService {
 
     /// Strips characters that are illegal in HFS+/APFS folder names,
     /// collapses whitespace, and truncates to 255 bytes.
+    // MARK: - Cloud Drive Detection
+
+    /// Known cloud-sync path fragments → human-readable service names.
+    private static let cloudMarkers: [(fragment: String, name: String)] = [
+        ("Mobile Documents/com~apple~CloudDocs", "iCloud Drive"),
+        ("Library/CloudStorage/Dropbox", "Dropbox"),
+        ("/Dropbox/", "Dropbox"),
+        ("Library/CloudStorage/GoogleDrive", "Google Drive"),
+        ("/Google Drive/", "Google Drive"),
+        ("Library/CloudStorage/OneDrive", "OneDrive"),
+        ("/OneDrive", "OneDrive"),
+    ]
+
+    /// True when the URL lives inside a known cloud-synced folder that the macOS
+    /// sandbox prevents SCO from moving files out of.
+    static func isCloudDriveURL(_ url: URL) -> Bool {
+        let path = url.path
+        return cloudMarkers.contains { path.contains($0.fragment) }
+    }
+
+    /// Friendly name of the cloud service for a path (defaults to "a cloud drive").
+    static func cloudServiceName(for url: URL) -> String {
+        let path = url.path
+        return cloudMarkers.first { path.contains($0.fragment) }?.name ?? "a cloud drive"
+    }
+
     func sanitizeFolderName(_ name: String) -> String {
         // Characters illegal on macOS
         let illegal = CharacterSet(charactersIn: "/:\\*?\"<>|")
@@ -384,6 +419,7 @@ enum LibraryFileError: LocalizedError {
     case crossVolumeCopyVerificationFailed
     case noHomeLibrarySet
     case cannotCreateDirectory(URL, underlying: Error)
+    case cloudDriveSource(URL)
 
     var errorDescription: String? {
         switch self {
@@ -393,6 +429,8 @@ enum LibraryFileError: LocalizedError {
             return "No home library folder has been set. Please choose one in Settings."
         case .cannotCreateDirectory(let url, let underlying):
             return "Could not create folder \"\(url.lastPathComponent)\": \(underlying.localizedDescription). Make sure the app has permission to write to the home library folder."
+        case .cloudDriveSource(let url):
+            return "Can't move \"\(url.lastPathComponent)\" because it lives in a cloud-synced folder (\(LibraryFileService.cloudServiceName(for: url))). macOS sandboxing blocks SCO from moving files out of iCloud Drive, Dropbox, Google Drive, and OneDrive. Move the file to a local folder (e.g. Downloads or Documents) first, then re-import it."
         }
     }
 }

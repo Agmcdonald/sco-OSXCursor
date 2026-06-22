@@ -379,6 +379,81 @@ final class DatabaseManager {
             AppLog.database.info("[DatabaseManager] ✅ Migration v16_comicvine_metadata complete")
         }
 
+        // Version 17: Split combined creator credits in the Knowledge Base.
+        // ComicVine imports joined multiple people into one field ("A, B & C")
+        // which were stored as a single knowledge entry. Split those into one
+        // entry per person and remove the combined rows. Series/publisher are
+        // left untouched.
+        migrator.registerMigration("v17_split_creator_credits") { db in
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v17_split_creator_credits")
+            guard try db.tableExists("metadata_knowledge") else {
+                AppLog.database.info("[DatabaseManager] ℹ️ metadata_knowledge missing — skipping v17")
+                return
+            }
+
+            let creatorTypes = KnowledgeEntry.EntryType.allCases
+                .filter { $0.isCreatorType }
+                .map { $0.rawValue }
+
+            var splitCount = 0
+            for type in creatorTypes {
+                // Snapshot rows first so we don't mutate while iterating.
+                let rows = try Row.fetchAll(
+                    db,
+                    sql: "SELECT id, name, created_at FROM metadata_knowledge WHERE type = ?",
+                    arguments: [type])
+
+                for row in rows {
+                    let id: Int64 = row["id"]
+                    let name: String = row["name"]
+                    let createdAt: String? = row["created_at"]
+                    let parts = KnowledgeEntry.splitCreditNames(name)
+
+                    // Nothing to fix if it's already a single clean name.
+                    guard parts.count > 1 || (parts.count == 1 && parts[0] != name) else { continue }
+
+                    for part in parts {
+                        let normalized = part.trimmingCharacters(in: .whitespacesAndNewlines)
+                            .lowercased()
+                        try db.execute(
+                            sql: """
+                                INSERT OR IGNORE INTO metadata_knowledge
+                                    (type, name, normalized_name, created_at)
+                                VALUES (?, ?, ?, ?)
+                                """,
+                            arguments: [type, part, normalized, createdAt])
+                    }
+
+                    // Remove the combined row (unless a single part maps back to it,
+                    // in which case the INSERT OR IGNORE above already kept it).
+                    if !(parts.count == 1 && parts[0] == name) {
+                        try db.execute(
+                            sql: "DELETE FROM metadata_knowledge WHERE id = ?",
+                            arguments: [id])
+                    }
+                    splitCount += 1
+                }
+            }
+
+            AppLog.database.info(
+                "[DatabaseManager] ✅ Migration v17_split_creator_credits complete — \(splitCount) combined entries split")
+        }
+
+        // Version 18: Default page transition to "None" for all books.
+        // Clears every per-book transition override so all existing books fall
+        // through to the (now "None") global default. New per-book preferences
+        // set afterwards are still respected.
+        migrator.registerMigration("v18_default_transition_none") { db in
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v18_default_transition_none")
+            if try db.tableExists("comics") {
+                let cleared = try Int.fetchOne(
+                    db, sql: "SELECT COUNT(*) FROM comics WHERE preferred_transition IS NOT NULL") ?? 0
+                try db.execute(sql: "UPDATE comics SET preferred_transition = NULL")
+                AppLog.database.info(
+                    "[DatabaseManager] ✅ Migration v18_default_transition_none complete — cleared \(cleared) per-book overrides")
+            }
+        }
+
         return migrator
     }
 
