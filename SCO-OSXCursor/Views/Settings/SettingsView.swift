@@ -364,6 +364,7 @@ struct SettingsView: View {
 
     @AppStorage(ComicVineConfig.apiKeyDefaultsKey) private var comicVineAPIKey: String = ""
     @AppStorage("autoApplyConfidentMatches") private var autoApplyConfidentMatches = true
+    @AppStorage("singleTapConfirmMatch") private var singleTapConfirmMatch = false
     @ObservedObject private var comicVineQuota = ComicVineQuota.shared
 
     private var comicVineSettings: some View {
@@ -455,6 +456,29 @@ struct SettingsView: View {
                 Spacer()
 
                 Toggle("", isOn: $autoApplyConfidentMatches)
+                    .labelsHidden()
+            }
+
+            Divider()
+                .background(BorderColors.subtle)
+                .padding(.vertical, Spacing.xs)
+
+            // Match-picker tap behavior
+            HStack {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text("Single-Tap to Confirm Match")
+                        .font(Typography.h3)
+                        .foregroundColor(TextColors.primary)
+
+                    Text("In the match picker, confirm a result with one tap. Off (default) is a two-step tap: the first tap highlights a result and a second tap confirms it, so you can see your choice before it’s applied.")
+                        .font(Typography.bodySmall)
+                        .foregroundColor(TextColors.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+
+                Toggle("", isOn: $singleTapConfirmMatch)
                     .labelsHidden()
             }
         }

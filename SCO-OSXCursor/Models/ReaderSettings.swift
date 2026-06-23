@@ -243,6 +243,43 @@ enum TapZoneWidth: String, CaseIterable, Codable {
     }
 }
 
+// MARK: - Thumbnail Bar Position
+
+/// Where the page-thumbnail strip appears while reading. Only takes effect in
+/// vertical-scroll (webtoon) books — paged books always use the bottom strip.
+enum ThumbnailBarPosition: String, CaseIterable, Codable {
+    case bottom = "Bottom"
+    case left = "Left"
+    case right = "Right"
+
+    var displayName: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .bottom: return "rectangle.bottomthird.inset.filled"
+        case .left:   return "rectangle.leftthird.inset.filled"
+        case .right:  return "rectangle.rightthird.inset.filled"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .bottom: return "Thumbnails run along the bottom of the screen."
+        case .left:   return "Thumbnails run vertically along the left edge."
+        case .right:  return "Thumbnails run vertically along the right edge."
+        }
+    }
+
+    /// Next position when cycling from the reader HUD (Bottom → Left → Right → Bottom).
+    var next: ThumbnailBarPosition {
+        switch self {
+        case .bottom: return .left
+        case .left:   return .right
+        case .right:  return .bottom
+        }
+    }
+}
+
 class ReaderSettings: ObservableObject {
     static let shared = ReaderSettings()
 
@@ -250,6 +287,7 @@ class ReaderSettings: ObservableObject {
     @Published var defaultReadingStyle: ReadingStyle  // Global default reading style
     @Published var defaultEPUBTheme: EPUBTheme        // Global default EPUB theme
     @Published var tapZoneWidth: TapZoneWidth         // Edge tap-zone width (app-wide)
+    @Published var defaultThumbnailBarPosition: ThumbnailBarPosition  // Global default (vertical books)
     // EPUB typography (app-wide; font SIZE stays per-book via epubFontSize)
     @Published var epubFontFamily: EPUBFontFamily
     @Published var epubLineSpacing: EPUBLineSpacing
@@ -294,6 +332,13 @@ class ReaderSettings: ObservableObject {
             self.tapZoneWidth = .medium
         }
 
+        if let saved = UserDefaults.standard.string(forKey: "defaultThumbnailBarPosition"),
+           let position = ThumbnailBarPosition(rawValue: saved) {
+            self.defaultThumbnailBarPosition = position
+        } else {
+            self.defaultThumbnailBarPosition = .bottom
+        }
+
         self.epubFontFamily = UserDefaults.standard.string(forKey: "epubFontFamily")
             .flatMap { EPUBFontFamily(rawValue: $0) } ?? .system
         self.epubLineSpacing = UserDefaults.standard.string(forKey: "epubLineSpacing")
@@ -331,6 +376,14 @@ class ReaderSettings: ObservableObject {
             .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
             .sink { value in
                 UserDefaults.standard.set(value.rawValue, forKey: "tapZoneWidth")
+            }
+            .store(in: &cancellables)
+
+        $defaultThumbnailBarPosition
+            .removeDuplicates()
+            .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
+            .sink { value in
+                UserDefaults.standard.set(value.rawValue, forKey: "defaultThumbnailBarPosition")
             }
             .store(in: &cancellables)
 
@@ -387,6 +440,24 @@ class ReaderSettings: ObservableObject {
     /// Save per-book reading style preference
     func setPreferredReadingStyle(_ style: ReadingStyle?, for comic: inout Comic) {
         comic.readingStyle = style?.rawValue
+        comic.dateModified = Date()
+    }
+
+    // MARK: - Thumbnail Bar Position Helpers
+
+    /// Effective thumbnail-bar position for a comic (per-book override, then global default).
+    func effectiveThumbnailBarPosition(for comic: Comic?) -> ThumbnailBarPosition {
+        if let comic = comic,
+           let raw = comic.thumbnailBarPosition,
+           let position = ThumbnailBarPosition(rawValue: raw) {
+            return position
+        }
+        return defaultThumbnailBarPosition
+    }
+
+    /// Save per-book thumbnail-bar position (nil clears the override → uses global default).
+    func setThumbnailBarPosition(_ position: ThumbnailBarPosition?, for comic: inout Comic) {
+        comic.thumbnailBarPosition = position?.rawValue
         comic.dateModified = Date()
     }
 

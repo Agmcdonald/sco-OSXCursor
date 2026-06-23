@@ -454,6 +454,24 @@ final class DatabaseManager {
             }
         }
 
+        // Version 19: Per-book thumbnail-bar position override (vertical books).
+        // Lets a vertical-scroll book remember a Bottom/Left/Right thumbnail rail
+        // independently of the global default.
+        migrator.registerMigration("v19_thumbnail_bar_position") { db in
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v19_thumbnail_bar_position")
+            if try db.tableExists("comics") {
+                do {
+                    try db.alter(table: "comics") { t in
+                        t.add(column: "thumbnail_bar_position", .text)
+                    }
+                    AppLog.database.info("[DatabaseManager] ✅ Added thumbnail_bar_position column")
+                } catch {
+                    AppLog.database.error("[DatabaseManager] ℹ️ thumbnail_bar_position column may already exist: \(error.localizedDescription)")
+                }
+            }
+            AppLog.database.info("[DatabaseManager] ✅ Migration v19_thumbnail_bar_position complete")
+        }
+
         return migrator
     }
 

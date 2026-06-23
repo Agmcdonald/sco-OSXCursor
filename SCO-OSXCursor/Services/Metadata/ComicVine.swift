@@ -745,6 +745,12 @@ struct ComicVineMatchPicker: View {
     @State private var isApplying = false
     @State private var linkText = ""
     @State private var linkError: String?
+    /// Which candidate is highlighted but not yet confirmed (two-step select).
+    @State private var selectedCandidateID: CVCandidate.ID?
+
+    /// When on, a single tap confirms a match immediately. When off (default),
+    /// the first tap highlights the row and a second tap on it confirms.
+    @AppStorage("singleTapConfirmMatch") private var singleTapConfirm = false
 
     private var candidates: [CVCandidate] {
         CVCandidate.decodeList(comic.metadataCandidates)
@@ -781,25 +787,57 @@ struct ComicVineMatchPicker: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
+                // Tells the user how confirming works (hidden when single-tap is on).
+                if !singleTapConfirm {
+                    HStack(spacing: Spacing.xs) {
+                        Image(systemName: "hand.tap")
+                            .font(.system(size: 12))
+                        Text(selectionHint)
+                            .font(Typography.caption)
+                    }
+                    .foregroundColor(TextColors.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Spacing.lg)
+                    .padding(.top, Spacing.sm)
+                }
+
                 List {
                     ForEach(candidates) { candidate in
+                        let isSelected = selectedCandidateID == candidate.id
                         Button {
-                            apply(candidate)
+                            handleTap(candidate)
                         } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(candidate.name)
-                                    .font(Typography.body)
-                                    .foregroundColor(TextColors.primary)
-                                Text(candidateSubtitle(candidate))
-                                    .font(Typography.caption)
-                                    .foregroundColor(TextColors.secondary)
+                            HStack(spacing: Spacing.md) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(candidate.name)
+                                        .font(Typography.body)
+                                        .foregroundColor(TextColors.primary)
+                                    Text(candidateSubtitle(candidate))
+                                        .font(Typography.caption)
+                                        .foregroundColor(TextColors.secondary)
+                                }
+                                Spacer(minLength: 0)
+                                // Checkmark appears on the highlighted (pending) row.
+                                if isSelected && !singleTapConfirm {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.system(size: 18))
+                                        .foregroundColor(AccentColors.primary)
+                                        .transition(.scale.combined(with: .opacity))
+                                }
                             }
                             .padding(.vertical, 4)
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .disabled(isApplying)
+                        .listRowBackground(
+                            isSelected && !singleTapConfirm
+                                ? AccentColors.primary.opacity(0.15)
+                                : Color.clear
+                        )
                     }
                 }
+                .animation(.easeInOut(duration: 0.15), value: selectedCandidateID)
                 #if os(macOS)
                 .listStyle(.inset)
                 #else
@@ -866,6 +904,25 @@ struct ComicVineMatchPicker: View {
         return parts.isEmpty ? "ComicVine volume #\(candidate.id)" : parts.joined(separator: " • ")
     }
 
+    /// Contextual instruction shown above the list in two-step mode.
+    private var selectionHint: String {
+        if let id = selectedCandidateID,
+           let selected = candidates.first(where: { $0.id == id }) {
+            return "Tap “\(selected.name)” again to confirm, or pick another."
+        }
+        return "Tap to select a match, then tap again to confirm."
+    }
+
+    /// Two-step (default) vs single-tap confirm, per the user's setting.
+    private func handleTap(_ candidate: CVCandidate) {
+        guard !isApplying else { return }
+        if singleTapConfirm || selectedCandidateID == candidate.id {
+            apply(candidate)
+        } else {
+            selectedCandidateID = candidate.id
+        }
+    }
+
     private func apply(_ candidate: CVCandidate) {
         guard !isApplying else { return }
         isApplying = true
@@ -912,6 +969,10 @@ struct ComicVineBatchReviewView: View {
 
     @State private var index = 0
     @State private var isApplying = false
+    /// Highlighted-but-unconfirmed candidate for the current book (two-step select).
+    @State private var selectedCandidateID: CVCandidate.ID?
+
+    @AppStorage("singleTapConfirmMatch") private var singleTapConfirm = false
 
     private var currentComic: Comic? {
         guard index >= 0, index < comicIDs.count else { return nil }
@@ -992,39 +1053,85 @@ struct ComicVineBatchReviewView: View {
     }
 
     private var candidateList: some View {
-        List {
-            ForEach(Array(candidates.enumerated()), id: \.element.id) { offset, candidate in
-                Button {
-                    apply(candidate)
-                } label: {
-                    HStack(spacing: Spacing.sm) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(candidate.name)
-                                .font(Typography.body)
-                                .foregroundColor(TextColors.primary)
-                            Text(candidateSubtitle(candidate))
-                                .font(Typography.caption)
-                                .foregroundColor(TextColors.secondary)
-                        }
-                        Spacer()
-                        if offset == 0 {
-                            Text("Best match")
-                                .font(Typography.caption)
-                                .foregroundColor(AccentColors.success)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                    .contentShape(Rectangle())
+        VStack(spacing: 0) {
+            if !singleTapConfirm {
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: "hand.tap")
+                        .font(.system(size: 12))
+                    Text(selectionHint)
+                        .font(Typography.caption)
                 }
-                .buttonStyle(.plain)
-                .disabled(isApplying)
+                .foregroundColor(TextColors.tertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, Spacing.lg)
+                .padding(.top, Spacing.sm)
             }
+
+            List {
+                ForEach(Array(candidates.enumerated()), id: \.element.id) { offset, candidate in
+                    let isSelected = selectedCandidateID == candidate.id
+                    Button {
+                        handleTap(candidate)
+                    } label: {
+                        HStack(spacing: Spacing.sm) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(candidate.name)
+                                    .font(Typography.body)
+                                    .foregroundColor(TextColors.primary)
+                                Text(candidateSubtitle(candidate))
+                                    .font(Typography.caption)
+                                    .foregroundColor(TextColors.secondary)
+                            }
+                            Spacer()
+                            if isSelected && !singleTapConfirm {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 18))
+                                    .foregroundColor(AccentColors.primary)
+                                    .transition(.scale.combined(with: .opacity))
+                            } else if offset == 0 {
+                                Text("Best match")
+                                    .font(Typography.caption)
+                                    .foregroundColor(AccentColors.success)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isApplying)
+                    .listRowBackground(
+                        isSelected && !singleTapConfirm
+                            ? AccentColors.primary.opacity(0.15)
+                            : Color.clear
+                    )
+                }
+            }
+            .animation(.easeInOut(duration: 0.15), value: selectedCandidateID)
+            #if os(macOS)
+            .listStyle(.inset)
+            #else
+            .listStyle(.insetGrouped)
+            #endif
         }
-        #if os(macOS)
-        .listStyle(.inset)
-        #else
-        .listStyle(.insetGrouped)
-        #endif
+    }
+
+    /// Contextual instruction shown above the list in two-step mode.
+    private var selectionHint: String {
+        if let id = selectedCandidateID,
+           let selected = candidates.first(where: { $0.id == id }) {
+            return "Tap “\(selected.name)” again to confirm, or pick another."
+        }
+        return "Tap to select a match, then tap again to confirm."
+    }
+
+    /// Two-step (default) vs single-tap confirm, per the user's setting.
+    private func handleTap(_ candidate: CVCandidate) {
+        guard !isApplying else { return }
+        if singleTapConfirm || selectedCandidateID == candidate.id {
+            apply(candidate)
+        } else {
+            selectedCandidateID = candidate.id
+        }
     }
 
     private var emptyState: some View {
@@ -1105,6 +1212,8 @@ struct ComicVineBatchReviewView: View {
 
     /// Move to the next book, or dismiss when the queue is exhausted.
     private func advance() {
+        // Clear any pending highlight so it doesn't carry to the next book.
+        selectedCandidateID = nil
         if index + 1 < comicIDs.count {
             index += 1
         } else {

@@ -99,19 +99,9 @@ struct PageCurlView: UIViewControllerRepresentable {
         }
 
         // Programmatic turn (tap zones, slider, thumbnails) — animated curl.
-        // Skip while the user is mid-curl; didFinishAnimating will sync.
-        guard coordinator.isSafeToReset else { return }
-        let advancing = currentPage > currentIndex
-        // RTL: advancing curls from the LEFT edge (.reverse animation)
-        let direction: UIPageViewController.NavigationDirection =
-            (advancing != isRTL) ? .forward : .reverse
-        if let newVC = coordinator.viewController(for: currentPage) {
-            coordinator.lastLoadSignature = coordinator.loadSignature(around: currentPage)
-            coordinator.lastAppliedInitialScale = initialScale
-            // Fresh VCs report their own zoom state via onZoomStateChanged
-            coordinator.setZoomed(false)
-            pageVC.setViewControllers([newVC], direction: direction, animated: true)
-        }
+        // Re-entrancy-guarded so the jumped-to page's lazy load can't restart
+        // the animation and revert the jump.
+        coordinator.jump(to: currentPage, on: pageVC)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -127,6 +117,12 @@ struct PageCurlView: UIViewControllerRepresentable {
         weak var panRecognizer: UIPanGestureRecognizer?
         private(set) var isZoomed = false
         private var isTransitioning = false
+        /// True while an animated PROGRAMMATIC turn (tap zone, slider, thumbnail)
+        /// is in flight. `setViewControllers(animated:)` is async, and the
+        /// jumped-to page's lazy load fires @Published changes that re-invoke
+        /// updateUIViewController mid-animation; without this guard each re-entry
+        /// starts another overlapping curl and UIPageViewController snaps back.
+        private var isProgrammaticTurning = false
         /// isLoaded states of (prev, current, next) at last VC reset —
         /// changes mean cached neighbor VCs may be stale
         var lastLoadSignature: [Bool] = []
@@ -137,13 +133,43 @@ struct PageCurlView: UIViewControllerRepresentable {
             self.parent = parent
         }
 
-        /// Don't tear down view controllers while a user curl is in flight
+        /// Don't tear down view controllers while a user curl OR an animated
+        /// programmatic turn is in flight
         var isSafeToReset: Bool {
-            guard !isTransitioning else { return false }
+            guard !isTransitioning, !isProgrammaticTurning else { return false }
             if let pan = panRecognizer, pan.state == .began || pan.state == .changed {
                 return false
             }
             return true
+        }
+
+        /// Animate a programmatic jump to `target`, guarding against the
+        /// re-entrancy that made thumbnail/slider jumps revert. Chases the
+        /// latest target if more jumps land during the animation.
+        func jump(to target: Int, on pageVC: UIPageViewController) {
+            guard !isProgrammaticTurning, isSafeToReset,
+                  let currentVC = pageVC.viewControllers?.first as? PageHostingController
+            else { return }
+            let displayed = currentVC.index
+            guard displayed != target,
+                  let newVC = viewController(for: target) else { return }
+
+            let advancing = target > displayed
+            let direction: UIPageViewController.NavigationDirection =
+                (advancing != isRTL) ? .forward : .reverse
+            lastLoadSignature = loadSignature(around: target)
+            lastAppliedInitialScale = initialScale
+            setZoomed(false)
+            isProgrammaticTurning = true
+            pageVC.setViewControllers([newVC], direction: direction, animated: true) {
+                [weak self, weak pageVC] _ in
+                guard let self, let pageVC else { return }
+                self.isProgrammaticTurning = false
+                // More jumps may have queued while animating — chase the latest.
+                if let latest = self.parent?.currentPage, latest != target {
+                    self.jump(to: latest, on: pageVC)
+                }
+            }
         }
 
         /// isLoaded for prev/current/next — cheap staleness check
@@ -196,6 +222,9 @@ struct PageCurlView: UIViewControllerRepresentable {
 
         func pageViewController(_ pageViewController: UIPageViewController, didFinishAnimating finished: Bool, previousViewControllers: [UIViewController], transitionCompleted completed: Bool) {
             isTransitioning = false
+            // Ignore writebacks fired during a programmatic jump — its completion
+            // handler owns the final state; a stale index here would revert it.
+            guard !isProgrammaticTurning else { return }
             guard completed,
                   let currentVC = pageViewController.viewControllers?.first as? PageHostingController,
                   let parent = parent else { return }
@@ -306,19 +335,10 @@ struct SpreadCurlView: UIViewControllerRepresentable {
             return
         }
 
-        // Programmatic turn (tap zones, slider, thumbnails) — animated curl
-        guard coordinator.isSafeToReset else { return }
-        let advancing = currentSpreadIndex > displayedSpread
-        // RTL: advancing curls from the LEFT edge (.reverse animation)
-        let direction: UIPageViewController.NavigationDirection =
-            (advancing != isRTL) ? .forward : .reverse
-        if let pair = coordinator.viewControllerPair(forSpread: currentSpreadIndex) {
-            coordinator.lastLoadSignature = coordinator.loadSignature(around: currentSpreadIndex)
-            coordinator.lastAppliedInitialScale = initialScale
-            // Fresh VCs report their own zoom state via onZoomStateChanged
-            coordinator.setZoomed(false)
-            pageVC.setViewControllers(pair, direction: direction, animated: true)
-        }
+        // Programmatic turn (tap zones, slider, thumbnails) — animated curl.
+        // Re-entrancy-guarded so the jumped-to spread's lazy load can't restart
+        // the animation and revert the jump.
+        coordinator.jump(to: currentSpreadIndex, on: pageVC)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -334,6 +354,9 @@ struct SpreadCurlView: UIViewControllerRepresentable {
         weak var panRecognizer: UIPanGestureRecognizer?
         private(set) var isZoomed = false
         private var isTransitioning = false
+        /// True while an animated PROGRAMMATIC spread turn is in flight — see
+        /// PageCurlView.Coordinator for the re-entrancy rationale.
+        private var isProgrammaticTurning = false
         var lastLoadSignature: [Bool] = []
         /// initialScale at the last VC reset — zoom-memory staleness check
         var lastAppliedInitialScale: CGFloat = 1.0
@@ -343,11 +366,38 @@ struct SpreadCurlView: UIViewControllerRepresentable {
         }
 
         var isSafeToReset: Bool {
-            guard !isTransitioning else { return false }
+            guard !isTransitioning, !isProgrammaticTurning else { return false }
             if let pan = panRecognizer, pan.state == .began || pan.state == .changed {
                 return false
             }
             return true
+        }
+
+        /// Animate a programmatic jump to `target` spread, guarded against the
+        /// re-entrancy that made thumbnail/slider jumps revert.
+        func jump(to target: Int, on pageVC: UIPageViewController) {
+            guard !isProgrammaticTurning, isSafeToReset,
+                  let firstSlot = (pageVC.viewControllers?.first as? SpreadCurlSlot)?.slotIndex
+            else { return }
+            let displayed = firstSlot / 2
+            guard displayed != target,
+                  let pair = viewControllerPair(forSpread: target) else { return }
+
+            let advancing = target > displayed
+            let direction: UIPageViewController.NavigationDirection =
+                (advancing != isRTL) ? .forward : .reverse
+            lastLoadSignature = loadSignature(around: target)
+            lastAppliedInitialScale = initialScale
+            setZoomed(false)
+            isProgrammaticTurning = true
+            pageVC.setViewControllers(pair, direction: direction, animated: true) {
+                [weak self, weak pageVC] _ in
+                guard let self, let pageVC else { return }
+                self.isProgrammaticTurning = false
+                if let latest = self.parent?.currentSpreadIndex, latest != target {
+                    self.jump(to: latest, on: pageVC)
+                }
+            }
         }
 
         /// isLoaded for every page in spreads idx-1...idx+1
@@ -425,6 +475,9 @@ struct SpreadCurlView: UIViewControllerRepresentable {
 
         func pageViewController(_ pageViewController: UIPageViewController, didFinishAnimating finished: Bool, previousViewControllers: [UIViewController], transitionCompleted completed: Bool) {
             isTransitioning = false
+            // Ignore writebacks fired during a programmatic jump — its completion
+            // handler owns the final state; a stale index here would revert it.
+            guard !isProgrammaticTurning else { return }
             guard completed,
                   let slot = (pageViewController.viewControllers?.first as? SpreadCurlSlot)?.slotIndex,
                   let parent = parent else { return }

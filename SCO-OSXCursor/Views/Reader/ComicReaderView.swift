@@ -88,6 +88,10 @@ struct ComicReaderView: View {
     /// Fraction of screen width for pages in vertical-scroll mode (0.3…1.0).
     /// Tick 4 of 15 on the 0.3…1.0 / 0.05-step slider = 0.5, matching a comfortable reading size.
     @State private var verticalZoomScale: Double = 0.5
+    /// True while the user is actively scrolling the HUD thumbnail strip/rail
+    /// (including momentum/deceleration). The auto-hide countdown is suspended
+    /// until this returns to false, so the controls never vanish mid-scroll.
+    @State private var hudInteractionActive = false
     private let tapCooldown: TimeInterval = 0.22
     #if os(macOS)
         @State private var keyboardMonitor: KeyboardMonitor? = nil
@@ -439,6 +443,9 @@ struct ComicReaderView: View {
                 isSpreadMode: $viewModel.isSpreadMode,
                 isRTL: viewModel.isMangaRTL,
                 isVerticalScroll: viewModel.isVerticalScroll,
+                thumbnailBarPosition: ReaderSettings.shared.effectiveThumbnailBarPosition(for: currentComic),
+                onCycleThumbnailBarPosition: { cycleThumbnailBarPosition() },
+                onThumbnailScrollActiveChanged: { active in setHudInteractionActive(active) },
                 verticalZoomScale: $verticalZoomScale,
                 readingStyle: $viewModel.readingStyle,
                 currentComic: $currentComic,
@@ -466,6 +473,12 @@ struct ComicReaderView: View {
                 thumbnailForPage: { viewModel.cachedThumbnail(at: $0) },
                 requestThumbnail: { viewModel.requestThumbnail(at: $0) }
             )
+            // If the controls hide while the strip is mid-scroll, the scroll view
+            // leaves the hierarchy without a final .idle phase — clear the flag so
+            // the auto-hide can't get wedged "active" forever.
+            .onChange(of: controlsVisible) { _, visible in
+                if !visible { hudInteractionActive = false }
+            }
 
             // Thumbnail grid overlay
             if showingThumbnails {
@@ -851,17 +864,47 @@ struct ComicReaderView: View {
         // Start new timer - auto-hide after 3 seconds on both iOS and macOS
         autoHideTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [self] _ in
             Task { @MainActor in
-                // Only hide if we aren't hovering or menus aren't open
-                if !showingMenu && !showingThumbnails && !showingReaderSettings {
+                // Only hide once the user is fully idle: no open menu/sheet AND
+                // no active thumbnail scroll (finger down or momentum in motion).
+                if !showingMenu && !showingThumbnails && !showingReaderSettings
+                    && !hudInteractionActive {
                     withAnimation(.easeInOut(duration: 0.3)) {
                         controlsVisible = false
                     }
                 } else {
-                    // If a menu is open, just reset the timer to check again later
+                    // Still busy — re-check after another interval instead of hiding
                     resetAutoHideTimer()
                 }
             }
         }
+    }
+
+    /// Called by the controls overlay as the thumbnail strip/rail scroll phase
+    /// changes. While interaction is active the pending auto-hide is cancelled;
+    /// when it ends, a fresh full-length countdown begins.
+    private func setHudInteractionActive(_ active: Bool) {
+        guard hudInteractionActive != active else { return }
+        hudInteractionActive = active
+        if active {
+            // Suspend the countdown until motion stops.
+            autoHideTimer?.invalidate()
+        } else if controlsVisible {
+            // Motion stopped — start the clean 3-second countdown now.
+            resetAutoHideTimer()
+        }
+    }
+
+    /// Cycle the thumbnail-bar position (Bottom → Left → Right) for this book and
+    /// persist it as a per-book override.
+    private func cycleThumbnailBarPosition() {
+        let current = ReaderSettings.shared.effectiveThumbnailBarPosition(for: currentComic)
+        let next = current.next
+        var updated = currentComic
+        updated.thumbnailBarPosition = next.rawValue
+        updated.dateModified = Date()
+        currentComic = updated
+        libraryViewModel.updateComic(updated)
+        resetAutoHideTimer()
     }
 
     /// Cancel the auto-hide timer

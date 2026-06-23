@@ -62,6 +62,7 @@ struct Comic: Identifiable, Codable {
     var epubFontSize: Int?            // Per-book EPUB font size (pt), nil = default (16pt)
     var epubTheme: String?            // Per-book EPUB theme (EPUBTheme.rawValue)
     var zoomScale: Double?            // Per-book remembered zoom, nil = 1× (no zoom)
+    var thumbnailBarPosition: String? // Per-book thumbnail bar position override (ThumbnailBarPosition.rawValue)
     var contentRating: ContentRating
 
     // MARK: - ComicVine Metadata
@@ -117,6 +118,7 @@ struct Comic: Identifiable, Codable {
         epubFontSize: Int? = nil,
         epubTheme: String? = nil,
         zoomScale: Double? = nil,
+        thumbnailBarPosition: String? = nil,
         comicVineVolumeID: Int? = nil,
         comicVineIssueID: Int? = nil,
         metadataFetchedAt: Date? = nil,
@@ -160,6 +162,7 @@ struct Comic: Identifiable, Codable {
         self.epubFontSize = epubFontSize
         self.epubTheme = epubTheme
         self.zoomScale = zoomScale
+        self.thumbnailBarPosition = thumbnailBarPosition
         self.comicVineVolumeID = comicVineVolumeID
         self.comicVineIssueID = comicVineIssueID
         self.metadataFetchedAt = metadataFetchedAt
@@ -662,6 +665,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         static let epubFontSize = Column("epub_font_size")
         static let epubTheme = Column("epub_theme")
         static let zoomScale = Column("zoom_scale")
+        static let thumbnailBarPosition = Column("thumbnail_bar_position")
         static let comicVineVolumeID = Column("comicvine_volume_id")
         static let comicVineIssueID = Column("comicvine_issue_id")
         static let metadataFetchedAt = Column("metadata_fetched_at")
@@ -708,6 +712,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         container[Columns.epubFontSize] = epubFontSize
         container[Columns.epubTheme] = epubTheme
         container[Columns.zoomScale] = zoomScale
+        container[Columns.thumbnailBarPosition] = thumbnailBarPosition
         container[Columns.comicVineVolumeID] = comicVineVolumeID
         container[Columns.comicVineIssueID] = comicVineIssueID
         container[Columns.metadataFetchedAt] = metadataFetchedAt
@@ -779,6 +784,7 @@ extension Comic: FetchableRecord, PersistableRecord {
             epubFontSize: row["epub_font_size"],
             epubTheme: row["epub_theme"],
             zoomScale: row["zoom_scale"],
+            thumbnailBarPosition: row["thumbnail_bar_position"],
             comicVineVolumeID: row["comicvine_volume_id"],
             comicVineIssueID: row["comicvine_issue_id"],
             metadataFetchedAt: row["metadata_fetched_at"],

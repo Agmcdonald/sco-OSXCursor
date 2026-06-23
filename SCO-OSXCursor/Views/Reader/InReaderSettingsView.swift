@@ -26,6 +26,10 @@ struct InReaderSettingsView: View {
     @State private var selectedTheme: EPUBTheme?
     @State private var useDefaultTheme: Bool = true
 
+    // Thumbnail bar position state (vertical books)
+    @State private var selectedThumbPosition: ThumbnailBarPosition?
+    @State private var useDefaultThumbPosition: Bool = true
+
     var body: some View {
         #if os(macOS)
             // NavigationView inside a macOS sheet collapses to a toolbar-only
@@ -126,6 +130,53 @@ struct InReaderSettingsView: View {
                     Text("Reading Style")
                 } footer: {
                     Text("Custom reading styles only apply to this book. Other books use the app default.")
+                        .font(Typography.caption)
+                        .foregroundColor(TextColors.tertiary)
+                }
+
+                // MARK: - Thumbnail Bar Section (vertical books)
+                Section {
+                    // Global default position (app-wide)
+                    Picker("Default Position", selection: $settings.defaultThumbnailBarPosition) {
+                        ForEach(ThumbnailBarPosition.allCases, id: \.self) { position in
+                            Label(position.displayName, systemImage: position.icon).tag(position)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    // Per-book override
+                    Toggle("Use App Default for This Book", isOn: $useDefaultThumbPosition)
+                        .tint(AccentColors.primary)
+                        .onChange(of: useDefaultThumbPosition) { _, newValue in
+                            if newValue {
+                                selectedThumbPosition = nil
+                            } else {
+                                selectedThumbPosition = settings.effectiveThumbnailBarPosition(for: comic)
+                            }
+                        }
+
+                    if !useDefaultThumbPosition {
+                        Picker("This Book", selection: Binding(
+                            get: { selectedThumbPosition ?? settings.defaultThumbnailBarPosition },
+                            set: { selectedThumbPosition = $0 }
+                        )) {
+                            ForEach(ThumbnailBarPosition.allCases, id: \.self) { position in
+                                Label(position.displayName, systemImage: position.icon).tag(position)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+
+                    let effectivePosition = useDefaultThumbPosition
+                        ? settings.defaultThumbnailBarPosition
+                        : (selectedThumbPosition ?? settings.defaultThumbnailBarPosition)
+                    Text(effectivePosition.description)
+                        .font(Typography.caption)
+                        .foregroundColor(TextColors.tertiary)
+                } header: {
+                    Text("Thumbnail Bar")
+                } footer: {
+                    Text("Where the page-thumbnail strip appears in vertical-scroll books — along the bottom, or as a rail on the left or right. Paged books always use the bottom strip. You can also flip it from the reader while reading.")
                         .font(Typography.caption)
                         .foregroundColor(TextColors.tertiary)
                 }
@@ -329,6 +380,17 @@ struct InReaderSettingsView: View {
             selectedTransition = nil
         }
 
+        // Load thumbnail bar position setting
+        if let posString = comic.thumbnailBarPosition,
+            let position = ThumbnailBarPosition(rawValue: posString)
+        {
+            useDefaultThumbPosition = false
+            selectedThumbPosition = position
+        } else {
+            useDefaultThumbPosition = true
+            selectedThumbPosition = nil
+        }
+
         // Load EPUB theme setting
         if comic.fileType == .epub {
             if let themeString = comic.epubTheme,
@@ -359,6 +421,9 @@ struct InReaderSettingsView: View {
 
         // Save transition
         updatedComic.preferredTransition = useDefault ? nil : selectedTransition?.rawValue
+
+        // Save thumbnail bar position
+        updatedComic.thumbnailBarPosition = useDefaultThumbPosition ? nil : selectedThumbPosition?.rawValue
 
         // Save theme
         if comic.fileType == .epub {

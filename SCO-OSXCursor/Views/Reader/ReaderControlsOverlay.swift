@@ -23,6 +23,13 @@ struct ReaderControlsOverlay: View {
     @Binding var isSpreadMode: Bool  // Two-page spread mode
     var isRTL: Bool = false  // Right-to-left reading (Manga/Manhwa)
     var isVerticalScroll: Bool = false  // Vertical scroll (webtoon) mode
+    /// Effective thumbnail-bar position. Side rails only apply to vertical books.
+    var thumbnailBarPosition: ThumbnailBarPosition = .bottom
+    /// Cycle the thumbnail-bar position from the HUD (Bottom → Left → Right). Parent persists it.
+    var onCycleThumbnailBarPosition: (() -> Void)? = nil
+    /// Reports whether the thumbnail strip/rail is actively scrolling (incl.
+    /// momentum). Parent suspends the auto-hide countdown while this is true.
+    var onThumbnailScrollActiveChanged: ((Bool) -> Void)? = nil
     /// Fraction of screen width for pages in vertical-scroll mode (0.3…1.0)
     @Binding var verticalZoomScale: Double
     @Binding var readingStyle: ReadingStyle  // Current active reading style
@@ -35,12 +42,37 @@ struct ReaderControlsOverlay: View {
     /// Ask the view model to generate a thumbnail for a page index.
     var requestThumbnail: ((Int) -> Void)? = nil
 
+    /// Show the thumbnail strip as a vertical side rail instead of the bottom
+    /// strip — only for vertical (webtoon) books with a Left/Right preference.
+    private var useSideRail: Bool {
+        isVerticalScroll && (thumbnailBarPosition == .left || thumbnailBarPosition == .right)
+    }
+
     var body: some View {
         ZStack {
             // Scrim is visual only - does NOT block gestures
             Color.black.opacity(controlsVisible ? 0.15 : 0.0)
                 .ignoresSafeArea()
                 .allowsHitTesting(false)  // Critical: lets swipes pass through
+
+            // Side thumbnail rail (vertical books only)
+            if controlsVisible && useSideRail {
+                HStack(spacing: 0) {
+                    if thumbnailBarPosition == .left {
+                        verticalThumbnailRail
+                        Spacer(minLength: 0)
+                    } else {
+                        Spacer(minLength: 0)
+                        verticalThumbnailRail
+                    }
+                }
+                .padding(.horizontal, Spacing.md)
+                .transition(
+                    .move(edge: thumbnailBarPosition == .left ? .leading : .trailing)
+                        .combined(with: .opacity)
+                )
+                .zIndex(11)
+            }
 
             // CONTROLS
             VStack(spacing: 0) {
@@ -140,6 +172,28 @@ struct ReaderControlsOverlay: View {
             #if os(macOS)
                 .help("Show All Pages")
             #endif
+
+            // Thumbnail-bar position toggle (vertical books only):
+            // cycles Bottom → Left → Right.
+            if isVerticalScroll {
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        onCycleThumbnailBarPosition?()
+                    }
+                    onUserInteraction()
+                }) {
+                    Image(systemName: thumbnailBarPosition.icon)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 44, height: 44)
+                        .background(Color.black.opacity(0.5))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                #if os(macOS)
+                    .help("Thumbnail Bar: \(thumbnailBarPosition.displayName) (tap to move)")
+                #endif
+            }
 
             // Spread mode toggle button (hidden in vertical scroll mode)
             if !isVerticalScroll {
@@ -298,8 +352,11 @@ struct ReaderControlsOverlay: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .bottom)))
             }
 
-            // Inline thumbnail strip
-            inlineThumbnailStrip
+            // Inline thumbnail strip (bottom). For vertical books with a
+            // Left/Right preference, the strip moves to a side rail instead.
+            if !useSideRail {
+                inlineThumbnailStrip
+            }
 
             // Page counter below thumbnails
             Text("Page \(currentPage + 1) of \(totalPages)")
@@ -345,7 +402,62 @@ struct ReaderControlsOverlay: View {
                 .padding(.horizontal, Spacing.xl)
             }
             .frame(height: 80)
+            // Suspend the HUD auto-hide while the strip is in motion (including
+            // momentum) — it resumes only once scrolling settles to .idle.
+            .onScrollPhaseChange { _, newPhase in
+                onThumbnailScrollActiveChanged?(newPhase != .idle)
+            }
             .onChange(of: currentPage) { oldValue, newValue in
+                withAnimation {
+                    proxy.scrollTo(newValue, anchor: .center)
+                }
+            }
+            .onAppear {
+                proxy.scrollTo(currentPage, anchor: .center)
+            }
+        }
+    }
+
+    // MARK: - Vertical Thumbnail Rail (Side)
+    private var verticalThumbnailRail: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                // LazyVStack: only visible cells decode their thumbnail, matching
+                // the bottom strip's lazy behavior for large books.
+                LazyVStack(spacing: 12) {
+                    ForEach(Array(pages.enumerated()), id: \.element.id) { index, page in
+                        InlineThumbnail(
+                            page: page,
+                            pageNumber: index + 1,
+                            isCurrentPage: index == currentPage,
+                            externalThumbnail: thumbnailForPage?(index),
+                            onVisible: { requestThumbnail?(index) }
+                        )
+                        .onTapGesture {
+                            withAnimation {
+                                currentPage = index
+                            }
+                            onUserInteraction()
+                        }
+                        .id(index)
+                    }
+                }
+                .padding(.vertical, Spacing.xl)
+                .padding(.horizontal, Spacing.sm)
+            }
+            .frame(width: 74)
+            .frame(maxHeight: 460)
+            .background(Color.black.opacity(0.55))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+            )
+            // Suspend the HUD auto-hide while the rail is in motion (incl. momentum).
+            .onScrollPhaseChange { _, newPhase in
+                onThumbnailScrollActiveChanged?(newPhase != .idle)
+            }
+            .onChange(of: currentPage) { _, newValue in
                 withAnimation {
                     proxy.scrollTo(newValue, anchor: .center)
                 }
