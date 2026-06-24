@@ -66,6 +66,8 @@ struct LibraryView: View {
     @State private var showingFilePicker = false
     @State private var isDropTargeted = false
     @State private var showingDeleteConfirmation = false
+    /// Comics queued for the delete confirmation (single book or a selection).
+    @State private var comicsPendingDelete: [Comic] = []
     @State private var editingComicID: ComicID?
     @State private var focusedComic: Comic?
     @State private var isInspectorPresented = false
@@ -192,7 +194,7 @@ struct LibraryView: View {
             markAsRead: { viewModel.markAsRead([$0]) },
             toggleReadingList: { viewModel.toggleReadingList($0) },
             regenerateCover: { viewModel.regenerateCovers(for: [$0]) },
-            delete: { viewModel.deleteComics([$0]) },
+            delete: { requestDelete([$0]) },
             selectRange: { selectRange(to: $0) },
             handleSelectionTap: { handleSelectionTap($0) },
             focus: { focusedComic = $0 },
@@ -288,7 +290,9 @@ struct LibraryView: View {
                 onAddToList: addSelectedToReadingList,
                 onRegenerateCovers: regenerateCoversForSelected,
                 onFetchMetadata: fetchMetadataForSelected,
-                onDelete: { showingDeleteConfirmation = true },
+                onDelete: {
+                    requestDelete(viewModel.comics.filter { selectedComics.contains($0.id) })
+                },
                 isFetchingMetadata: isBatchFetching,
                 folders: viewModel.folders,
                 onAddToFolder: { folderID in
@@ -440,15 +444,21 @@ struct LibraryView: View {
                 selectedComics.removeAll()
             }
         }
-        .alert("Delete Comics", isPresented: $showingDeleteConfirmation) {
-            Button("Cancel", role: .cancel) {}
+        .alert("Delete from Library", isPresented: $showingDeleteConfirmation) {
+            Button("Cancel", role: .cancel) { comicsPendingDelete = [] }
             Button("Delete", role: .destructive) {
-                deleteSelectedComics()
+                performPendingDelete()
             }
         } message: {
-            Text(
-                "Are you sure you want to delete \(selectedComics.count) comic\(selectedComics.count == 1 ? "" : "s")? This action cannot be undone."
-            )
+            if comicsPendingDelete.count == 1, let comic = comicsPendingDelete.first {
+                Text(
+                    "Remove “\(comic.displayName)” from your library? The file on your drive is not deleted."
+                )
+            } else {
+                Text(
+                    "Remove \(comicsPendingDelete.count) comics from your library? The files on your drive are not deleted."
+                )
+            }
         }
         // New folder prompt (folder bar "+", or "New Folder…" from a menu)
         .alert("New Folder", isPresented: $showingNewFolderAlert) {
@@ -813,21 +823,27 @@ struct LibraryView: View {
         isSelectionMode = false
     }
 
-    private func deleteSelectedComics() {
-        // Get the comic objects to delete
-        let comicsToDelete = viewModel.comics.filter { selectedComics.contains($0.id) }
+    /// Queue comics for deletion and show the shared confirmation. Used by both
+    /// the single-book context menu and the selection toolbar.
+    private func requestDelete(_ comics: [Comic]) {
+        guard !comics.isEmpty else { return }
+        comicsPendingDelete = comics
+        showingDeleteConfirmation = true
+    }
 
-        AppLog.library.debug("🗑️ [LibraryView] Deleting \(comicsToDelete.count) comics:")
-        for comic in comicsToDelete {
-            AppLog.library.debug("   - \(comic.fileName)")
+    /// Delete the queued comics (after confirmation) and tidy up selection.
+    private func performPendingDelete() {
+        let toDelete = comicsPendingDelete
+        comicsPendingDelete = []
+        guard !toDelete.isEmpty else { return }
+
+        AppLog.library.debug("🗑️ [LibraryView] Deleting \(toDelete.count) comic(s)")
+        viewModel.deleteComics(toDelete)
+
+        if isSelectionMode {
+            selectedComics.removeAll()
+            isSelectionMode = false
         }
-
-        // Delete them
-        viewModel.deleteComics(comicsToDelete)
-
-        // Reset selection mode
-        selectedComics.removeAll()
-        isSelectionMode = false
     }
 
     // MARK: - Open / Edit
