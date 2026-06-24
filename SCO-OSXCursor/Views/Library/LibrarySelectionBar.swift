@@ -26,6 +26,11 @@ struct LibrarySelectionBar: View {
     /// Disables the metadata button + shows a spinner while a batch runs.
     var isFetchingMetadata: Bool = false
 
+    // Folders — bulk-move the whole selection into a folder.
+    var folders: [Folder] = []
+    var onAddToFolder: (UUID) -> Void = { _ in }
+    var onNewFolder: () -> Void = {}
+
     var body: some View {
         HStack(spacing: Spacing.md) {
             Text("\(selectedComics.count) selected")
@@ -96,6 +101,39 @@ struct LibrarySelectionBar: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             }
             .buttonStyle(.plain)
+            .disabled(selectedComics.isEmpty)
+
+            // Add the whole selection to a folder (or a brand-new one)
+            Menu {
+                ForEach(folders) { folder in
+                    Button(action: { onAddToFolder(folder.id) }) {
+                        Label(folder.name, systemImage: folder.icon ?? "folder")
+                    }
+                }
+                if !folders.isEmpty { Divider() }
+                Button(action: onNewFolder) {
+                    Label("New Folder…", systemImage: "plus")
+                }
+            } label: {
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: "folder.badge.plus")
+                    Text("Add to Folder")
+                        .font(Typography.bodySmall)
+                }
+                .foregroundColor(
+                    selectedComics.isEmpty ? TextColors.tertiary : AccentColors.primary
+                )
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .background(
+                    selectedComics.isEmpty
+                        ? BackgroundColors.elevated : AccentColors.primary.opacity(0.1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .menuIndicator(.hidden)
+            .buttonStyle(.plain)
+            .fixedSize()
             .disabled(selectedComics.isEmpty)
 
             // Fetch ComicVine metadata for the whole selection

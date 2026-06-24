@@ -35,6 +35,11 @@ struct LibraryHeaderView: View {
     let series: [String]
     let years: [Int]
 
+    // Folder scope subtitle (option B)
+    let currentFolderName: String?
+    let totalLibraryCount: Int
+    let folderViewCount: Int
+
     // Actions
     let onQuickAdd: () -> Void
     let onAddComicsOrganize: (() -> Void)?
@@ -45,6 +50,11 @@ struct LibraryHeaderView: View {
     let onFetchMetadata: () -> Void
     let onDelete: () -> Void
     var isFetchingMetadata: Bool = false
+
+    // Folders (bulk move from the selection bar)
+    var folders: [Folder] = []
+    var onAddToFolder: (UUID) -> Void = { _ in }
+    var onNewFolderForSelection: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
@@ -59,21 +69,28 @@ struct LibraryHeaderView: View {
                 #if os(macOS)
                     // macOS: Show all controls (plenty of space)
                     sortMenu
-                    filtersButton
-                    if !isSelectionMode {
-                        selectButton
+                    // Filters / Select / Info don't apply to the folder view
+                    if viewMode != .folders {
+                        filtersButton
+                        if !isSelectionMode {
+                            selectButton
+                        }
                     }
-                    if viewMode == .grid || viewMode == .publisher {
+                    if viewMode == .grid || viewMode == .publisher || viewMode == .folders {
                         coverSizeSlider
                             .frame(width: 140)
                     }
                     // Info (ⓘ) button — enabled when a comic is focused
-                    Button(action: {
-                        if hasFocusedComic {
-                            isInspectorPresented.toggle()
-                        }
-                    }) {
-                        Image(systemName: isInspectorPresented ? "info.circle.fill" : "info.circle")
+                    if viewMode != .folders {
+                        Button(action: {
+                            if hasFocusedComic {
+                                isInspectorPresented.toggle()
+                            }
+                        }) {
+                            Image(
+                                systemName: isInspectorPresented
+                                    ? "info.circle.fill" : "info.circle"
+                            )
                             .font(.system(size: 16))
                             .foregroundColor(
                                 hasFocusedComic ? AccentColors.primary : TextColors.tertiary
@@ -84,18 +101,19 @@ struct LibraryHeaderView: View {
                                     ? AccentColors.primary.opacity(0.12) : Color.clear
                             )
                             .clipShape(RoundedRectangle(cornerRadius: 6))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!hasFocusedComic)
+                        .help(
+                            !hasFocusedComic
+                                ? "Select a comic to view info"
+                                : (isInspectorPresented ? "Hide Info" : "Show Info"))
                     }
-                    .buttonStyle(.plain)
-                    .disabled(!hasFocusedComic)
-                    .help(
-                        !hasFocusedComic
-                            ? "Select a comic to view info"
-                            : (isInspectorPresented ? "Hide Info" : "Show Info"))
                     viewModeToggle
                 #else
                     // iPad/iOS: Compact "More" menu
                     moreMenu
-                    if viewMode == .grid || viewMode == .publisher {
+                    if viewMode == .grid || viewMode == .publisher || viewMode == .folders {
                         coverSizeSlider
                             .frame(width: 120)
                     }
@@ -130,12 +148,20 @@ struct LibraryHeaderView: View {
                     .font(Typography.h1)
                     .foregroundColor(TextColors.primary)
 
-                if viewMode == .publisher {
+                if viewMode == .folders {
+                    Text("\(folderViewCount) folder\(folderViewCount == 1 ? "" : "s")")
+                        .font(Typography.body)
+                        .foregroundColor(TextColors.secondary)
+                } else if viewMode == .publisher {
                     Text(
                         "\(publisherCount) publisher\(publisherCount == 1 ? "" : "s") • \(visibleComicsCount) comics"
                     )
                     .font(Typography.body)
                     .foregroundColor(TextColors.secondary)
+                } else if let folderName = currentFolderName {
+                    Text("\(visibleComicsCount) of \(totalLibraryCount) in \(folderName)")
+                        .font(Typography.body)
+                        .foregroundColor(TextColors.secondary)
                 } else {
                     Text("Browse your collection of \(visibleComicsCount) comics")
                         .font(Typography.body)
@@ -212,7 +238,10 @@ struct LibraryHeaderView: View {
                 isSelectionMode = false
                 selectedComics.removeAll()
             },
-            isFetchingMetadata: isFetchingMetadata
+            isFetchingMetadata: isFetchingMetadata,
+            folders: folders,
+            onAddToFolder: onAddToFolder,
+            onNewFolder: onNewFolderForSelection
         )
     }
 
@@ -381,6 +410,21 @@ struct LibraryHeaderView: View {
             }
             .buttonStyle(.plain)
             .help("Publisher View")
+
+            Button(action: { viewMode = .folders }) {
+                Image(systemName: "folder")
+                    .font(.system(size: 16))
+                    .foregroundColor(
+                        viewMode == .folders ? AccentColors.primary : TextColors.secondary
+                    )
+                    .frame(width: 32, height: 32)
+                    .background(
+                        viewMode == .folders ? AccentColors.primary.opacity(0.12) : Color.clear
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+            .buttonStyle(.plain)
+            .help("Folder View")
         }
     }
 
@@ -406,7 +450,7 @@ struct LibraryHeaderView: View {
                     }
                 }
 
-                if !isSelectionMode {
+                if !isSelectionMode && viewMode != .folders {
                     Button(action: { isSelectionMode = true }) {
                         Label("Select Comics", systemImage: "checkmark.circle")
                     }

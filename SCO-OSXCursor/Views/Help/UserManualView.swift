@@ -175,6 +175,50 @@ struct UserManualView: View {
                     }
                 }
 
+                // 1a2. Folders & Collections
+                ManualSection(
+                    title: "Folders & Collections",
+                    icon: "folder",
+                    description: "Group books into your own collections — without moving any files."
+                ) {
+                    VStack(alignment: .leading, spacing: Spacing.xl) {
+                        FeatureRow(
+                            icon: "folder.badge.plus",
+                            title: "Create Folders & Add Books",
+                            description:
+                                "Folders are your own collections (like \"Marvel Events\" or \"Currently Reading\"). Make one from the scope bar's Folders ▾ menu or the New Folder card in Folder view. To add books, right-click (or long-press) a book and choose 'Add to Folder', or enter Select mode, pick several, and use 'Add to Folder' in the toolbar. A book can live in as many folders as you like, and folders never move or rename your files — they're purely organizational."
+                        )
+
+                        FeatureRow(
+                            icon: "rectangle.3.group",
+                            title: "The Scope Bar",
+                            description:
+                                "Below the search bar, three quick scopes keep things tidy: 'All Books' shows your whole library, 'Unfiled' shows books that aren't in any folder yet, and the 'Folders ▾' dropdown lists every collection alphabetically with its count. Pick one to filter the grid to it."
+                        )
+
+                        FeatureRow(
+                            icon: "folder",
+                            title: "Folder View",
+                            description:
+                                "The folder icon in the View toggle opens a grid of collection cards, each with a cover collage and book count, plus 'All Books' and 'Unfiled' cards. Folder view honours the Sort menu, so you can order collections by name, date created, recently modified, or book count. Tap a card to open that collection; right-click (or long-press) a card to Rename or Delete it."
+                        )
+
+                        FeatureRow(
+                            icon: "trash",
+                            title: "Deleting a Folder",
+                            description:
+                                "Choosing 'Delete Folder' on a collection gives you three choices: 'Delete Folder Only' removes just the collection and leaves every book in your library; 'Remove Books from App' also removes those books from SCO but leaves the files on your drive; and 'Delete Files from Device' permanently deletes the underlying comic files too. The last option cannot be undone."
+                        )
+
+                        FeatureRow(
+                            icon: "magnifyingglass",
+                            title: "Search Always Finds Everything",
+                            description:
+                                "Searching always looks across your entire library, even while a folder is selected — so a book is never hidden by your current scope. Use 'Reveal in Folder' from a book's menu to jump straight to a collection it belongs to."
+                        )
+                    }
+                }
+
                 // 1b. Importing Section
                 ManualSection(
                     title: "Importing Comics",
@@ -312,6 +356,13 @@ struct UserManualView: View {
                     description: "Perfect your comic's underlying data."
                 ) {
                     VStack(alignment: .leading, spacing: Spacing.xl) {
+                        FeatureRow(
+                            icon: "info.circle",
+                            title: "Viewing a Book's Info",
+                            description:
+                                "To see everything known about a book without editing it, choose 'Show Info' from its right-click/long-press menu — on Mac you can also use the ⓘ button in the toolbar after selecting a book. The Info panel shows the cover, all filled-in metadata (series, creators, summary, tags, rating), where the metadata came from (ComicVine or entered manually), and file details. On iPad it slides up as a sheet you can drag to full height."
+                        )
+
                         FeatureRow(
                             icon: "pencil",
                             title: "Editing Metadata",

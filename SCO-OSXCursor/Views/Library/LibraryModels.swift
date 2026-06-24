@@ -26,7 +26,17 @@ extension UTType {
 // MARK: - View Mode
 
 enum LibraryViewMode {
-    case grid, list, publisher
+    case grid, list, publisher, folders
+}
+
+// MARK: - Library Scope
+
+/// What the grid is currently scoped to. `all` is the whole library, `unfiled`
+/// is books that belong to no folder, and `folder` is one collection.
+enum LibraryScope: Equatable {
+    case all
+    case unfiled
+    case folder(UUID)
 }
 
 // MARK: - Sort Option
@@ -104,13 +114,23 @@ struct PublisherGroup: Identifiable {
 enum LibraryQuery {
 
     /// Search + filter + sort, in display order.
+    ///
+    /// - Parameter restrictTo: when non-nil, only comics whose IDs are in this
+    ///   set are considered (used to scope the grid to the current folder).
+    ///   Pass nil to search/sort the whole library.
     static func apply(
         to comics: [Comic],
         searchText: String,
         filters: LibraryFilters,
-        sort: LibrarySortOption
+        sort: LibrarySortOption,
+        restrictTo: Set<UUID>? = nil
     ) -> [Comic] {
         var result = comics
+
+        // Folder scope (applied before search/filter)
+        if let restrictTo = restrictTo {
+            result = result.filter { restrictTo.contains($0.id) }
+        }
 
         // Search across all metadata fields
         if !searchText.isEmpty {
@@ -167,6 +187,34 @@ enum LibraryQuery {
         }
 
         return result
+    }
+
+    /// Sort folders for the folder view, reusing the shared sort menu.
+    /// Comic-specific options that don't map to a folder fall back to name:
+    ///   Title → name A-Z · Date Added → created · Recently Modified → modified
+    ///   File Size → book count (largest first) · others → name A-Z
+    static func sortFolders(
+        _ folders: [Folder],
+        by sort: LibrarySortOption,
+        count: (UUID) -> Int
+    ) -> [Folder] {
+        switch sort {
+        case .dateAdded:
+            return folders.sorted { $0.createdAt > $1.createdAt }
+        case .dateModified:
+            return folders.sorted { $0.dateModified > $1.dateModified }
+        case .fileSize:
+            return folders.sorted {
+                let a = count($0.id)
+                let b = count($1.id)
+                if a != b { return a > b }
+                return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            }
+        case .title, .publisher, .year, .rating:
+            return folders.sorted {
+                $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            }
+        }
     }
 
     /// Publisher → series → issues hierarchy for the publisher browse view.

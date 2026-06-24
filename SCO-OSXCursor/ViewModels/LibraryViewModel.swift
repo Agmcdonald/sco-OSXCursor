@@ -16,6 +16,11 @@ final class LibraryViewModel: ObservableObject {
 
     @Published var comics: [Comic] = []
 
+    // Folders (collections) — a virtual organizational layer.
+    @Published var folders: [Folder] = []
+    /// folderID → set of comic IDs in that folder.
+    @Published var folderMembership: [UUID: Set<UUID>] = [:]
+
     // ✅ Track which comics are currently being edited
     @Published var editingComicIDs: Set<UUID> = []
 
@@ -42,6 +47,8 @@ final class LibraryViewModel: ObservableObject {
         // Load comics from database on initialization
         Task {
             await loadComics()
+            // Load user folders + membership for the library scope bar
+            await loadFolders()
             // Warm the learning system so staging/import matching is instant
             await SeriesKnowledge.shared.loadIfNeeded()
             // If library is empty, automatically import bundled samples
@@ -749,21 +756,88 @@ final class LibraryViewModel: ObservableObject {
 
     // MARK: - Delete Comics
 
+    /// Remove books from the app (database + library list). Files on disk are
+    /// left untouched. Folder-membership rows cascade away in the database.
     func deleteComics(_ comics: [Comic]) {
-        // TODO: Implement delete logic
-        // This is a placeholder - needs full implementation
-        AppLog.library.error("[LibraryViewModel] ⚠️ deleteComics(_:) needs implementation")
+        Task { await deleteComicsFromApp(comics) }
+    }
 
-        for comic in comics {
-            // Log deletion before removing
-            Task { await logActivity(.deleted, comic: comic, old: comic.fileName) }
-            if let index = self.comics.firstIndex(where: { $0.id == comic.id }) {
-                self.comics.remove(at: index)
+    /// Async core: delete from the database and the in-memory list.
+    func deleteComicsFromApp(_ toDelete: [Comic]) async {
+        guard !toDelete.isEmpty else { return }
+        for comic in toDelete {
+            await logActivity(.deleted, comic: comic, old: comic.fileName)
+            do {
+                try await database.deleteComic(withID: comic.id)
+            } catch {
+                AppLog.library.error(
+                    "[LibraryViewModel] ❌ Failed to delete \(comic.fileName) from database: \(error)"
+                )
             }
-            // TODO: Delete from database
-            Task {
-                // await database.deleteComic(comic)
+        }
+        let ids = Set(toDelete.map(\.id))
+        comics.removeAll { ids.contains($0.id) }
+        // Refresh folder counts (membership rows cascaded in the database).
+        await loadFolders()
+        AppLog.library.info(
+            "[LibraryViewModel] 🗑️ Removed \(toDelete.count) book(s) from the app")
+    }
+
+    /// Delete the underlying files from disk (best-effort, skipping bundled
+    /// samples), then remove the books from the app.
+    func deleteComicsFromDevice(_ toDelete: [Comic]) async {
+        guard !toDelete.isEmpty else { return }
+        for comic in toDelete {
+            if Comic.isBundled(comic) {
+                AppLog.library.error(
+                    "[LibraryViewModel] ℹ️ Skipping on-disk delete of bundled sample: \(comic.fileName)"
+                )
+                continue
             }
+            deleteFileOnDisk(for: comic)
+        }
+        await deleteComicsFromApp(toDelete)
+    }
+
+    /// Remove a single comic's file from disk, honouring its security-scoped
+    /// bookmark. Failures are logged but don't block app removal.
+    private func deleteFileOnDisk(for comic: Comic) {
+        var fileURL = comic.filePath
+        var didStartAccess = false
+        if let bookmarkData = comic.bookmarkData {
+            var isStale = false
+            #if os(macOS)
+                if let resolved = try? URL(
+                    resolvingBookmarkData: bookmarkData,
+                    options: .withSecurityScope,
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &isStale
+                ) {
+                    fileURL = resolved
+                    didStartAccess = resolved.startAccessingSecurityScopedResource()
+                }
+            #else
+                if let resolved = try? URL(
+                    resolvingBookmarkData: bookmarkData,
+                    options: [],
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &isStale
+                ) {
+                    fileURL = resolved
+                    didStartAccess = resolved.startAccessingSecurityScopedResource()
+                }
+            #endif
+        }
+        defer { if didStartAccess { fileURL.stopAccessingSecurityScopedResource() } }
+
+        do {
+            try FileManager.default.removeItem(at: fileURL)
+            AppLog.library.info(
+                "[LibraryViewModel] 🗑️ Deleted file from disk: \(comic.fileName)")
+        } catch {
+            AppLog.library.error(
+                "[LibraryViewModel] ⚠️ Could not delete file \(comic.fileName): \(error.localizedDescription)"
+            )
         }
     }
 
@@ -1157,5 +1231,117 @@ final class LibraryViewModel: ObservableObject {
         }
 
         syncProgressFromTracker()
+    }
+}
+
+// MARK: - Folders (Collections)
+
+extension LibraryViewModel {
+
+    /// Reload folders and the full membership map from the database.
+    func loadFolders() async {
+        do {
+            let fetchedFolders = try await database.fetchFolders()
+            let membership = try await database.fetchFolderMembership()
+            self.folders = fetchedFolders
+            self.folderMembership = membership
+            AppLog.library.info(
+                "[LibraryViewModel] ✅ Loaded \(fetchedFolders.count) folders")
+        } catch {
+            AppLog.library.error("[LibraryViewModel] ❌ Failed to load folders: \(error)")
+        }
+    }
+
+    /// Create a folder; returns it so callers can immediately add books.
+    @discardableResult
+    func createFolder(named name: String) async -> Folder? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let nextOrder = (folders.map(\.sortOrder).max() ?? 0) + 1
+        let folder = Folder(name: trimmed, sortOrder: nextOrder)
+        do {
+            try await database.saveFolder(folder)
+            await loadFolders()
+            return folder
+        } catch {
+            AppLog.library.error("[LibraryViewModel] ❌ Failed to create folder: \(error)")
+            return nil
+        }
+    }
+
+    func renameFolder(_ folder: Folder, to newName: String) async {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != folder.name else { return }
+        var updated = folder
+        updated.name = trimmed
+        updated.dateModified = Date()
+        do {
+            try await database.saveFolder(updated)
+            await loadFolders()
+        } catch {
+            AppLog.library.error("[LibraryViewModel] ❌ Failed to rename folder: \(error)")
+        }
+    }
+
+    func deleteFolder(_ folder: Folder) async {
+        do {
+            try await database.deleteFolder(id: folder.id)
+            await loadFolders()
+        } catch {
+            AppLog.library.error("[LibraryViewModel] ❌ Failed to delete folder: \(error)")
+        }
+    }
+
+    func addComics(_ ids: [UUID], toFolder folderID: UUID) async {
+        guard !ids.isEmpty else { return }
+        do {
+            try await database.addComics(ids, toFolder: folderID)
+            await loadFolders()
+        } catch {
+            AppLog.library.error("[LibraryViewModel] ❌ Failed to add to folder: \(error)")
+        }
+    }
+
+    func removeComics(_ ids: [UUID], fromFolder folderID: UUID) async {
+        guard !ids.isEmpty else { return }
+        do {
+            try await database.removeComics(ids, fromFolder: folderID)
+            await loadFolders()
+        } catch {
+            AppLog.library.error("[LibraryViewModel] ❌ Failed to remove from folder: \(error)")
+        }
+    }
+
+    // MARK: Synchronous view helpers
+
+    /// Comic IDs in a folder (empty if unknown).
+    func comicIDs(inFolder folderID: UUID) -> Set<UUID> {
+        folderMembership[folderID] ?? []
+    }
+
+    /// Number of books in a folder.
+    func folderCount(_ folderID: UUID) -> Int {
+        folderMembership[folderID]?.count ?? 0
+    }
+
+    /// Folders that contain a given comic, in display order.
+    func folders(containing comicID: UUID) -> [Folder] {
+        folders.filter { folderMembership[$0.id]?.contains(comicID) == true }
+    }
+
+    /// Whether a comic is in a folder.
+    func isComic(_ comicID: UUID, inFolder folderID: UUID) -> Bool {
+        folderMembership[folderID]?.contains(comicID) == true
+    }
+
+    /// IDs of comics that belong to no folder.
+    func unfiledComicIDs() -> Set<UUID> {
+        let filed = folderMembership.values.reduce(into: Set<UUID>()) { $0.formUnion($1) }
+        return Set(comics.map(\.id)).subtracting(filed)
+    }
+
+    /// Number of books not in any folder.
+    var unfiledCount: Int {
+        unfiledComicIDs().count
     }
 }

@@ -4,6 +4,24 @@ struct ComicInspectorView: View {
     let comic: Comic
     var onDismiss: (() -> Void)? = nil
 
+    /// True when metadata came from a ComicVine lookup.
+    private var sourceIsComicVine: Bool {
+        comic.metadataFetchedAt != nil || comic.comicVineVolumeID != nil
+    }
+
+    private var sourceLabel: String {
+        if let date = comic.metadataFetchedAt {
+            return "ComicVine • " + date.formatted(date: .abbreviated, time: .omitted)
+        }
+        return sourceIsComicVine ? "ComicVine" : "Entered manually"
+    }
+
+    private var hasAnyCredit: Bool {
+        [comic.writer, comic.artist, comic.coverArtist,
+         comic.colorist, comic.inker, comic.editor]
+            .contains { ($0?.isEmpty == false) }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.xl) {
@@ -93,6 +111,72 @@ struct ComicInspectorView: View {
                             }
                         }
                     }
+
+                    // Where this metadata came from
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Metadata Source")
+                            .font(Typography.label)
+                            .foregroundColor(TextColors.tertiary)
+                        HStack(spacing: Spacing.xs) {
+                            Image(systemName: sourceIsComicVine ? "network" : "pencil")
+                                .font(.system(size: 12))
+                            Text(sourceLabel)
+                        }
+                        .font(Typography.body)
+                        .foregroundColor(TextColors.secondary)
+                    }
+                }
+
+                // ── Credits (hidden when none) ────────────────────────────
+                if hasAnyCredit {
+                    Divider()
+                    VStack(alignment: .leading, spacing: Spacing.md) {
+                        Text("Credits")
+                            .font(Typography.h3)
+                            .foregroundColor(TextColors.primary)
+
+                        if let v = comic.writer, !v.isEmpty {
+                            InspectorField(title: "Writer", value: v)
+                        }
+                        if let v = comic.artist, !v.isEmpty {
+                            InspectorField(title: "Artist", value: v)
+                        }
+                        if let v = comic.coverArtist, !v.isEmpty {
+                            InspectorField(title: "Cover Artist", value: v)
+                        }
+                        if let v = comic.colorist, !v.isEmpty {
+                            InspectorField(title: "Colorist", value: v)
+                        }
+                        if let v = comic.inker, !v.isEmpty {
+                            InspectorField(title: "Inker", value: v)
+                        }
+                        if let v = comic.editor, !v.isEmpty {
+                            InspectorField(title: "Editor", value: v)
+                        }
+                    }
+                }
+
+                // ── Summary (hidden when blank) ───────────────────────────
+                if let summary = comic.summary, !summary.isEmpty {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Summary")
+                            .font(Typography.label)
+                            .foregroundColor(TextColors.tertiary)
+                        Text(summary)
+                            .font(Typography.body)
+                            .foregroundColor(TextColors.secondary)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                // ── Tags (hidden when none) ───────────────────────────────
+                if !comic.tags.isEmpty {
+                    Divider()
+                    InspectorField(
+                        title: "Tags",
+                        value: comic.tags.joined(separator: ", "))
                 }
 
                 Divider()

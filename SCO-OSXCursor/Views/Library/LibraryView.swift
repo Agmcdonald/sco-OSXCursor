@@ -25,6 +25,13 @@ private struct ComicID: Identifiable {
     let id: UUID
 }
 
+/// What a "New Folder…" prompt should do once the folder is created.
+private enum NewFolderContext {
+    case empty            // just create the folder (folder bar "+")
+    case comic(Comic)     // create, then add this single comic
+    case selection        // create, then add the current selection
+}
+
 @MainActor
 struct LibraryView: View {
     @ObservedObject var viewModel: LibraryViewModel
@@ -63,6 +70,22 @@ struct LibraryView: View {
     @State private var focusedComic: Comic?
     @State private var isInspectorPresented = false
 
+    // MARK: Folders
+    /// What the grid is scoped to: all books, unfiled, or one folder.
+    @State private var scope: LibraryScope = .all
+    @State private var showingNewFolderAlert = false
+    @State private var newFolderName = ""
+    @State private var newFolderContext: NewFolderContext = .empty
+    @State private var folderPendingRename: Folder?
+    @State private var renameFolderName = ""
+    /// Folder awaiting the three-option delete confirmation.
+    @State private var folderPendingDelete: Folder?
+
+    // iPad: read-only Info panel presented as a half-sheet (macOS uses .inspector)
+    #if os(iOS)
+        @State private var infoSheetComicID: ComicID?
+    #endif
+
     // ComicVine fetch (no-sheet single + batch)
     @State private var pendingPickerComicID: ComicID?
     @State private var comicVineStatus: String?
@@ -73,12 +96,28 @@ struct LibraryView: View {
 
     // MARK: - Derived Data
 
+    /// Folder scope for the grid. Active searches deliberately span the whole
+    /// library (we clear the folder when the user starts typing), so this is
+    /// nil while searching.
+    private var folderRestriction: Set<UUID>? {
+        guard searchText.isEmpty else { return nil }
+        switch scope {
+        case .all:
+            return nil
+        case .unfiled:
+            return viewModel.unfiledComicIDs()
+        case .folder(let id):
+            return viewModel.comicIDs(inFolder: id)
+        }
+    }
+
     var filteredAndSortedComics: [Comic] {
         LibraryQuery.apply(
             to: viewModel.comics,
             searchText: searchText,
             filters: filters,
-            sort: sortOption
+            sort: sortOption,
+            restrictTo: folderRestriction
         )
     }
 
@@ -98,6 +137,49 @@ struct LibraryView: View {
         Array(Set(viewModel.comics.compactMap { $0.year })).sorted(by: >)
     }
 
+    /// Folders sorted per the shared sort menu (folder view).
+    var sortedFolders: [Folder] {
+        LibraryQuery.sortFolders(
+            viewModel.folders,
+            by: sortOption,
+            count: { viewModel.folderCount($0) }
+        )
+    }
+
+    /// Up to four member comics for a folder card's cover collage.
+    private func previewComics(in folderID: UUID) -> [Comic] {
+        let ids = viewModel.comicIDs(inFolder: folderID)
+        return
+            viewModel.comics
+            .filter { ids.contains($0.id) }
+            .sorted { $0.dateAdded > $1.dateAdded }
+            .prefix(4)
+            .map { $0 }
+    }
+
+    /// Up to four unfiled comics for the "Unfiled" card's collage.
+    private func unfiledPreviewComics() -> [Comic] {
+        let ids = viewModel.unfiledComicIDs()
+        return
+            viewModel.comics
+            .filter { ids.contains($0.id) }
+            .sorted { $0.dateAdded > $1.dateAdded }
+            .prefix(4)
+            .map { $0 }
+    }
+
+    /// Display name of the current scope (for the subtitle); nil for All Books.
+    private var scopeName: String? {
+        switch scope {
+        case .all:
+            return nil
+        case .unfiled:
+            return "Unfiled"
+        case .folder(let id):
+            return viewModel.folders.first(where: { $0.id == id })?.name
+        }
+    }
+
     /// Closures handed to every comic cell (grid, list, publisher grids).
     private var cellActions: ComicCellActions {
         ComicCellActions(
@@ -110,7 +192,45 @@ struct LibraryView: View {
             selectRange: { selectRange(to: $0) },
             handleSelectionTap: { handleSelectionTap($0) },
             focus: { focusedComic = $0 },
-            fetchMetadata: { fetchMetadataSingle($0) }
+            fetchMetadata: { fetchMetadataSingle($0) },
+            showInfo: { comic in
+                #if os(macOS)
+                    focusedComic = comic
+                    isInspectorPresented = true
+                #else
+                    infoSheetComicID = ComicID(id: comic.id)
+                #endif
+            },
+            folders: viewModel.folders,
+            foldersContaining: { viewModel.folders(containing: $0.id) },
+            addToFolder: { comic, folderID in
+                Task { await viewModel.addComics([comic.id], toFolder: folderID) }
+            },
+            removeFromFolder: { comic, folderID in
+                Task { await viewModel.removeComics([comic.id], fromFolder: folderID) }
+            },
+            addSelectionToFolder: { folderID in
+                let ids = Array(selectedComics)
+                Task {
+                    await viewModel.addComics(ids, toFolder: folderID)
+                    selectedComics.removeAll()
+                    isSelectionMode = false
+                }
+            },
+            requestNewFolderForComic: { comic in
+                newFolderContext = .comic(comic)
+                newFolderName = ""
+                showingNewFolderAlert = true
+            },
+            requestNewFolderForSelection: {
+                newFolderContext = .selection
+                newFolderName = ""
+                showingNewFolderAlert = true
+            },
+            revealInFolder: { folderID in
+                searchText = ""
+                scope = .folder(folderID)
+            }
         )
     }
 
@@ -150,6 +270,9 @@ struct LibraryView: View {
                 publishers: publishers,
                 series: series,
                 years: years,
+                currentFolderName: scopeName,
+                totalLibraryCount: viewModel.comics.count,
+                folderViewCount: viewModel.folders.count,
                 onQuickAdd: { showingFilePicker = true },
                 onAddComicsOrganize: onAddComicsOrganize,
                 onMarkAsRead: markAsReadSelectedComics,
@@ -158,11 +281,44 @@ struct LibraryView: View {
                 onRegenerateCovers: regenerateCoversForSelected,
                 onFetchMetadata: fetchMetadataForSelected,
                 onDelete: { showingDeleteConfirmation = true },
-                isFetchingMetadata: isBatchFetching
+                isFetchingMetadata: isBatchFetching,
+                folders: viewModel.folders,
+                onAddToFolder: { folderID in
+                    let ids = Array(selectedComics)
+                    Task {
+                        await viewModel.addComics(ids, toFolder: folderID)
+                        selectedComics.removeAll()
+                        isSelectionMode = false
+                    }
+                },
+                onNewFolderForSelection: {
+                    newFolderContext = .selection
+                    newFolderName = ""
+                    showingNewFolderAlert = true
+                }
             )
 
             Divider()
                 .background(BorderColors.subtle)
+
+            // Folder scope bar (hidden in folder view — the cards are the bar)
+            if viewMode != .folders {
+                FolderBarView(
+                    folders: viewModel.folders,
+                    scope: $scope,
+                    folderCount: { viewModel.folderCount($0) },
+                    totalCount: viewModel.comics.count,
+                    unfiledCount: viewModel.unfiledCount,
+                    onNewFolder: {
+                        newFolderContext = .empty
+                        newFolderName = ""
+                        showingNewFolderAlert = true
+                    }
+                )
+
+                Divider()
+                    .background(BorderColors.subtle)
+            }
 
             // Content
             switch viewMode {
@@ -198,6 +354,43 @@ struct LibraryView: View {
                     coverSize: coverSize * 0.8,
                     actions: cellActions,
                     emptyState: emptyState
+                )
+            case .folders:
+                LibraryFolderGridView(
+                    folders: sortedFolders,
+                    count: { viewModel.folderCount($0) },
+                    previewComics: { previewComics(in: $0) },
+                    coverSize: coverSize,
+                    totalCount: viewModel.comics.count,
+                    unfiledCount: viewModel.unfiledCount,
+                    unfiledPreview: unfiledPreviewComics(),
+                    onOpenAll: {
+                        searchText = ""
+                        scope = .all
+                        viewMode = .grid
+                    },
+                    onOpenUnfiled: {
+                        searchText = ""
+                        scope = .unfiled
+                        viewMode = .grid
+                    },
+                    onOpen: { folder in
+                        searchText = ""
+                        scope = .folder(folder.id)
+                        viewMode = .grid
+                    },
+                    onRename: { folder in
+                        folderPendingRename = folder
+                        renameFolderName = folder.name
+                    },
+                    onDelete: { folder in
+                        folderPendingDelete = folder
+                    },
+                    onNewFolder: {
+                        newFolderContext = .empty
+                        newFolderName = ""
+                        showingNewFolderAlert = true
+                    }
                 )
             }
         }
@@ -237,6 +430,73 @@ struct LibraryView: View {
             Text(
                 "Are you sure you want to delete \(selectedComics.count) comic\(selectedComics.count == 1 ? "" : "s")? This action cannot be undone."
             )
+        }
+        // New folder prompt (folder bar "+", or "New Folder…" from a menu)
+        .alert("New Folder", isPresented: $showingNewFolderAlert) {
+            TextField("Folder name", text: $newFolderName)
+            Button("Cancel", role: .cancel) {}
+            Button("Create") { createFolderFromAlert() }
+        } message: {
+            Text("Name your new folder.")
+        }
+        // Rename folder prompt
+        .alert(
+            "Rename Folder",
+            isPresented: Binding(
+                get: { folderPendingRename != nil },
+                set: { if !$0 { folderPendingRename = nil } }
+            )
+        ) {
+            TextField("Folder name", text: $renameFolderName)
+            Button("Cancel", role: .cancel) { folderPendingRename = nil }
+            Button("Save") {
+                if let folder = folderPendingRename {
+                    let newName = renameFolderName
+                    Task { await viewModel.renameFolder(folder, to: newName) }
+                }
+                folderPendingRename = nil
+            }
+        }
+        // Three-option folder delete
+        .confirmationDialog(
+            folderPendingDelete.map { "Delete “\($0.name)”?" } ?? "Delete Folder?",
+            isPresented: Binding(
+                get: { folderPendingDelete != nil },
+                set: { if !$0 { folderPendingDelete = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: folderPendingDelete
+        ) { folder in
+            deleteFolderButtons(for: folder)
+        } message: { folder in
+            let n = viewModel.folderCount(folder.id)
+            if n == 0 {
+                Text("This folder is empty — deleting it won't affect any books.")
+            } else {
+                Text(
+                    "“\(folder.name)” contains \(n) book\(n == 1 ? "" : "s"). Choose what to remove. Deleting files from your device cannot be undone."
+                )
+            }
+        }
+        // iPad: read-only Info panel (long-press → Show Info). macOS uses the
+        // side inspector; this half-sheet gives iPad the same metadata view.
+        #if os(iOS)
+        .sheet(item: $infoSheetComicID) { wrapper in
+            if let comic = viewModel.comics.first(where: { $0.id == wrapper.id }) {
+                ComicInspectorView(comic: comic) {
+                    infoSheetComicID = nil
+                }
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+            }
+        }
+        #endif
+        // Searching deliberately spans the whole library — drop the folder
+        // scope the moment the user starts typing so results aren't hidden.
+        .onChange(of: searchText) { _, newValue in
+            if !newValue.isEmpty && scope != .all {
+                scope = .all
+            }
         }
         .onAppear {
             // Only load once per view lifecycle — prevents re-fetch flash when
@@ -385,6 +645,74 @@ struct LibraryView: View {
             .background(BackgroundColors.elevated)
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .shadow(color: .black.opacity(0.3), radius: 20)
+        }
+    }
+
+    // MARK: - Folder Helpers
+
+    /// Member comics of a folder, in library order.
+    private func membersOf(_ folder: Folder) -> [Comic] {
+        let ids = viewModel.comicIDs(inFolder: folder.id)
+        return viewModel.comics.filter { ids.contains($0.id) }
+    }
+
+    /// The three destructive choices for deleting a folder.
+    @ViewBuilder
+    private func deleteFolderButtons(for folder: Folder) -> some View {
+        let n = viewModel.folderCount(folder.id)
+
+        Button("Delete Folder Only", role: .destructive) {
+            if scope == .folder(folder.id) { scope = .all }
+            Task { await viewModel.deleteFolder(folder) }
+        }
+
+        if n > 0 {
+            Button(
+                "Delete Folder & Remove \(n) Book\(n == 1 ? "" : "s") from App",
+                role: .destructive
+            ) {
+                if scope == .folder(folder.id) { scope = .all }
+                let members = membersOf(folder)
+                Task {
+                    await viewModel.deleteComicsFromApp(members)
+                    await viewModel.deleteFolder(folder)
+                }
+            }
+
+            Button(
+                "Delete Folder & Delete \(n) File\(n == 1 ? "" : "s") from Device",
+                role: .destructive
+            ) {
+                if scope == .folder(folder.id) { scope = .all }
+                let members = membersOf(folder)
+                Task {
+                    await viewModel.deleteComicsFromDevice(members)
+                    await viewModel.deleteFolder(folder)
+                }
+            }
+        }
+
+        Button("Cancel", role: .cancel) {}
+    }
+
+    /// Create the folder named in the new-folder alert, then apply whatever the
+    /// prompt was for (nothing / a single comic / the current selection).
+    private func createFolderFromAlert() {
+        let context = newFolderContext
+        let name = newFolderName
+        Task {
+            guard let folder = await viewModel.createFolder(named: name) else { return }
+            switch context {
+            case .empty:
+                break
+            case .comic(let comic):
+                await viewModel.addComics([comic.id], toFolder: folder.id)
+            case .selection:
+                let ids = Array(selectedComics)
+                await viewModel.addComics(ids, toFolder: folder.id)
+                selectedComics.removeAll()
+                isSelectionMode = false
+            }
         }
     }
 

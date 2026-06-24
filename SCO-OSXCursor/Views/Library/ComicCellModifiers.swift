@@ -24,6 +24,26 @@ struct ComicCellActions {
     let focus: (Comic) -> Void
     /// Fetch ComicVine metadata directly (no edit sheet) — fills and saves.
     var fetchMetadata: (Comic) -> Void = { _ in }
+    /// Show the read-only Info panel (inspector on macOS, half-sheet on iPad).
+    var showInfo: (Comic) -> Void = { _ in }
+
+    // MARK: Folders
+    /// All user folders (for the "Add to Folder" submenu).
+    var folders: [Folder] = []
+    /// Folders a given comic currently belongs to (drives checkmarks + reveal).
+    var foldersContaining: (Comic) -> [Folder] = { _ in [] }
+    /// Add a single comic to a folder.
+    var addToFolder: (Comic, UUID) -> Void = { _, _ in }
+    /// Remove a single comic from a folder.
+    var removeFromFolder: (Comic, UUID) -> Void = { _, _ in }
+    /// Add the whole current selection to a folder (selection mode).
+    var addSelectionToFolder: (UUID) -> Void = { _ in }
+    /// Prompt for a new folder name, then add this comic to it.
+    var requestNewFolderForComic: (Comic) -> Void = { _ in }
+    /// Prompt for a new folder name, then add the current selection to it.
+    var requestNewFolderForSelection: () -> Void = {}
+    /// Navigate the library scope to a folder containing this comic.
+    var revealInFolder: (UUID) -> Void = { _ in }
 }
 
 // MARK: - Cell Interaction Modifier
@@ -65,53 +85,145 @@ struct ComicCellInteraction: ViewModifier {
                 }
             }
             #endif
+            // iPad: long-press shows a large zoomed cover above the menu.
+            // macOS context menus don't support previews, so use the plain form.
+            #if os(iOS)
             .contextMenu {
-                // Range selection without a keyboard (iPad):
-                // tap one book, long-press another, select the span
-                if isSelectionMode {
-                    Button(action: { actions.selectRange(comic) }) {
-                        Label("Select Range to Here", systemImage: "checklist")
+                menuContent
+            } preview: {
+                ComicCoverPreview(comic: comic)
+            }
+            #else
+            .contextMenu {
+                menuContent
+            }
+            #endif
+    }
+
+    // MARK: - Menu Content
+
+    @ViewBuilder
+    private var menuContent: some View {
+        // Range selection without a keyboard (iPad):
+        // tap one book, long-press another, select the span
+        if isSelectionMode {
+            Button(action: { actions.selectRange(comic) }) {
+                Label("Select Range to Here", systemImage: "checklist")
+            }
+        }
+
+        Button(action: { actions.openReader(comic) }) {
+            Label("Read", systemImage: "book.fill")
+        }
+
+        Button(action: { actions.showInfo(comic) }) {
+            Label("Show Info", systemImage: "info.circle")
+        }
+
+        Button(action: { actions.editComic(comic) }) {
+            Label("Edit Metadata", systemImage: "pencil")
+        }
+
+        Button(action: { actions.fetchMetadata(comic) }) {
+            Label("Fetch from ComicVine", systemImage: "network")
+        }
+
+        Button(action: { actions.markAsRead(comic) }) {
+            Label("Mark as Read", systemImage: "checkmark.circle")
+        }
+
+        Button(action: { actions.toggleReadingList(comic) }) {
+            Label(
+                comic.isOnReadingList
+                    ? "Remove from Reading List"
+                    : "Add to Reading List",
+                systemImage: comic.isOnReadingList
+                    ? "bookmark.slash" : "bookmark"
+            )
+        }
+
+        if showsRegenerate {
+            Button(action: { actions.regenerateCover(comic) }) {
+                Label("Regenerate Cover", systemImage: "arrow.clockwise.circle")
+            }
+        }
+
+        Divider()
+
+        folderMenu
+
+        Divider()
+
+        Button(role: .destructive, action: { actions.delete(comic) }) {
+            Label("Delete", systemImage: "trash")
+        }
+    }
+
+    // MARK: - Folder Submenu
+
+    @ViewBuilder
+    private var folderMenu: some View {
+        if isSelectionMode {
+            // Bulk: add every selected book to a folder.
+            Menu {
+                ForEach(actions.folders) { folder in
+                    Button {
+                        actions.addSelectionToFolder(folder.id)
+                    } label: {
+                        Label(folder.name, systemImage: folder.icon ?? "folder")
                     }
                 }
-
-                Button(action: { actions.openReader(comic) }) {
-                    Label("Read", systemImage: "book.fill")
+                if !actions.folders.isEmpty { Divider() }
+                Button {
+                    actions.requestNewFolderForSelection()
+                } label: {
+                    Label("New Folder…", systemImage: "plus")
                 }
+            } label: {
+                Label("Add Selected to Folder", systemImage: "folder.badge.plus")
+            }
+        } else {
+            let containing = actions.foldersContaining(comic)
 
-                Button(action: { actions.editComic(comic) }) {
-                    Label("Edit Metadata", systemImage: "pencil")
-                }
-
-                Button(action: { actions.fetchMetadata(comic) }) {
-                    Label("Fetch from ComicVine", systemImage: "network")
-                }
-
-                Button(action: { actions.markAsRead(comic) }) {
-                    Label("Mark as Read", systemImage: "checkmark.circle")
-                }
-
-                Button(action: { actions.toggleReadingList(comic) }) {
-                    Label(
-                        comic.isOnReadingList
-                            ? "Remove from Reading List"
-                            : "Add to Reading List",
-                        systemImage: comic.isOnReadingList
-                            ? "bookmark.slash" : "bookmark"
-                    )
-                }
-
-                if showsRegenerate {
-                    Button(action: { actions.regenerateCover(comic) }) {
-                        Label("Regenerate Cover", systemImage: "arrow.clockwise.circle")
+            // Add to / remove from a folder. A checkmark marks current membership.
+            Menu {
+                ForEach(actions.folders) { folder in
+                    let isIn = containing.contains(where: { $0.id == folder.id })
+                    Button {
+                        if isIn {
+                            actions.removeFromFolder(comic, folder.id)
+                        } else {
+                            actions.addToFolder(comic, folder.id)
+                        }
+                    } label: {
+                        Label(folder.name, systemImage: isIn ? "checkmark" : (folder.icon ?? "folder"))
                     }
                 }
+                if !actions.folders.isEmpty { Divider() }
+                Button {
+                    actions.requestNewFolderForComic(comic)
+                } label: {
+                    Label("New Folder…", systemImage: "plus")
+                }
+            } label: {
+                Label("Add to Folder", systemImage: "folder.badge.plus")
+            }
 
-                Divider()
-
-                Button(role: .destructive, action: { actions.delete(comic) }) {
-                    Label("Delete", systemImage: "trash")
+            // Jump the library scope to a folder this book lives in.
+            if !containing.isEmpty {
+                Menu {
+                    ForEach(containing) { folder in
+                        Button {
+                            actions.revealInFolder(folder.id)
+                        } label: {
+                            Label(folder.name, systemImage: folder.icon ?? "folder")
+                        }
+                    }
+                } label: {
+                    Label("Reveal in Folder", systemImage: "folder")
                 }
             }
+        }
     }
 }
 
@@ -157,3 +269,48 @@ struct SelectionCheckbox: View {
         }
     }
 }
+
+// MARK: - Context Menu Preview (iPad)
+
+#if os(iOS)
+    /// The large, zoomed cover shown above the context menu when a book is
+    /// long-pressed on iPad. Sized to its content so iOS lays out a tall,
+    /// poster-style preview platter.
+    @MainActor
+    struct ComicCoverPreview: View {
+        let comic: Comic
+
+        var body: some View {
+            VStack(spacing: 0) {
+                if let data = comic.coverImageData,
+                    let image = PageImageCache.shared.coverImage(
+                        from: data, cacheKey: comic.id.uuidString)
+                {
+                    Image(uiImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                } else {
+                    Rectangle()
+                        .fill(BackgroundColors.secondary)
+                        .aspectRatio(2 / 3, contentMode: .fit)
+                        .overlay(
+                            Image(systemName: "book.closed")
+                                .font(.system(size: 48))
+                                .foregroundColor(TextColors.tertiary)
+                        )
+                }
+
+                Text(comic.displayName)
+                    .font(Typography.h3)
+                    .foregroundColor(TextColors.primary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, Spacing.lg)
+                    .padding(.vertical, Spacing.md)
+                    .frame(maxWidth: .infinity)
+            }
+            .frame(width: 391)
+            .background(BackgroundColors.elevated)
+        }
+    }
+#endif

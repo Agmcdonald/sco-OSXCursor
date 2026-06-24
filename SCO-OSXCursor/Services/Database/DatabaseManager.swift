@@ -472,6 +472,43 @@ final class DatabaseManager {
             AppLog.database.info("[DatabaseManager] ✅ Migration v19_thumbnail_bar_position complete")
         }
 
+        // Version 20: Folders (collections). A *virtual* organizational layer —
+        // membership lives in the comic_folders junction table and never moves
+        // files on disk. Many-to-many: a book can live in any number of folders.
+        migrator.registerMigration("v20_folders") { db in
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v20_folders")
+
+            try db.create(table: "folders", ifNotExists: true) { t in
+                t.column("id", .text).primaryKey()
+                t.column("name", .text).notNull()
+                // Self-reference enables future nesting; flat in the v1 UI.
+                t.column("parent_id", .text).references("folders", onDelete: .cascade)
+                t.column("sort_order", .integer).notNull().defaults(to: 0)
+                t.column("color", .text)
+                t.column("icon", .text)
+                t.column("created_at", .datetime).notNull()
+                t.column("date_modified", .datetime).notNull()
+            }
+
+            try db.create(table: "comic_folders", ifNotExists: true) { t in
+                t.column("comic_id", .text).notNull()
+                    .references("comics", onDelete: .cascade)
+                t.column("folder_id", .text).notNull()
+                    .references("folders", onDelete: .cascade)
+                t.column("added_at", .datetime).notNull()
+                t.primaryKey(["comic_id", "folder_id"])
+            }
+
+            try db.create(
+                index: "idx_comic_folders_folder", on: "comic_folders",
+                columns: ["folder_id"])
+            try db.create(
+                index: "idx_comic_folders_comic", on: "comic_folders",
+                columns: ["comic_id"])
+
+            AppLog.database.info("[DatabaseManager] ✅ Migration v20_folders complete")
+        }
+
         return migrator
     }
 
@@ -1032,6 +1069,91 @@ extension DatabaseManager {
             try ActivityEvent
                 .filter(ActivityEvent.Columns.timestamp < date)
                 .deleteAll(db)
+        }
+    }
+}
+
+// MARK: - Folder CRUD (Collections)
+
+extension DatabaseManager {
+    /// All folders, ordered by manual sort order then name.
+    func fetchFolders() async throws -> [Folder] {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+        return try await dbQueue.read { db in
+            try Folder
+                .order(Folder.Columns.sortOrder, Folder.Columns.name)
+                .fetchAll(db)
+        }
+    }
+
+    /// Insert or update a folder (keyed on its UUID primary key).
+    func saveFolder(_ folder: Folder) async throws {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+        try await dbQueue.write { db in
+            try folder.save(db)
+            AppLog.database.info("[DatabaseManager] ✅ Saved folder: \(folder.name)")
+        }
+    }
+
+    /// Delete a folder. Membership rows cascade via the foreign key, but we
+    /// also delete them explicitly in case cascade is unavailable.
+    func deleteFolder(id: UUID) async throws {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+        try await dbQueue.write { db in
+            try db.execute(
+                sql: "DELETE FROM comic_folders WHERE folder_id = ?",
+                arguments: [id.uuidString])
+            try Folder.deleteOne(db, key: id.uuidString)
+            AppLog.database.info("[DatabaseManager] 🗑️ Deleted folder: \(id)")
+        }
+    }
+
+    /// Add comics to a folder (idempotent — duplicates are ignored).
+    func addComics(_ comicIDs: [UUID], toFolder folderID: UUID) async throws {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+        guard !comicIDs.isEmpty else { return }
+        let now = Date()
+        try await dbQueue.write { db in
+            for cid in comicIDs {
+                try db.execute(
+                    sql: """
+                        INSERT OR IGNORE INTO comic_folders (comic_id, folder_id, added_at)
+                        VALUES (?, ?, ?)
+                        """,
+                    arguments: [cid.uuidString, folderID.uuidString, now])
+            }
+        }
+    }
+
+    /// Remove comics from a folder.
+    func removeComics(_ comicIDs: [UUID], fromFolder folderID: UUID) async throws {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+        guard !comicIDs.isEmpty else { return }
+        try await dbQueue.write { db in
+            for cid in comicIDs {
+                try db.execute(
+                    sql: "DELETE FROM comic_folders WHERE comic_id = ? AND folder_id = ?",
+                    arguments: [cid.uuidString, folderID.uuidString])
+            }
+        }
+    }
+
+    /// Full membership map: folderID → set of comic IDs in that folder.
+    func fetchFolderMembership() async throws -> [UUID: Set<UUID>] {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+        return try await dbQueue.read { db in
+            let rows = try Row.fetchAll(
+                db, sql: "SELECT comic_id, folder_id FROM comic_folders")
+            var map: [UUID: Set<UUID>] = [:]
+            for row in rows {
+                guard let cidStr: String = row["comic_id"],
+                    let cid = UUID(uuidString: cidStr),
+                    let fidStr: String = row["folder_id"],
+                    let fid = UUID(uuidString: fidStr)
+                else { continue }
+                map[fid, default: []].insert(cid)
+            }
+            return map
         }
     }
 }
