@@ -419,7 +419,10 @@ final class LibraryViewModel: ObservableObject {
 
     // MARK: - Import Comics
 
-    func importComics(from rawURLs: [URL]) async {
+    /// Imports the given files/folders and returns the IDs of the books that
+    /// were added (used by callers that want to file them into a folder).
+    @discardableResult
+    func importComics(from rawURLs: [URL]) async -> [UUID] {
         await MainActor.run {
             isImporting = true
             importProgress = 0.0
@@ -702,6 +705,8 @@ final class LibraryViewModel: ObservableObject {
 
         // Sync progress after import
         syncProgressFromTracker()
+
+        return newComics.map(\.id)
     }
 
     // MARK: - Bundle Import

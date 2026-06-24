@@ -249,6 +249,13 @@ struct UserManualView: View {
 
                         FeatureRow(
                             icon: "folder.badge.plus",
+                            title: "Import Straight into a Folder",
+                            description:
+                                "When you Quick Add more than one book (or a whole folder), SCO first asks if you'd like to group them — create a new folder, add them to an existing one, or just import to the library. Importing a single book skips the question and adds it directly."
+                        )
+
+                        FeatureRow(
+                            icon: "folder.badge.plus",
                             title: "Organize & Scan Folder (Mac)",
                             description:
                                 "The Organize tab stages files before import so you can review what was detected. 'Scan Folder…' pulls in an entire folder tree. Files with embedded ComicInfo.xml fill in automatically; the rest are parsed from their filenames and folder names."
