@@ -160,6 +160,13 @@ struct UserManualView: View {
                         )
 
                         FeatureRow(
+                            icon: "trash",
+                            title: "Deleting Books & Files",
+                            description:
+                                "Deleting a book (from its right-click/long-press menu, or 'Delete' in the selection toolbar) removes it from your SCO library but leaves the original file untouched on your drive. To delete the underlying files from your device too, use a folder: gather the books into a folder, then choose 'Delete Folder' → 'Delete Files from Device'. Deleting files from your device is permanent and cannot be undone."
+                        )
+
+                        FeatureRow(
                             icon: "arrow.triangle.branch",
                             title: "Corrections Re-File Your Books",
                             description:

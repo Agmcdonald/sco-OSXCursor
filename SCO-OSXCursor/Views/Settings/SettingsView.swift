@@ -9,10 +9,16 @@ import SwiftUI
 import UniformTypeIdentifiers
 import os
 
+#if os(iOS)
+    import UIKit
+#endif
+
 @MainActor
 struct SettingsView: View {
     @ObservedObject private var readerSettings = ReaderSettings.shared
     @StateObject private var viewModel = SettingsViewModel()
+
+    @Environment(\.openURL) private var openURL
 
     @State private var showingPathPicker = false
     @State private var showingResetConfirmation = false
@@ -140,6 +146,11 @@ struct SettingsView: View {
                 // Organization Settings Section
                 settingsSection(title: "Organization", icon: "folder.badge.gearshape") {
                     organizationSettings
+                }
+
+                // Feedback & Support Section
+                settingsSection(title: "Feedback & Support", icon: "envelope") {
+                    feedbackSettings
                 }
             }
             .padding(Spacing.xl)
@@ -862,6 +873,100 @@ struct SettingsView: View {
                 )
             }
             .buttonStyle(.plain)
+        }
+    }
+
+    // MARK: - Feedback & Support
+
+    private static let feedbackEmail = "info@rapturepress.com"
+
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+    }
+
+    private var buildNumber: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+    }
+
+    private var systemInfo: String {
+        #if os(iOS)
+            let device = UIDevice.current
+            return "\(device.systemName) \(device.systemVersion) (\(device.model))"
+        #else
+            let v = ProcessInfo.processInfo.operatingSystemVersion
+            return "macOS \(v.majorVersion).\(v.minorVersion).\(v.patchVersion)"
+        #endif
+    }
+
+    /// Pre-addressed mail to the beta feedback inbox, with diagnostics in the body.
+    private func feedbackMailURL() -> URL? {
+        let subject = "SCO Beta Feedback (v\(appVersion))"
+        let body = """
+            Tell us what's working well, what's broken, or any ideas you have:
+
+
+
+
+            ——— Please keep the details below to help us debug ———
+            App: Super Comic Organizer
+            Version: \(appVersion) (build \(buildNumber))
+            System: \(systemInfo)
+            """
+        var components = URLComponents()
+        components.scheme = "mailto"
+        components.path = Self.feedbackEmail
+        components.queryItems = [
+            URLQueryItem(name: "subject", value: subject),
+            URLQueryItem(name: "body", value: body),
+        ]
+        return components.url
+    }
+
+    private var feedbackSettings: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            Text(
+                "We're in beta and your feedback shapes the app. Tell us about bugs, confusing bits, or features you'd love — it all helps."
+            )
+            .font(Typography.bodySmall)
+            .foregroundColor(TextColors.secondary)
+
+            Button {
+                if let url = feedbackMailURL() {
+                    openURL(url)
+                }
+            } label: {
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: "paperplane.fill")
+                    Text("Send Feedback")
+                        .font(Typography.button)
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Spacing.sm)
+                .background(AccentColors.primary)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+
+            Text(
+                "Opens your email app, addressed to \(Self.feedbackEmail). Your app version and system details are added automatically so we can reproduce issues."
+            )
+            .font(Typography.caption)
+            .foregroundColor(TextColors.tertiary)
+
+            Divider()
+                .background(BorderColors.subtle)
+                .padding(.vertical, Spacing.xs)
+
+            HStack {
+                Text("Version")
+                    .font(Typography.bodySmall)
+                    .foregroundColor(TextColors.secondary)
+                Spacer()
+                Text("\(appVersion) (\(buildNumber))")
+                    .font(.system(.footnote, design: .monospaced))
+                    .foregroundColor(TextColors.tertiary)
+            }
         }
     }
 
