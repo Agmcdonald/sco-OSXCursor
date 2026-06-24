@@ -477,10 +477,26 @@ final class OrganizeViewModel: ObservableObject {
         }
     }
 
-    /// Confirm all comics with "Ready" status at once, with batch progress
-    func confirmAllReady() async {
+    /// Number of staged comics currently ready to apply.
+    var readyCount: Int {
+        stagedComics.filter { $0.status == .ready }.count
+    }
+
+    /// User folders for the "place into a folder" prompt, sorted alphabetically.
+    var availableFolders: [Folder] {
+        libraryViewModel.folders.sorted {
+            $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        }
+    }
+
+    /// Confirm all comics with "Ready" status at once, with batch progress.
+    /// Optionally files every newly imported book into a folder.
+    func confirmAllReady(folderChoice: ImportFolderChoice = .none) async {
         let readyComics = stagedComics.filter { $0.status == .ready }
         guard !readyComics.isEmpty else { return }
+
+        // Snapshot existing library IDs so we can tell which books are new.
+        let beforeIDs = Set(libraryViewModel.comics.map(\.id))
 
         isProcessing = true
         processingProgress = 0.0
@@ -491,5 +507,21 @@ final class OrganizeViewModel: ObservableObject {
         }
 
         isProcessing = false
+
+        // Resolve the folder choice and file the newly imported books into it.
+        let targetFolderID: UUID?
+        switch folderChoice {
+        case .none:
+            targetFolderID = nil
+        case .existing(let id):
+            targetFolderID = id
+        case .new(let name):
+            targetFolderID = await libraryViewModel.createFolder(named: name)?.id
+        }
+
+        if let targetFolderID {
+            let newIDs = libraryViewModel.comics.map(\.id).filter { !beforeIDs.contains($0) }
+            await libraryViewModel.addComics(newIDs, toFolder: targetFolderID)
+        }
     }
 }

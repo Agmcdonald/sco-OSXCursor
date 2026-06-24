@@ -65,10 +65,6 @@ struct LibraryView: View {
     @State private var selectionAnchorID: Comic.ID?
     @State private var showingFilePicker = false
     @State private var isDropTargeted = false
-
-    // Multi-book import → optional folder prompt
-    @State private var pendingImportURLs: [URL] = []
-    @State private var showingImportFolderPrompt = false
     @State private var showingDeleteConfirmation = false
     /// Comics queued for the delete confirmation (single book or a selection).
     @State private var comicsPendingDelete: [Comic] = []
@@ -440,25 +436,6 @@ struct LibraryView: View {
             allowsMultipleSelection: false
         ) { result in
             handleRelink(result)
-        }
-        // Multi-book import → optional folder choice
-        .sheet(isPresented: $showingImportFolderPrompt) {
-            ImportFolderChoiceSheet(
-                bookCountText: importPromptCountText,
-                folders: viewModel.folders.sorted {
-                    $0.name.localizedStandardCompare($1.name) == .orderedAscending
-                },
-                onChoice: { choice in
-                    showingImportFolderPrompt = false
-                    let urls = pendingImportURLs
-                    pendingImportURLs = []
-                    runImport(urls, choice: choice)
-                },
-                onCancel: {
-                    showingImportFolderPrompt = false
-                    pendingImportURLs = []
-                }
-            )
         }
         .sheet(isPresented: $showingBulkEdit) {
             BulkEditSheet(itemCount: selectedComics.count) { values in
@@ -969,56 +946,13 @@ struct LibraryView: View {
     private func handleFileImport(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
-            // Importing more than one book (or a folder)? Offer to file them
-            // into a collection first. A single book just imports.
-            if shouldPromptForFolder(urls) {
-                pendingImportURLs = urls
-                // Let the system file picker finish dismissing before we
-                // present our own sheet (iOS can drop back-to-back sheets).
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    showingImportFolderPrompt = true
-                }
-            } else {
-                runImport(urls, choice: .none)
+            // Quick Add always imports straight away. (Folder placement is
+            // offered on the Organize "Add Comics" flow instead.)
+            Task {
+                await viewModel.importComics(from: urls)
             }
         case .failure(let error):
             AppLog.library.error("File import failed: \(error.localizedDescription)")
-        }
-    }
-
-    /// Prompt when importing multiple files, or a single folder (which usually
-    /// expands to many books).
-    private func shouldPromptForFolder(_ urls: [URL]) -> Bool {
-        if urls.count > 1 { return true }
-        guard let only = urls.first else { return false }
-        let accessing = only.startAccessingSecurityScopedResource()
-        defer { if accessing { only.stopAccessingSecurityScopedResource() } }
-        var isDir: ObjCBool = false
-        _ = FileManager.default.fileExists(atPath: only.path, isDirectory: &isDir)
-        return isDir.boolValue
-    }
-
-    /// Friendly count for the prompt header.
-    private var importPromptCountText: String {
-        let n = pendingImportURLs.count
-        return n > 1 ? "\(n) books" : "these books"
-    }
-
-    /// Run the import, then optionally file the new books into a folder.
-    private func runImport(_ urls: [URL], choice: ImportFolderChoice) {
-        guard !urls.isEmpty else { return }
-        Task {
-            let importedIDs = await viewModel.importComics(from: urls)
-            switch choice {
-            case .none:
-                break
-            case .existing(let folderID):
-                await viewModel.addComics(importedIDs, toFolder: folderID)
-            case .new(let name):
-                if let folder = await viewModel.createFolder(named: name) {
-                    await viewModel.addComics(importedIDs, toFolder: folder.id)
-                }
-            }
         }
     }
 

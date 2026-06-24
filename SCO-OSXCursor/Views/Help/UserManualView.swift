@@ -251,7 +251,7 @@ struct UserManualView: View {
                             icon: "folder.badge.plus",
                             title: "Import Straight into a Folder",
                             description:
-                                "When you Quick Add more than one book (or a whole folder), SCO first asks if you'd like to group them — create a new folder, add them to an existing one, or just import to the library. Importing a single book skips the question and adds it directly."
+                                "Quick Add always imports instantly. When you stage files in Organize and press 'Apply All Ready' with more than one book, SCO asks if you'd like to group them — create a new folder, add them to an existing one, or just import to the library. Applying a single book skips the question."
                         )
 
                         FeatureRow(

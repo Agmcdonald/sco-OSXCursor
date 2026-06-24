@@ -11,6 +11,7 @@ import UniformTypeIdentifiers
 struct OrganizeView: View {
     @ObservedObject var viewModel: OrganizeViewModel
     @State private var showingBulkEdit = false
+    @State private var showingFolderPrompt = false
 
     var body: some View {
         #if os(macOS)
@@ -147,14 +148,18 @@ struct OrganizeView: View {
 
                             Spacer()
                             Button(action: {
-                                Task {
-                                    await viewModel.confirmAllReady()
+                                // More than one book? Offer to file them into a
+                                // folder first. A single book just applies.
+                                if viewModel.readyCount > 1 {
+                                    showingFolderPrompt = true
+                                } else {
+                                    Task { await viewModel.confirmAllReady() }
                                 }
                             }) {
                                 Label("Apply All Ready", systemImage: "checkmark.circle.fill")
                             }
                             .buttonStyle(.borderedProminent)
-                            .disabled(viewModel.stagedComics.filter { $0.status == .ready }.isEmpty)
+                            .disabled(viewModel.readyCount == 0)
                             Spacer()
                         }
                         .padding(.vertical, 8)
@@ -198,6 +203,17 @@ struct OrganizeView: View {
                 ) { values in
                     viewModel.bulkUpdate(ids: viewModel.checkedComicIDs, values: values)
                 }
+            }
+            .sheet(isPresented: $showingFolderPrompt) {
+                ImportFolderChoiceSheet(
+                    bookCountText: "\(viewModel.readyCount) books",
+                    folders: viewModel.availableFolders,
+                    onChoice: { choice in
+                        showingFolderPrompt = false
+                        Task { await viewModel.confirmAllReady(folderChoice: choice) }
+                    },
+                    onCancel: { showingFolderPrompt = false }
+                )
             }
         #else
             VStack(spacing: 16) {
