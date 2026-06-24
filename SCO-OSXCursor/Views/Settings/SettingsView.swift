@@ -13,6 +13,10 @@ import os
     import UIKit
 #endif
 
+#if os(macOS)
+    import AppKit
+#endif
+
 @MainActor
 struct SettingsView: View {
     @ObservedObject private var readerSettings = ReaderSettings.shared
@@ -31,6 +35,12 @@ struct SettingsView: View {
 
     // Publishers from the library (deduped) for the branding tool
     @State private var libraryPublishers: [String] = []
+
+    // Feedback / backup
+    @State private var didCopyEmail = false
+    @State private var backupDocument: LibraryBackupDocument?
+    @State private var showingBackupExporter = false
+    @State private var backupError: String?
     
     @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
     @AppStorage("showMetadataTags") private var showMetadataTags = true
@@ -148,6 +158,11 @@ struct SettingsView: View {
                     organizationSettings
                 }
 
+                // Backup Section
+                settingsSection(title: "Library Backup", icon: "externaldrive") {
+                    backupSettings
+                }
+
                 // Feedback & Support Section
                 settingsSection(title: "Feedback & Support", icon: "envelope") {
                     feedbackSettings
@@ -162,6 +177,27 @@ struct SettingsView: View {
         #endif
         .sheet(isPresented: $showingBrandingSheet) {
             BatchPublisherBrandingView(libraryPublishers: libraryPublishers)
+        }
+        .fileExporter(
+            isPresented: $showingBackupExporter,
+            document: backupDocument,
+            contentType: .sqliteDatabase,
+            defaultFilename: "SCO-Library-Backup-\(Self.backupDateString())"
+        ) { result in
+            if case .failure(let error) = result {
+                backupError = error.localizedDescription
+            }
+            backupDocument = nil
+        }
+        .alert(
+            "Backup Failed",
+            isPresented: Binding(
+                get: { backupError != nil },
+                set: { if !$0 { backupError = nil } })
+        ) {
+            Button("OK", role: .cancel) { backupError = nil }
+        } message: {
+            Text(backupError ?? "")
         }
         .sheet(isPresented: $showingReorganizeSheet) {
             if let libraryRoot = viewModel.resolveHomeLibraryURL() {
@@ -876,6 +912,58 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Library Backup
+
+    private static func backupDateString() -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: Date())
+    }
+
+    private func startBackup() {
+        Task {
+            do {
+                let data = try await DatabaseManager.shared.makeBackupData()
+                backupDocument = LibraryBackupDocument(data: data)
+                showingBackupExporter = true
+            } catch {
+                backupError = error.localizedDescription
+            }
+        }
+    }
+
+    private var backupSettings: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            Text(
+                "Save a copy of your library catalog — every book's metadata, reading progress, folders, and learned data. It's a safety net against data loss; it does not include the comic files themselves."
+            )
+            .font(Typography.bodySmall)
+            .foregroundColor(TextColors.secondary)
+
+            Button {
+                startBackup()
+            } label: {
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: "externaldrive.badge.timemachine")
+                    Text("Back Up Library Catalog…")
+                        .font(Typography.button)
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Spacing.sm)
+                .background(AccentColors.primary)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+
+            Text(
+                "Keep the backup somewhere safe, like iCloud Drive or another folder. To restore it, replace the app's database with this file — reach out if you need a hand."
+            )
+            .font(Typography.caption)
+            .foregroundColor(TextColors.tertiary)
+        }
+    }
+
     // MARK: - Feedback & Support
 
     private static let feedbackEmail = "info@rapturepress.com"
@@ -922,6 +1010,28 @@ struct SettingsView: View {
         return components.url
     }
 
+    /// Open the pre-addressed email. On macOS we go through NSWorkspace (the
+    /// canonical mailto opener) rather than the SwiftUI openURL action, which
+    /// could route the link to the wrong handler.
+    private func openFeedbackMail() {
+        guard let url = feedbackMailURL() else { return }
+        #if os(macOS)
+            NSWorkspace.shared.open(url)
+        #else
+            openURL(url)
+        #endif
+    }
+
+    private func copyFeedbackEmail() {
+        #if os(macOS)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(Self.feedbackEmail, forType: .string)
+        #else
+            UIPasteboard.general.string = Self.feedbackEmail
+        #endif
+        didCopyEmail = true
+    }
+
     private var feedbackSettings: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             Text(
@@ -931,9 +1041,7 @@ struct SettingsView: View {
             .foregroundColor(TextColors.secondary)
 
             Button {
-                if let url = feedbackMailURL() {
-                    openURL(url)
-                }
+                openFeedbackMail()
             } label: {
                 HStack(spacing: Spacing.sm) {
                     Image(systemName: "paperplane.fill")
@@ -948,8 +1056,26 @@ struct SettingsView: View {
             }
             .buttonStyle(.plain)
 
+            // Fallback: if no mail client is set up, copy the address instead.
+            HStack(spacing: Spacing.sm) {
+                Text(Self.feedbackEmail)
+                    .font(.system(.footnote, design: .monospaced))
+                    .foregroundColor(TextColors.secondary)
+                    .textSelection(.enabled)
+                Spacer()
+                Button(action: copyFeedbackEmail) {
+                    HStack(spacing: Spacing.xs) {
+                        Image(systemName: didCopyEmail ? "checkmark" : "doc.on.doc")
+                        Text(didCopyEmail ? "Copied" : "Copy")
+                            .font(Typography.bodySmall)
+                    }
+                    .foregroundColor(AccentColors.primary)
+                }
+                .buttonStyle(.plain)
+            }
+
             Text(
-                "Opens your email app, addressed to \(Self.feedbackEmail). Your app version and system details are added automatically so we can reproduce issues."
+                "Send Feedback opens your email app. Your app version and system details are added automatically so we can reproduce issues. No mail app set up? Copy the address and write us from anywhere."
             )
             .font(Typography.caption)
             .foregroundColor(TextColors.tertiary)
@@ -1122,4 +1248,33 @@ struct SettingsView: View {
 
 #Preview {
     SettingsView()
+}
+
+// MARK: - Library Backup Document
+
+extension UTType {
+    /// SQLite database type, preferring the ".db" extension for exports.
+    static var sqliteDatabase: UTType {
+        UTType(filenameExtension: "db") ?? .database
+    }
+}
+
+/// A simple in-memory document used to export the library catalog snapshot.
+struct LibraryBackupDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.sqliteDatabase, .database, .data] }
+    static var writableContentTypes: [UTType] { [.sqliteDatabase] }
+
+    var data: Data
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        data = configuration.file.regularFileContents ?? Data()
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
+    }
 }

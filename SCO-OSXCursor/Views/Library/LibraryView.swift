@@ -81,6 +81,10 @@ struct LibraryView: View {
     /// Folder awaiting the three-option delete confirmation.
     @State private var folderPendingDelete: Folder?
 
+    // Missing-file recovery (Locate File…)
+    @State private var relinkComicID: ComicID?
+    @State private var showingRelinkPicker = false
+
     // iPad: read-only Info panel presented as a half-sheet (macOS uses .inspector)
     #if os(iOS)
         @State private var infoSheetComicID: ComicID?
@@ -200,6 +204,10 @@ struct LibraryView: View {
                 #else
                     infoSheetComicID = ComicID(id: comic.id)
                 #endif
+            },
+            relink: { comic in
+                relinkComicID = ComicID(id: comic.id)
+                showingRelinkPicker = true
             },
             folders: viewModel.folders,
             foldersContaining: { viewModel.folders(containing: $0.id) },
@@ -413,6 +421,17 @@ struct LibraryView: View {
             allowsMultipleSelection: true
         ) { result in
             handleFileImport(result)
+        }
+        // Locate File… — re-link a single missing/moved book
+        .fileImporter(
+            isPresented: $showingRelinkPicker,
+            allowedContentTypes: [
+                .zip, .pdf, .cbr, .epub,
+                UTType(filenameExtension: "cbz") ?? .data,
+            ],
+            allowsMultipleSelection: false
+        ) { result in
+            handleRelink(result)
         }
         .sheet(isPresented: $showingBulkEdit) {
             BulkEditSheet(itemCount: selectedComics.count) { values in
@@ -646,6 +665,17 @@ struct LibraryView: View {
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .shadow(color: .black.opacity(0.3), radius: 20)
         }
+    }
+
+    // MARK: - Relink Helper
+
+    private func handleRelink(_ result: Result<[URL], Error>) {
+        defer { relinkComicID = nil }
+        guard case .success(let urls) = result, let url = urls.first,
+            let wrapper = relinkComicID,
+            let comic = viewModel.comics.first(where: { $0.id == wrapper.id })
+        else { return }
+        Task { await viewModel.relinkComic(comic, to: url) }
     }
 
     // MARK: - Folder Helpers

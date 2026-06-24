@@ -167,6 +167,13 @@ struct UserManualView: View {
                         )
 
                         FeatureRow(
+                            icon: "folder.badge.questionmark",
+                            title: "Fixing Missing Files",
+                            description:
+                                "If a comic's file gets moved or renamed outside the app, the book is flagged with a ⚠ badge. Right-click (or long-press) it and choose 'Locate File…', then pick the file in its new location — the book re-links to it and the warning clears. This is handy when iCloud, an external drive, or a reorganization moves things around."
+                        )
+
+                        FeatureRow(
                             icon: "arrow.triangle.branch",
                             title: "Corrections Re-File Your Books",
                             description:
@@ -426,6 +433,29 @@ struct UserManualView: View {
                             title: "Want to Read & Currently Reading",
                             description:
                                 "Add comics to your 'Want to Read' list (from the selection toolbar or context menu) to keep them accessible at the top of the Library and Dashboard. Track the books you've started in the 'Currently Reading' section."
+                        )
+                    }
+                }
+
+                // 4b. Backups & Feedback
+                ManualSection(
+                    title: "Backups & Feedback",
+                    icon: "lifepreserver",
+                    description: "Protect your catalog and help shape the app."
+                ) {
+                    VStack(alignment: .leading, spacing: Spacing.xl) {
+                        FeatureRow(
+                            icon: "externaldrive.badge.timemachine",
+                            title: "Back Up Your Library",
+                            description:
+                                "In Settings → Library Backup, tap 'Back Up Library Catalog…' to save a copy of all your books' metadata, reading progress, folders, and learned data. Keep it somewhere safe like iCloud Drive. The backup is your catalog, not the comic files themselves, so it's a small, quick safety net."
+                        )
+
+                        FeatureRow(
+                            icon: "paperplane.fill",
+                            title: "Send Feedback",
+                            description:
+                                "We're in beta and your input matters. Settings → Feedback & Support → 'Send Feedback' opens an email to our team with your app version and system details attached automatically, so we can reproduce and fix issues quickly. No mail app set up? Copy the address and write from anywhere."
                         )
                     }
                 }

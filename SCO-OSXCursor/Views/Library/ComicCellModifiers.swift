@@ -26,6 +26,8 @@ struct ComicCellActions {
     var fetchMetadata: (Comic) -> Void = { _ in }
     /// Show the read-only Info panel (inspector on macOS, half-sheet on iPad).
     var showInfo: (Comic) -> Void = { _ in }
+    /// Re-link a missing/moved file (shown only when the book needs attention).
+    var relink: (Comic) -> Void = { _ in }
 
     // MARK: Folders
     /// All user folders (for the "Add to Folder" submenu).
@@ -110,6 +112,14 @@ struct ComicCellInteraction: ViewModifier {
             Button(action: { actions.selectRange(comic) }) {
                 Label("Select Range to Here", systemImage: "checklist")
             }
+        }
+
+        // Recovery for a missing/moved file.
+        if comic.needsAttention {
+            Button(action: { actions.relink(comic) }) {
+                Label("Locate File…", systemImage: "folder.badge.questionmark")
+            }
+            Divider()
         }
 
         Button(action: { actions.openReader(comic) }) {

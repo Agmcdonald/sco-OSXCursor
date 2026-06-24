@@ -752,6 +752,19 @@ final class DatabaseManager {
             try Comic.fetchCount(db)
         }
     }
+
+    /// A consistent snapshot of the catalog as bytes, for the backup/export
+    /// feature. Reading inside `read` serializes against any in-flight write on
+    /// the (serialized) queue, so the on-disk file is quiescent when copied.
+    func makeBackupData() async throws -> Data {
+        guard let dbQueue = dbQueue else {
+            throw DatabaseError.notInitialized
+        }
+        let path = try getDatabasePath()
+        return try await dbQueue.read { _ in
+            try Data(contentsOf: path)
+        }
+    }
 }
 
 // MARK: - Knowledge CRUD

@@ -183,44 +183,106 @@ struct WelcomeSheet: View {
     @Binding var hasSeenWelcome: Bool
     
     var body: some View {
-        VStack(spacing: Spacing.xl) {
-            #if os(macOS)
-                if let logo = NSImage(named: "logo_SCO") {
-                    Image(nsImage: logo)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxHeight: 250)
+        ScrollView {
+            VStack(spacing: Spacing.xl) {
+                #if os(macOS)
+                    if let logo = NSImage(named: "logo_SCO") {
+                        Image(nsImage: logo)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(maxHeight: 160)
+                    }
+                #else
+                    if let logo = UIImage(named: "logo_SCO") {
+                        Image(uiImage: logo)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(maxHeight: 160)
+                    }
+                #endif
+
+                VStack(spacing: Spacing.sm) {
+                    Text("Welcome to Super Comic Organizer")
+                        .font(Typography.h1)
+                        .multilineTextAlignment(.center)
+
+                    Text("Organize, read, and track your comic collection — here's what you can do.")
+                        .font(Typography.body)
+                        .foregroundColor(TextColors.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, Spacing.xl)
                 }
-            #else
-                if let logo = UIImage(named: "logo_SCO") {
-                    Image(uiImage: logo)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxHeight: 250)
+
+                VStack(alignment: .leading, spacing: Spacing.lg) {
+                    WelcomeHighlight(
+                        icon: "plus.rectangle.on.folder",
+                        title: "Import in seconds",
+                        text: "Use Quick Add to bring in CBZ, CBR, PDF, or EPUB files — or whole folders at once."
+                    )
+                    WelcomeHighlight(
+                        icon: "sparkle.magnifyingglass",
+                        title: "Auto-organized",
+                        text: "Series, publisher, and issue are detected automatically, with optional ComicVine lookups."
+                    )
+                    WelcomeHighlight(
+                        icon: "folder",
+                        title: "Make collections",
+                        text: "Group books into folders, then browse and sort them in the Folder view."
+                    )
+                    WelcomeHighlight(
+                        icon: "book.pages",
+                        title: "Read your way",
+                        text: "A gesture-driven reader with single-page, two-page spread, manga, and vertical-scroll styles."
+                    )
                 }
-            #endif
-            
-            Text("Welcome to SCO!")
-                .font(Typography.h1)
-                .multilineTextAlignment(.center)
-            
-            Text("Your ultimate digital comic library. Organize, read, and track your comic collection seamlessly.")
-                .font(Typography.body)
-                .foregroundColor(TextColors.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, Spacing.xl)
-            
-            Button("Get Started") {
-                hasSeenWelcome = true
+                .frame(maxWidth: 440, alignment: .leading)
+
+                Button("Get Started") {
+                    hasSeenWelcome = true
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .padding(.top, Spacing.sm)
+                .tint(AccentColors.primary)
+
+                Text("Need a hand later? Open the User Manual or send feedback from Settings.")
+                    .font(Typography.caption)
+                    .foregroundColor(TextColors.tertiary)
+                    .multilineTextAlignment(.center)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .padding(.top, Spacing.lg)
-            .tint(AccentColors.primary)
+            .padding(Spacing.xxl)
+            .frame(maxWidth: .infinity)
         }
-        .padding(Spacing.xxl)
-        .frame(width: 600, height: 500)
+        #if os(macOS)
+            .frame(width: 640, height: 660)
+        #endif
         .background(BackgroundColors.primary)
+    }
+}
+
+// MARK: - Welcome Highlight Row
+
+private struct WelcomeHighlight: View {
+    let icon: String
+    let title: String
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Spacing.md) {
+            Image(systemName: icon)
+                .font(.system(size: 22))
+                .foregroundColor(AccentColors.primary)
+                .frame(width: 34)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(Typography.h3)
+                    .foregroundColor(TextColors.primary)
+                Text(text)
+                    .font(Typography.bodySmall)
+                    .foregroundColor(TextColors.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 }
 

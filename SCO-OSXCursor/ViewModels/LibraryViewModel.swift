@@ -841,6 +841,58 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Relink (Locate File)
+
+    /// Re-point a missing/moved book at a file the user selected, minting a
+    /// fresh security-scoped bookmark and clearing the needs-attention flag.
+    func relinkComic(_ comic: Comic, to url: URL) async {
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            AppLog.library.error(
+                "[LibraryViewModel] ⚠️ Relink target missing: \(url.path)")
+            return
+        }
+
+        #if os(macOS)
+            let bookmarkData = try? url.bookmarkData(
+                options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess],
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+        #else
+            let bookmarkData = try? url.bookmarkData(
+                options: .minimalBookmark,
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+        #endif
+
+        var updated = comic
+        updated.filePath = url
+        updated.fileName = url.lastPathComponent
+        updated.bookmarkData = bookmarkData
+        updated.needsAttention = false
+        if let size = try? FileManager.default.attributesOfItem(atPath: url.path)[.size]
+            as? Int64
+        {
+            updated.fileSize = size
+        }
+        updated.dateModified = Date()
+
+        if let index = comics.firstIndex(where: { $0.id == comic.id }) {
+            comics[index] = updated
+        }
+        do {
+            try await database.updateComic(updated)
+            AppLog.library.info("[LibraryViewModel] 🔗 Relinked \(updated.fileName)")
+        } catch {
+            AppLog.library.error(
+                "[LibraryViewModel] ❌ Failed to persist relink: \(error)")
+        }
+    }
+
     // MARK: - Knowledge Pruning
 
     /// After a correction, remove a publisher/series suggestion that no book
