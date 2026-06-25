@@ -18,8 +18,28 @@ final class OrganizeViewModel: ObservableObject {
     // MARK: - Published Properties
 
     @Published var stagedComics: [StagedComic] = []
-    @Published var selectedComicID: UUID?
+    @Published var selectedComicID: UUID? {
+        didSet {
+            guard oldValue != selectedComicID else { return }
+            loadCoverForSelection()
+        }
+    }
     @Published var checkedComicIDs: Set<UUID> = []
+
+    // MARK: - Cover Preview (lazy, on-demand)
+
+    /// Downsampled cover bytes for the currently selected staged comic.
+    @Published private(set) var selectedCoverData: Data?
+    @Published private(set) var isLoadingCover = false
+
+    /// Cover bytes cached by staged-comic id (bounded; covers are small JPEGs).
+    private let coverCache: NSCache<NSString, NSData> = {
+        let cache = NSCache<NSString, NSData>()
+        cache.countLimit = 60
+        return cache
+    }()
+    private var coverTask: Task<Void, Never>?
+    private var prefetchTask: Task<Void, Never>?
 
     // Processing State
     @Published var isProcessing: Bool = false
@@ -482,6 +502,9 @@ final class OrganizeViewModel: ObservableObject {
         stagedComics.filter { $0.status == .ready }.count
     }
 
+    /// Number of checked staged comics.
+    var checkedCount: Int { checkedComicIDs.count }
+
     /// User folders for the "place into a folder" prompt, sorted alphabetically.
     var availableFolders: [Folder] {
         libraryViewModel.folders.sorted {
@@ -509,6 +532,131 @@ final class OrganizeViewModel: ObservableObject {
         isProcessing = false
 
         // Resolve the folder choice and file the newly imported books into it.
+        let targetFolderID: UUID?
+        switch folderChoice {
+        case .none:
+            targetFolderID = nil
+        case .existing(let id):
+            targetFolderID = id
+        case .new(let name):
+            targetFolderID = await libraryViewModel.createFolder(named: name)?.id
+        }
+
+        if let targetFolderID {
+            let newIDs = libraryViewModel.comics.map(\.id).filter { !beforeIDs.contains($0) }
+            await libraryViewModel.addComics(newIDs, toFolder: targetFolderID)
+        }
+    }
+
+    // MARK: - Cover Preview
+
+    /// Load (or reuse a cached) cover for the selected staged comic. Extraction
+    /// runs off the main thread, is cancelled when the selection changes, and
+    /// is debounced so flying through the list with arrow keys doesn't thrash.
+    func loadCoverForSelection() {
+        coverTask?.cancel()
+        guard let id = selectedComicID,
+            let comic = stagedComics.first(where: { $0.id == id })
+        else {
+            selectedCoverData = nil
+            isLoadingCover = false
+            return
+        }
+
+        // Cache hit → show instantly.
+        if let cached = coverCache.object(forKey: id.uuidString as NSString) {
+            selectedCoverData = cached as Data
+            isLoadingCover = false
+            prefetchNeighbors(of: id)
+            return
+        }
+
+        selectedCoverData = nil
+        isLoadingCover = true
+        let targetID = id
+        let url = comic.originalURL
+        coverTask = Task { [weak self] in
+            // Debounce rapid selection changes.
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            if Task.isCancelled { return }
+            let data = await OrganizeViewModel.extractCoverData(from: url)
+            if Task.isCancelled { return }
+            guard let self else { return }
+            if let data {
+                self.coverCache.setObject(data as NSData, forKey: targetID.uuidString as NSString)
+            }
+            if self.selectedComicID == targetID {
+                self.selectedCoverData = data
+                self.isLoadingCover = false
+            }
+            self.prefetchNeighbors(of: targetID)
+        }
+    }
+
+    /// Warm the covers for the items immediately before/after the selection so
+    /// arrowing through the list feels instant.
+    private func prefetchNeighbors(of id: UUID) {
+        prefetchTask?.cancel()
+        guard let idx = stagedComics.firstIndex(where: { $0.id == id }) else { return }
+        let candidates =
+            [idx + 1, idx - 1]
+            .filter { $0 >= 0 && $0 < stagedComics.count }
+            .map { stagedComics[$0] }
+            .filter { coverCache.object(forKey: $0.id.uuidString as NSString) == nil }
+        guard !candidates.isEmpty else { return }
+
+        let work = candidates.map { (id: $0.id, url: $0.originalURL) }
+        prefetchTask = Task { [weak self] in
+            for item in work {
+                if Task.isCancelled { return }
+                let data = await OrganizeViewModel.extractCoverData(from: item.url)
+                if Task.isCancelled { return }
+                if let data {
+                    self?.coverCache.setObject(
+                        data as NSData, forKey: item.id.uuidString as NSString)
+                }
+            }
+        }
+    }
+
+    /// Extract a small cover JPEG from a comic file. Runs off the main actor;
+    /// returns Sendable `Data` so nothing non-Sendable crosses actor bounds.
+    nonisolated static func extractCoverData(from url: URL) async -> Data? {
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+
+        let reader: ComicReaderProtocol
+        switch url.pathExtension.lowercased() {
+        case "pdf": reader = PDFReader()
+        case "cbr": reader = CBRReader()
+        case "epub": reader = EPUBReader()
+        default: reader = CBZReader()
+        }
+
+        guard let raw = try? await reader.extractCover(from: url) else { return nil }
+        // Downsample to a small JPEG (~800 px) for cheap transfer + display.
+        return PageImageCache.storageCoverData(from: raw) ?? raw
+    }
+
+    /// Import the currently checked staged comics (regardless of Ready state —
+    /// the user picked them deliberately) and file them into a folder.
+    func confirmChecked(folderChoice: ImportFolderChoice = .none) async {
+        let checked = stagedComics.filter { checkedComicIDs.contains($0.id) && !$0.series.isEmpty }
+        guard !checked.isEmpty else { return }
+
+        let beforeIDs = Set(libraryViewModel.comics.map(\.id))
+
+        isProcessing = true
+        processingProgress = 0.0
+
+        for (index, comic) in checked.enumerated() {
+            await confirmMatch(comic)
+            processingProgress = Double(index + 1) / Double(checked.count)
+        }
+
+        isProcessing = false
+        checkedComicIDs.removeAll()
+
         let targetFolderID: UUID?
         switch folderChoice {
         case .none:

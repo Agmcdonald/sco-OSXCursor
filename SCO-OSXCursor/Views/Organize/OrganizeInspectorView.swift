@@ -30,6 +30,7 @@ struct OrganizeInspectorView: View {
     @State private var editor: String
     @State private var summary: String
     @State private var isAdditionalMetadataExpanded: Bool = false
+    @State private var showingCoverZoom = false
 
     let comic: StagedComic
 
@@ -76,6 +77,10 @@ struct OrganizeInspectorView: View {
                 Text(comic.originalFileName)
                     .font(.caption)  // Typography.caption -> .caption
                     .foregroundColor(.secondary)  // TextColors.tertiary -> .secondary
+
+                // Cover preview — extracted lazily for the selected file only,
+                // so staging stays fast. Click to enlarge.
+                coverPreview
 
                 Divider()
 
@@ -320,18 +325,77 @@ struct OrganizeInspectorView: View {
             // Sync auto-parsed metadata back to viewModel so confirmMatch reads current values
             update()
         }
+        .sheet(isPresented: $showingCoverZoom) {
+            CoverZoomView(
+                coverData: viewModel.selectedCoverData,
+                cacheKey: comic.id.uuidString
+            ) {
+                showingCoverZoom = false
+            }
+        }
+    }
+
+    // MARK: - Cover Preview
+
+    private var coverPreview: some View {
+        HStack {
+            Spacer()
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.secondary.opacity(0.12))
+
+                if let data = viewModel.selectedCoverData,
+                    let image = PageImageCache.shared.coverImage(
+                        from: data, cacheKey: comic.id.uuidString)
+                {
+                    #if os(macOS)
+                        Image(nsImage: image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                    #else
+                        Image(uiImage: image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                    #endif
+                } else if viewModel.isLoadingCover {
+                    ProgressView()
+                } else {
+                    VStack(spacing: 6) {
+                        Image(systemName: "photo")
+                            .font(.system(size: 28))
+                        Text("No cover")
+                            .font(.caption)
+                    }
+                    .foregroundColor(.secondary)
+                }
+            }
+            .frame(width: 220, height: 330)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
+            )
+            .shadow(radius: 3)
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+            .onTapGesture {
+                if viewModel.selectedCoverData != nil { showingCoverZoom = true }
+            }
+            .help("Click to enlarge")
+            Spacer()
+        }
     }
 
     /// Format-aware import gate: issues need an issue number, one-shots a
-    /// year, volumes a volume number. Publisher is always required so the
-    /// file can be sorted into the library structure.
+    /// year, volumes a volume number. A series is required, but the publisher
+    /// is optional — you can approve a book whose publisher you don't know yet
+    /// (it imports under "Unknown Publisher" and stays "Pending" in staging).
     private var canImport: Bool {
-        guard !series.isEmpty, !publisher.isEmpty else { return false }
+        guard !series.isEmpty else { return false }
         switch bookFormat {
         case .issue: return !issueNumber.isEmpty
         case .oneShot: return year > 0
         case .volume: return volume != nil
-        case .ebook: return true  // a title and publisher suffice for prose
+        case .ebook: return true
         }
     }
 
@@ -355,5 +419,53 @@ struct OrganizeInspectorView: View {
                 summary: summary.isEmpty ? nil : summary
             )
         }
+    }
+}
+
+// MARK: - Cover Zoom
+
+/// Enlarged cover shown when the inspector's cover is clicked.
+struct CoverZoomView: View {
+    let coverData: Data?
+    let cacheKey: String
+    let onClose: () -> Void
+
+    var body: some View {
+        VStack {
+            if let data = coverData,
+                let image = PageImageCache.shared.coverImage(from: data, cacheKey: cacheKey)
+            {
+                #if os(macOS)
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                #else
+                    Image(uiImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                #endif
+            } else {
+                Text("No cover available")
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(BackgroundColors.primary)
+        .overlay(alignment: .topTrailing) {
+            Button(action: onClose) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 24))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+            .padding(12)
+            .keyboardShortcut(.cancelAction)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { onClose() }
+        #if os(macOS)
+            .frame(width: 640, height: 900)
+        #endif
     }
 }

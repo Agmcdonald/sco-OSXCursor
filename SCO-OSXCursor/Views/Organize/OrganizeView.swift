@@ -12,6 +12,10 @@ struct OrganizeView: View {
     @ObservedObject var viewModel: OrganizeViewModel
     @State private var showingBulkEdit = false
     @State private var showingFolderPrompt = false
+    @State private var folderPromptMode: FolderPromptMode = .allReady
+
+    /// Which set of staged books the folder prompt applies to.
+    private enum FolderPromptMode { case allReady, checked }
 
     var body: some View {
         #if os(macOS)
@@ -146,11 +150,23 @@ struct OrganizeView: View {
                             }
                             .disabled(viewModel.checkedComicIDs.isEmpty)
 
+                            // Import the CHECKED items straight into a folder
+                            Button(action: {
+                                folderPromptMode = .checked
+                                showingFolderPrompt = true
+                            }) {
+                                Label(
+                                    "Add \(viewModel.checkedComicIDs.count) to Folder…",
+                                    systemImage: "folder.badge.plus")
+                            }
+                            .disabled(viewModel.checkedComicIDs.isEmpty)
+
                             Spacer()
                             Button(action: {
                                 // More than one book? Offer to file them into a
                                 // folder first. A single book just applies.
                                 if viewModel.readyCount > 1 {
+                                    folderPromptMode = .allReady
                                     showingFolderPrompt = true
                                 } else {
                                     Task { await viewModel.confirmAllReady() }
@@ -205,12 +221,22 @@ struct OrganizeView: View {
                 }
             }
             .sheet(isPresented: $showingFolderPrompt) {
+                let count =
+                    folderPromptMode == .checked ? viewModel.checkedCount : viewModel.readyCount
                 ImportFolderChoiceSheet(
-                    bookCountText: "\(viewModel.readyCount) books",
+                    bookCountText: "\(count) book\(count == 1 ? "" : "s")",
                     folders: viewModel.availableFolders,
                     onChoice: { choice in
                         showingFolderPrompt = false
-                        Task { await viewModel.confirmAllReady(folderChoice: choice) }
+                        let mode = folderPromptMode
+                        Task {
+                            switch mode {
+                            case .allReady:
+                                await viewModel.confirmAllReady(folderChoice: choice)
+                            case .checked:
+                                await viewModel.confirmChecked(folderChoice: choice)
+                            }
+                        }
                     },
                     onCancel: { showingFolderPrompt = false }
                 )

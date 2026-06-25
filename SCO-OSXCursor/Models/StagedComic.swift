@@ -104,12 +104,16 @@ struct StagedComic: Identifiable, Equatable {
     /// - Issues need series + issue number (one-shots and volumes don't have one).
     /// - One-shots need series + year.
     /// - Volumes need series + volume number.
-    /// Auto-parsed books only become Ready at HIGH confidence; user-edited
-    /// books become Ready once the core fields are filled.
+    ///
+    /// "Ready" means the basic fields are filled (HIGH confidence, including a
+    /// publisher). It no longer flips on merely selecting or lightly editing a
+    /// book — so a book without a publisher stays "Pending" (you can still
+    /// import it manually from the inspector). `userEdited` is retained for
+    /// call-site compatibility but no longer affects status.
     mutating func reevaluate(userEdited: Bool) {
         let hasSeries = !series.isEmpty
         let core: Bool  // minimum fields for this format
-        let full: Bool  // high confidence
+        let full: Bool  // high confidence — the "Ready" bar
 
         switch bookFormat {
         case .issue:
@@ -130,10 +134,10 @@ struct StagedComic: Identifiable, Equatable {
 
         confidence = full ? .high : (core ? .medium : .low)
 
-        if full || (userEdited && core) {
-            status = .ready
-        } else if !core {
-            status = .pending
+        // Ready ⟺ High confidence, so the list badge and the confidence pill
+        // never disagree. Leave already-imported / errored items alone.
+        if status != .imported && status != .error {
+            status = full ? .ready : .pending
         }
     }
 
