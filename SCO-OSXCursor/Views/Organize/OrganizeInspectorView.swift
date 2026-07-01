@@ -32,6 +32,12 @@ struct OrganizeInspectorView: View {
     @State private var isAdditionalMetadataExpanded: Bool = false
     @State private var showingCoverZoom = false
 
+    // ComicVine fetch (staging)
+    @State private var isFetchingCV = false
+    @State private var cvCandidates: [CVCandidate] = []
+    @State private var showingCVPicker = false
+    @State private var cvMessage: String?
+
     let comic: StagedComic
 
     init(comic: StagedComic, viewModel: OrganizeViewModel) {
@@ -301,7 +307,22 @@ struct OrganizeInspectorView: View {
                 Divider()
 
                 // Actions
-                HStack {
+                HStack(spacing: 12) {
+                    // Look the book up on ComicVine and fill the fields above
+                    // for review BEFORE it gets imported.
+                    Button(action: fetchFromComicVine) {
+                        HStack(spacing: 4) {
+                            if isFetchingCV {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "sparkles")
+                            }
+                            Text("Fetch from ComicVine")
+                        }
+                    }
+                    .disabled(isFetchingCV)
+
                     Button("Import to Library") {
                         Task {
                             update()
@@ -309,9 +330,17 @@ struct OrganizeInspectorView: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(!canImport)
+                    .disabled(!canImport || isFetchingCV)
                 }
                 .frame(maxWidth: .infinity)
+
+                if let cvMessage {
+                    Text(cvMessage)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .multilineTextAlignment(.center)
+                }
 
             }
             .padding()
@@ -333,6 +362,74 @@ struct OrganizeInspectorView: View {
                 showingCoverZoom = false
             }
         }
+        .sheet(isPresented: $showingCVPicker) {
+            StagingMatchPickerSheet(
+                fileName: comic.originalFileName,
+                candidates: cvCandidates,
+                onPick: { candidate in
+                    showingCVPicker = false
+                    isFetchingCV = true
+                    Task {
+                        let outcome = await viewModel.applyComicVineCandidate(
+                            candidate, to: comic.id)
+                        isFetchingCV = false
+                        handleCVOutcome(outcome)
+                    }
+                },
+                onCancel: { showingCVPicker = false }
+            )
+        }
+    }
+
+    // MARK: - ComicVine Fetch
+
+    private func fetchFromComicVine() {
+        update()  // Search with the user's current edits, not the stale parse
+        isFetchingCV = true
+        cvMessage = nil
+        Task {
+            let outcome = await viewModel.fetchComicVine(for: comic.id)
+            isFetchingCV = false
+            handleCVOutcome(outcome)
+        }
+    }
+
+    private func handleCVOutcome(_ outcome: OrganizeViewModel.StagingCVOutcome) {
+        switch outcome {
+        case .applied(let merged):
+            applyFetched(merged)
+            cvMessage = "ComicVine details loaded — review the fields, then import."
+        case .needsChoice(let candidates):
+            cvCandidates = candidates
+            showingCVPicker = true
+        case .noKey:
+            cvMessage = "Add a ComicVine API key in Settings first."
+        case .noMatches:
+            cvMessage = "No ComicVine matches found for this series."
+        case .failed(let message):
+            cvMessage = message
+        }
+    }
+
+    /// Push fetched metadata into the editable fields so the user can review
+    /// and adjust everything before importing.
+    private func applyFetched(_ merged: StagedComic) {
+        series = merged.series
+        issueNumber = merged.issueNumber ?? ""
+        year = merged.year ?? 0
+        publisher = merged.publisher ?? ""
+        volume = merged.volume
+        bookFormat = merged.bookFormat
+        title = merged.title ?? ""
+        writer = merged.writer ?? ""
+        artist = merged.artist ?? ""
+        coverArtist = merged.coverArtist ?? ""
+        colorist = merged.colorist ?? ""
+        inker = merged.inker ?? ""
+        editor = merged.editor ?? ""
+        summary = merged.summary ?? ""
+        isAdditionalMetadataExpanded = true
+        update()
     }
 
     // MARK: - Cover Preview
@@ -467,5 +564,70 @@ struct CoverZoomView: View {
         #if os(macOS)
             .frame(width: 640, height: 900)
         #endif
+    }
+}
+
+// MARK: - ComicVine Match Picker (staging)
+
+/// Candidate chooser shown when a staging ComicVine search is ambiguous.
+/// Picking a volume fills the inspector fields for review — nothing is
+/// imported to the library until the user confirms.
+struct StagingMatchPickerSheet: View {
+    let fileName: String
+    let candidates: [CVCandidate]
+    let onPick: (CVCandidate) -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Choose the Right Match")
+                        .font(.title3)
+                    Text(fileName)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Button("Cancel", action: onCancel)
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding()
+
+            Divider()
+
+            List(candidates) { candidate in
+                Button {
+                    onPick(candidate)
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(candidate.name)
+                            .foregroundColor(.primary)
+                        Text(subtitle(for: candidate))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            #if os(macOS)
+                .listStyle(.inset)
+            #endif
+        }
+        #if os(macOS)
+            .frame(width: 420, height: 380)
+        #endif
+    }
+
+    private func subtitle(for candidate: CVCandidate) -> String {
+        var parts: [String] = []
+        if let year = candidate.startYear { parts.append(String(year)) }
+        if let publisher = candidate.publisher, !publisher.isEmpty { parts.append(publisher) }
+        if let count = candidate.issueCount { parts.append("\(count) issues") }
+        return parts.isEmpty ? "ComicVine volume \(candidate.id)" : parts.joined(separator: " · ")
     }
 }

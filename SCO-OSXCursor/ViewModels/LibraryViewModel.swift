@@ -1349,6 +1349,50 @@ extension LibraryViewModel {
         }
     }
 
+    // MARK: Folder covers
+
+    /// Assign a custom cover picture to a folder. Raw image bytes are
+    /// downsampled to a storage-friendly JPEG (max 800 px) before saving, and
+    /// any previously chosen representative book is cleared so the picture
+    /// takes effect immediately.
+    func setFolderCover(_ folder: Folder, imageData rawData: Data) async {
+        let normalized = PageImageCache.storageCoverData(from: rawData) ?? rawData
+        var updated = folder
+        updated.coverImageData = normalized
+        updated.coverComicID = nil
+        updated.dateModified = Date()
+        await persistFolderCoverChange(updated)
+    }
+
+    /// Choose a single member book to represent the folder. Clears any custom
+    /// picture so the book cover is used.
+    func setFolderCover(_ folder: Folder, comicID: UUID) async {
+        var updated = folder
+        updated.coverComicID = comicID
+        updated.coverImageData = nil
+        updated.dateModified = Date()
+        await persistFolderCoverChange(updated)
+    }
+
+    /// Reset a folder to the default 2×2 collage of recent member covers.
+    func clearFolderCover(_ folder: Folder) async {
+        guard folder.coverImageData != nil || folder.coverComicID != nil else { return }
+        var updated = folder
+        updated.coverImageData = nil
+        updated.coverComicID = nil
+        updated.dateModified = Date()
+        await persistFolderCoverChange(updated)
+    }
+
+    private func persistFolderCoverChange(_ folder: Folder) async {
+        do {
+            try await database.saveFolder(folder)
+            await loadFolders()
+        } catch {
+            AppLog.library.error("[LibraryViewModel] ❌ Failed to update folder cover: \(error)")
+        }
+    }
+
     func addComics(_ ids: [UUID], toFolder folderID: UUID) async {
         guard !ids.isEmpty else { return }
         do {

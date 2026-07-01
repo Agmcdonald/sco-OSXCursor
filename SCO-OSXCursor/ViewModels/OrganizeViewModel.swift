@@ -35,7 +35,9 @@ final class OrganizeViewModel: ObservableObject {
     /// Cover bytes cached by staged-comic id (bounded; covers are small JPEGs).
     private let coverCache: NSCache<NSString, NSData> = {
         let cache = NSCache<NSString, NSData>()
-        cache.countLimit = 60
+        // Large enough to hold a full staging batch of downsampled (~100 KB)
+        // covers; NSCache still evicts under memory pressure.
+        cache.countLimit = 400
         return cache
     }()
     private var coverTask: Task<Void, Never>?
@@ -135,6 +137,11 @@ final class OrganizeViewModel: ObservableObject {
         // Enrich from embedded ComicInfo.xml in the background — embedded
         // metadata beats filename guessing and raises auto-match confidence.
         enrichFromEmbeddedMetadata(newComics)
+
+        // Pre-extract covers in the background so selecting a file shows its
+        // cover instantly instead of spinning behind the enrichment pass
+        // (CBR/RAR extraction is too slow to run lazily during a big batch).
+        warmCovers(for: newComics)
     }
 
     /// Recursively expand file/folder URLs into the comic files they contain.
@@ -579,6 +586,17 @@ final class OrganizeViewModel: ObservableObject {
             // Debounce rapid selection changes.
             try? await Task.sleep(nanoseconds: 200_000_000)
             if Task.isCancelled { return }
+            // The background warm pass may have cached it during the debounce.
+            if let self,
+                let cached = self.coverCache.object(forKey: targetID.uuidString as NSString)
+            {
+                if self.selectedComicID == targetID {
+                    self.selectedCoverData = cached as Data
+                    self.isLoadingCover = false
+                }
+                self.prefetchNeighbors(of: targetID)
+                return
+            }
             let data = await OrganizeViewModel.extractCoverData(from: url)
             if Task.isCancelled { return }
             guard let self else { return }
@@ -590,6 +608,36 @@ final class OrganizeViewModel: ObservableObject {
                 self.isLoadingCover = false
             }
             self.prefetchNeighbors(of: targetID)
+        }
+    }
+
+    /// Pre-extract covers for a batch of newly staged comics (low priority,
+    /// serial). Once cached, selecting an item shows its cover instantly —
+    /// without this, lazy per-selection extraction competes with the embedded-
+    /// metadata pass and CBR covers can spin until after import.
+    private func warmCovers(for comics: [StagedComic]) {
+        let work = comics.map { (id: $0.id, url: $0.originalURL) }
+        Task(priority: .utility) { [weak self] in
+            for item in work {
+                guard let self, !Task.isCancelled else { return }
+                // Still staged? (user may have cleared/imported the batch)
+                guard self.stagedComics.contains(where: { $0.id == item.id }) else { continue }
+                // Already cached, or being loaded right now by the selection task
+                if self.coverCache.object(forKey: item.id.uuidString as NSString) != nil {
+                    continue
+                }
+                if self.selectedComicID == item.id, self.isLoadingCover { continue }
+
+                let data = await OrganizeViewModel.extractCoverData(from: item.url)
+                guard let data else { continue }
+                self.coverCache.setObject(data as NSData, forKey: item.id.uuidString as NSString)
+
+                // If the user is currently looking at this file, show it.
+                if self.selectedComicID == item.id, self.selectedCoverData == nil {
+                    self.selectedCoverData = data
+                    self.isLoadingCover = false
+                }
+            }
         }
     }
 
@@ -636,6 +684,185 @@ final class OrganizeViewModel: ObservableObject {
         guard let raw = try? await reader.extractCover(from: url) else { return nil }
         // Downsample to a small JPEG (~800 px) for cheap transfer + display.
         return PageImageCache.storageCoverData(from: raw) ?? raw
+    }
+
+    // MARK: - ComicVine Fetch (staging)
+
+    /// Outcome of a ComicVine fetch for a staged file. `.applied` carries the
+    /// merged staged comic so the inspector can refresh its fields for review
+    /// BEFORE the book is imported to the library.
+    enum StagingCVOutcome {
+        case applied(StagedComic)
+        case needsChoice([CVCandidate])
+        case noKey
+        case noMatches
+        case failed(String)
+    }
+
+    /// Search ComicVine for a staged file. A confident match is applied to the
+    /// staged metadata immediately (nothing touches the library); an ambiguous
+    /// search returns candidates for the user to pick from.
+    func fetchComicVine(for id: UUID) async -> StagingCVOutcome {
+        guard ComicVineConfig.hasKey else { return .noKey }
+        guard let staged = stagedComics.first(where: { $0.id == id }) else {
+            return .failed("File is no longer staged.")
+        }
+
+        let query =
+            staged.series.isEmpty
+            ? (staged.originalFileName as NSString).deletingPathExtension
+            : staged.series
+
+        do {
+            let volumes = try await ComicVineService.shared.searchVolumes(query)
+            guard !volumes.isEmpty else { return .noMatches }
+
+            let proxy = cvProxy(for: staged)
+            let scored = volumes
+                .map { (volume: $0, score: ComicVineMatcher.score($0, against: proxy, query: query)) }
+                .sorted { $0.score > $1.score }
+
+            let best = scored[0]
+            let second = scored.count > 1 ? scored[1].score : 0
+            let confident = scored.count == 1 || (best.score >= 0.75 && best.score - second >= 0.2)
+
+            guard confident else {
+                let candidates = scored.prefix(5).map { item in
+                    CVCandidate(
+                        id: item.volume.id,
+                        name: item.volume.name ?? "Unknown",
+                        startYear: item.volume.startYear.flatMap { Int($0) },
+                        publisher: item.volume.publisher?.name,
+                        issueCount: item.volume.countOfIssues
+                    )
+                }
+                return .needsChoice(Array(candidates))
+            }
+
+            let filled = await ComicVineFetcher.fill(proxy, from: best.volume)
+            guard let merged = mergeCVResult(filled, into: id) else {
+                return .failed("File is no longer staged.")
+            }
+            return .applied(merged)
+        } catch {
+            AppLog.organize.error("[OrganizeViewModel] ComicVine fetch failed: \(error.localizedDescription)")
+            return .failed(error.localizedDescription)
+        }
+    }
+
+    // Batch fetch (checked items)
+    @Published private(set) var isBatchFetchingCV = false
+    @Published private(set) var batchCVDone = 0
+    @Published private(set) var batchCVTotal = 0
+    @Published var batchCVSummary: String?
+    /// Bumped when staged metadata changes outside the inspector's own edits
+    /// (e.g. a batch fetch) so the inspector rebuilds with the new values.
+    @Published private(set) var metadataRevision = 0
+
+    /// Fetch ComicVine metadata for every CHECKED staged file. Confident
+    /// matches are applied to the staged metadata; ambiguous ones are left
+    /// untouched for the per-file Fetch button (which shows the match picker).
+    func fetchComicVineForChecked() async {
+        guard !isBatchFetchingCV else { return }
+        guard ComicVineConfig.hasKey else {
+            batchCVSummary = "Add a ComicVine API key in Settings first."
+            return
+        }
+        let ids = stagedComics.filter { checkedComicIDs.contains($0.id) }.map(\.id)
+        guard !ids.isEmpty else { return }
+
+        isBatchFetchingCV = true
+        batchCVSummary = nil
+        batchCVDone = 0
+        batchCVTotal = ids.count
+
+        var applied = 0
+        var ambiguous = 0
+        var noMatch = 0
+        var failed = 0
+        for id in ids {
+            switch await fetchComicVine(for: id) {
+            case .applied: applied += 1
+            case .needsChoice: ambiguous += 1
+            case .noMatches: noMatch += 1
+            case .failed, .noKey: failed += 1
+            }
+            batchCVDone += 1
+        }
+
+        metadataRevision += 1  // Refresh the inspector with fetched values
+        isBatchFetchingCV = false
+
+        var parts: [String] = []
+        if applied > 0 { parts.append("\(applied) updated") }
+        if ambiguous > 0 { parts.append("\(ambiguous) ambiguous — fetch individually to pick a match") }
+        if noMatch > 0 { parts.append("\(noMatch) no match") }
+        if failed > 0 { parts.append("\(failed) failed") }
+        batchCVSummary = parts.isEmpty ? "Nothing fetched." : parts.joined(separator: ", ") + "."
+    }
+
+    /// Apply a candidate the user picked from the staging match sheet.
+    func applyComicVineCandidate(_ candidate: CVCandidate, to id: UUID) async -> StagingCVOutcome {
+        guard let staged = stagedComics.first(where: { $0.id == id }) else {
+            return .failed("File is no longer staged.")
+        }
+        let volume = CVVolumeResult(
+            id: candidate.id,
+            name: candidate.name,
+            startYear: candidate.startYear.map(String.init),
+            publisher: CVPublisher(name: candidate.publisher),
+            countOfIssues: candidate.issueCount
+        )
+        let filled = await ComicVineFetcher.fill(cvProxy(for: staged), from: volume)
+        guard let merged = mergeCVResult(filled, into: id) else {
+            return .failed("File is no longer staged.")
+        }
+        return .applied(merged)
+    }
+
+    /// Temporary `Comic` mirroring a staged file so the shared ComicVine
+    /// scorer/filler can operate on it. Never persisted.
+    private func cvProxy(for staged: StagedComic) -> Comic {
+        Comic(
+            filePath: staged.originalURL,
+            fileName: staged.originalFileName,
+            title: staged.title,
+            publisher: staged.publisher,
+            series: staged.series.isEmpty ? nil : staged.series,
+            issueNumber: staged.issueNumber,
+            volume: staged.volume,
+            year: staged.year,
+            bookFormat: staged.bookFormat,
+            writer: staged.writer,
+            artist: staged.artist,
+            coverArtist: staged.coverArtist,
+            colorist: staged.colorist,
+            inker: staged.inker,
+            editor: staged.editor,
+            summary: staged.summary
+        )
+    }
+
+    /// Copy fetched fields back onto the staged comic. `filled` preserved the
+    /// user's existing values (fill-only-when-missing), so a straight copy is
+    /// safe; series is canonical from ComicVine.
+    private func mergeCVResult(_ filled: Comic, into id: UUID) -> StagedComic? {
+        guard let index = stagedComics.firstIndex(where: { $0.id == id }) else { return nil }
+        var comic = stagedComics[index]
+        if let series = filled.series, !series.isEmpty { comic.series = series }
+        comic.publisher = filled.publisher
+        comic.year = filled.year
+        comic.title = filled.title
+        comic.writer = filled.writer
+        comic.artist = filled.artist
+        comic.coverArtist = filled.coverArtist
+        comic.colorist = filled.colorist
+        comic.inker = filled.inker
+        comic.editor = filled.editor
+        comic.summary = filled.summary
+        comic.reevaluate(userEdited: false)
+        stagedComics[index] = comic
+        return comic
     }
 
     /// Import the currently checked staged comics (regardless of Ready state —

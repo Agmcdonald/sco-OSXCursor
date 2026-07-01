@@ -18,6 +18,9 @@ struct LibraryFolderGridView: View {
     let count: (UUID) -> Int
     /// Up to four member comics for a folder's cover collage.
     let previewComics: (UUID) -> [Comic]
+    /// The single member book chosen to represent a folder, if any (and still
+    /// present in the library). nil when the folder uses a picture or collage.
+    let coverComic: (Folder) -> Comic?
     /// Target card width in points (shares the library cover-size slider).
     let coverSize: Double
 
@@ -32,6 +35,12 @@ struct LibraryFolderGridView: View {
     let onRename: (Folder) -> Void
     let onDelete: (Folder) -> Void
     let onNewFolder: () -> Void
+    /// Cover actions (right-click "Set Cover" submenu).
+    let onChoosePicture: (Folder) -> Void
+    /// Pick a cover from the Photos library (iPad/iPhone only).
+    let onChoosePhoto: (Folder) -> Void
+    let onPickBook: (Folder) -> Void
+    let onResetCover: (Folder) -> Void
 
     var body: some View {
         ScrollView {
@@ -67,7 +76,8 @@ struct LibraryFolderGridView: View {
                     FolderCardView(
                         folder: folder,
                         bookCount: count(folder.id),
-                        previewComics: previewComics(folder.id)
+                        previewComics: previewComics(folder.id),
+                        coverComic: coverComic(folder)
                     )
                     .onTapGesture { onOpen(folder) }
                     .contextMenu {
@@ -76,6 +86,31 @@ struct LibraryFolderGridView: View {
                         }
                         Button { onRename(folder) } label: {
                             Label("Rename", systemImage: "pencil")
+                        }
+                        Menu {
+                            #if os(iOS)
+                                Button { onChoosePhoto(folder) } label: {
+                                    Label("Choose from Photos…", systemImage: "photo.stack")
+                                }
+                                Button { onChoosePicture(folder) } label: {
+                                    Label("Choose from Files…", systemImage: "folder")
+                                }
+                            #else
+                                Button { onChoosePicture(folder) } label: {
+                                    Label("Choose Picture…", systemImage: "photo")
+                                }
+                            #endif
+                            Button { onPickBook(folder) } label: {
+                                Label("Pick a Book…", systemImage: "book.closed")
+                            }
+                            if folder.coverImageData != nil || folder.coverComicID != nil {
+                                Divider()
+                                Button { onResetCover(folder) } label: {
+                                    Label("Use Book Collage", systemImage: "square.grid.2x2")
+                                }
+                            }
+                        } label: {
+                            Label("Set Cover", systemImage: "photo.on.rectangle.angled")
                         }
                         Divider()
                         Button(role: .destructive) { onDelete(folder) } label: {
@@ -228,10 +263,90 @@ struct FolderCardView: View {
     let folder: Folder
     let bookCount: Int
     let previewComics: [Comic]
+    /// The chosen representative book, if the folder uses one and it still exists.
+    var coverComic: Comic? = nil
 
     var body: some View {
         FolderCardShell(title: folder.name, bookCount: bookCount) {
+            cover
+        }
+    }
+
+    /// Cover precedence: custom picture → chosen book → default 2×2 collage.
+    @ViewBuilder
+    private var cover: some View {
+        switch folder.coverStyle {
+        case .picture:
+            SingleImageCover(
+                imageData: folder.coverImageData,
+                cacheKey: "folder-\(folder.id.uuidString)",
+                placeholderSystemImage: "folder"
+            )
+        case .book:
+            // Use the resolved book cover; if the book was removed, fall back to
+            // the collage so the card is never blank.
+            if let comic = coverComic, comic.coverImageData != nil {
+                SingleImageCover(
+                    imageData: comic.coverImageData,
+                    cacheKey: comic.id.uuidString,
+                    placeholderSystemImage: "folder"
+                )
+            } else {
+                CoverCollage(previewComics: previewComics, placeholderSystemImage: "folder")
+            }
+        case .collage:
             CoverCollage(previewComics: previewComics, placeholderSystemImage: "folder")
+        }
+    }
+}
+
+// MARK: - Single Image Cover (picture or chosen book)
+
+/// Fills the 2:3 cover area with a single image (cropped), matching how book
+/// covers fill cells in the collage. Used for custom folder pictures and for a
+/// folder's chosen representative book.
+@MainActor
+struct SingleImageCover: View {
+    let imageData: Data?
+    let cacheKey: String
+    var placeholderSystemImage: String = "folder"
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(
+                        LinearGradient(
+                            colors: [BackgroundColors.secondary, BackgroundColors.primary],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+
+                if let data = imageData,
+                    let image = PageImageCache.shared.coverImage(from: data, cacheKey: cacheKey)
+                {
+                    #if os(macOS)
+                        Image(nsImage: image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: geo.size.width, height: geo.size.height)
+                            .clipped()
+                    #else
+                        Image(uiImage: image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: geo.size.width, height: geo.size.height)
+                            .clipped()
+                    #endif
+                } else {
+                    Image(systemName: placeholderSystemImage)
+                        .font(.system(size: 40))
+                        .foregroundColor(TextColors.tertiary)
+                }
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+            .clipped()
         }
     }
 }
@@ -295,5 +410,98 @@ struct NewFolderCardView: View {
         .scaleEffect(isHovered ? 1.02 : 1.0)
         .animation(.easeInOut(duration: 0.2), value: isHovered)
         .onHover { isHovered = $0 }
+    }
+}
+
+// MARK: - Cover Book Picker
+
+/// Sheet for choosing a single member book to represent a folder. Shows the
+/// folder's books as a cover grid; tapping one assigns it and closes.
+@MainActor
+struct FolderCoverBookPicker: View {
+    let folderName: String
+    let books: [Comic]
+    let selectedID: UUID?
+    let onSelect: (Comic) -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Choose Cover Book")
+                        .font(Typography.h3)
+                        .foregroundColor(TextColors.primary)
+                    Text(folderName)
+                        .font(Typography.caption)
+                        .foregroundColor(TextColors.secondary)
+                }
+                Spacer()
+                Button("Cancel") { onCancel() }
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding(Spacing.lg)
+
+            Divider()
+
+            if books.isEmpty {
+                Spacer()
+                VStack(spacing: Spacing.sm) {
+                    Image(systemName: "books.vertical")
+                        .font(.system(size: 36))
+                        .foregroundColor(TextColors.tertiary)
+                    Text("This folder has no books yet.")
+                        .font(Typography.body)
+                        .foregroundColor(TextColors.secondary)
+                }
+                Spacer()
+            } else {
+                ScrollView {
+                    LazyVGrid(
+                        columns: [
+                            GridItem(.adaptive(minimum: 110, maximum: 150), spacing: Spacing.lg)
+                        ],
+                        spacing: Spacing.lg
+                    ) {
+                        ForEach(books) { comic in
+                            Button { onSelect(comic) } label: {
+                                coverCell(comic)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(Spacing.lg)
+                }
+            }
+        }
+        .frame(minWidth: 520, minHeight: 420)
+        .background(BackgroundColors.primary)
+    }
+
+    @ViewBuilder
+    private func coverCell(_ comic: Comic) -> some View {
+        let isSelected = comic.id == selectedID
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            SingleImageCover(
+                imageData: comic.coverImageData,
+                cacheKey: comic.id.uuidString,
+                placeholderSystemImage: "book.closed"
+            )
+            .aspectRatio(2 / 3, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(
+                        isSelected ? AccentColors.primary : BorderColors.subtle,
+                        lineWidth: isSelected ? 3 : 1)
+            )
+
+            Text(comic.displayName)
+                .font(Typography.caption)
+                .foregroundColor(TextColors.secondary)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 }

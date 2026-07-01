@@ -18,6 +18,9 @@
 
 import SwiftUI
 import UniformTypeIdentifiers
+#if os(iOS)
+    import PhotosUI
+#endif
 import os
 
 // Wrapper to make UUID work with .sheet(item:)
@@ -82,6 +85,17 @@ struct LibraryView: View {
     @State private var renameFolderName = ""
     /// Folder awaiting the three-option delete confirmation.
     @State private var folderPendingDelete: Folder?
+    /// Folder awaiting a custom cover picture (drives the image file importer).
+    @State private var folderPendingCoverPicture: Folder?
+    @State private var showingFolderCoverPicker = false
+    /// Folder whose representative book is being chosen (drives the picker sheet).
+    @State private var folderPendingBookPick: Folder?
+    #if os(iOS)
+        /// Folder awaiting a cover from the Photos library (iPad/iPhone).
+        @State private var folderPendingCoverPhoto: Folder?
+        @State private var showingPhotoPicker = false
+        @State private var selectedPhotoItem: PhotosPickerItem?
+    #endif
 
     // Missing-file recovery (Locate File…)
     @State private var relinkComicID: ComicID?
@@ -161,6 +175,21 @@ struct LibraryView: View {
             .sorted { $0.dateAdded > $1.dateAdded }
             .prefix(4)
             .map { $0 }
+    }
+
+    /// The book a folder has chosen to represent it, if any and still present.
+    private func coverComic(for folder: Folder) -> Comic? {
+        guard let id = folder.coverComicID else { return nil }
+        return viewModel.comics.first(where: { $0.id == id })
+    }
+
+    /// Member comics of a folder (for the cover book picker), most-recent first.
+    private func memberComics(in folderID: UUID) -> [Comic] {
+        let ids = viewModel.comicIDs(inFolder: folderID)
+        return
+            viewModel.comics
+            .filter { ids.contains($0.id) }
+            .sorted { $0.dateAdded > $1.dateAdded }
     }
 
     /// Up to four unfiled comics for the "Unfiled" card's collage.
@@ -372,6 +401,7 @@ struct LibraryView: View {
                     folders: sortedFolders,
                     count: { viewModel.folderCount($0) },
                     previewComics: { previewComics(in: $0) },
+                    coverComic: { coverComic(for: $0) },
                     coverSize: coverSize,
                     totalCount: viewModel.comics.count,
                     unfiledCount: viewModel.unfiledCount,
@@ -402,6 +432,22 @@ struct LibraryView: View {
                         newFolderContext = .empty
                         newFolderName = ""
                         showingNewFolderAlert = true
+                    },
+                    onChoosePicture: { folder in
+                        folderPendingCoverPicture = folder
+                        showingFolderCoverPicker = true
+                    },
+                    onChoosePhoto: { folder in
+                        #if os(iOS)
+                            folderPendingCoverPhoto = folder
+                            showingPhotoPicker = true
+                        #endif
+                    },
+                    onPickBook: { folder in
+                        folderPendingBookPick = folder
+                    },
+                    onResetCover: { folder in
+                        Task { await viewModel.clearFolderCover(folder) }
                     }
                 )
             }
@@ -436,6 +482,45 @@ struct LibraryView: View {
             allowsMultipleSelection: false
         ) { result in
             handleRelink(result)
+        }
+        // Choose a custom cover picture for a folder
+        .fileImporter(
+            isPresented: $showingFolderCoverPicker,
+            allowedContentTypes: [.image],
+            allowsMultipleSelection: false
+        ) { result in
+            handleFolderCoverImport(result)
+        }
+        // iPad/iPhone: choose a folder cover from the Photos library.
+        // Isolated in a ViewModifier so the main body stays type-checkable.
+        #if os(iOS)
+            .modifier(
+                FolderCoverPhotoPickerModifier(
+                    isPresented: $showingPhotoPicker,
+                    selection: $selectedPhotoItem,
+                    onPick: { handleFolderCoverPhoto($0) }
+                )
+            )
+        #endif
+        // Pick a single member book to represent a folder
+        .sheet(
+            isPresented: Binding(
+                get: { folderPendingBookPick != nil },
+                set: { if !$0 { folderPendingBookPick = nil } }
+            )
+        ) {
+            if let folder = folderPendingBookPick {
+                FolderCoverBookPicker(
+                    folderName: folder.name,
+                    books: memberComics(in: folder.id),
+                    selectedID: folder.coverComicID,
+                    onSelect: { comic in
+                        Task { await viewModel.setFolderCover(folder, comicID: comic.id) }
+                        folderPendingBookPick = nil
+                    },
+                    onCancel: { folderPendingBookPick = nil }
+                )
+            }
         }
         .sheet(isPresented: $showingBulkEdit) {
             BulkEditSheet(itemCount: selectedComics.count) { values in
@@ -687,6 +772,39 @@ struct LibraryView: View {
         else { return }
         Task { await viewModel.relinkComic(comic, to: url) }
     }
+
+    /// Read the picked image file and assign it as the folder's custom cover.
+    private func handleFolderCoverImport(_ result: Result<[URL], Error>) {
+        let folder = folderPendingCoverPicture
+        defer { folderPendingCoverPicture = nil }
+        guard case .success(let urls) = result, let url = urls.first,
+            let folder = folder
+        else { return }
+
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+
+        guard let data = try? Data(contentsOf: url) else {
+            AppLog.library.error("[LibraryView] ❌ Could not read folder cover image")
+            return
+        }
+        Task { await viewModel.setFolderCover(folder, imageData: data) }
+    }
+
+    #if os(iOS)
+        /// Load the chosen Photos-library item and assign it as the folder cover.
+        private func handleFolderCoverPhoto(_ item: PhotosPickerItem) {
+            let folder = folderPendingCoverPhoto
+            folderPendingCoverPhoto = nil
+            selectedPhotoItem = nil
+            Task {
+                guard let folder,
+                    let data = (try? await item.loadTransferable(type: Data.self)) ?? nil
+                else { return }
+                await viewModel.setFolderCover(folder, imageData: data)
+            }
+        }
+    #endif
 
     // MARK: - Folder Helpers
 
@@ -1033,6 +1151,32 @@ struct LibraryView: View {
         #endif
     }
 }
+
+// MARK: - Folder Cover Photo Picker (iOS)
+
+#if os(iOS)
+    /// Presents the Photos library picker for choosing a folder cover. Kept in
+    /// its own ViewModifier so the (very long) LibraryView body modifier chain
+    /// stays within the Swift type-checker's time budget.
+    private struct FolderCoverPhotoPickerModifier: ViewModifier {
+        @Binding var isPresented: Bool
+        @Binding var selection: PhotosPickerItem?
+        let onPick: (PhotosPickerItem) -> Void
+
+        func body(content: Content) -> some View {
+            content
+                .photosPicker(
+                    isPresented: $isPresented,
+                    selection: $selection,
+                    matching: .images
+                )
+                .onChange(of: selection) { _, newItem in
+                    guard let newItem else { return }
+                    onPick(newItem)
+                }
+        }
+    }
+#endif
 
 // MARK: - File Drop Target
 

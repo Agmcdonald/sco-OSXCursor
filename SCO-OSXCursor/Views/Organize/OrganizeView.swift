@@ -13,13 +13,15 @@ struct OrganizeView: View {
     @State private var showingBulkEdit = false
     @State private var showingFolderPrompt = false
     @State private var folderPromptMode: FolderPromptMode = .allReady
+    @State private var isDropTargeted = false
 
     /// Which set of staged books the folder prompt applies to.
     private enum FolderPromptMode { case allReady, checked }
 
     var body: some View {
         #if os(macOS)
-            HSplitView {
+            VStack(spacing: 0) {
+                HSplitView {
                 // Left: File List (Staging Area)
                 VStack(spacing: 0) {
                     // Header / Toolbar
@@ -125,63 +127,6 @@ struct OrganizeView: View {
                     }
                     .listStyle(.sidebar)
 
-                    // Batch Action Bar
-                    if !viewModel.stagedComics.isEmpty {
-                        Divider()
-                        HStack {
-                            // Quick selection: check/uncheck everything at once
-                            Button(action: {
-                                viewModel.setAllChecked(
-                                    viewModel.checkedComicIDs.count < viewModel.stagedComics.count)
-                            }) {
-                                Label(
-                                    viewModel.checkedComicIDs.count < viewModel.stagedComics.count
-                                        ? "Check All" : "Uncheck All",
-                                    systemImage: "checklist")
-                            }
-
-                            // Bulk edit the CHECKED items (set year/publisher/etc. once)
-                            Button(action: {
-                                showingBulkEdit = true
-                            }) {
-                                Label(
-                                    "Edit \(viewModel.checkedComicIDs.count) Checked…",
-                                    systemImage: "square.and.pencil")
-                            }
-                            .disabled(viewModel.checkedComicIDs.isEmpty)
-
-                            // Import the CHECKED items straight into a folder
-                            Button(action: {
-                                folderPromptMode = .checked
-                                showingFolderPrompt = true
-                            }) {
-                                Label(
-                                    "Add \(viewModel.checkedComicIDs.count) to Folder…",
-                                    systemImage: "folder.badge.plus")
-                            }
-                            .disabled(viewModel.checkedComicIDs.isEmpty)
-
-                            Spacer()
-                            Button(action: {
-                                // More than one book? Offer to file them into a
-                                // folder first. A single book just applies.
-                                if viewModel.readyCount > 1 {
-                                    folderPromptMode = .allReady
-                                    showingFolderPrompt = true
-                                } else {
-                                    Task { await viewModel.confirmAllReady() }
-                                }
-                            }) {
-                                Label("Apply All Ready", systemImage: "checkmark.circle.fill")
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(viewModel.readyCount == 0)
-                            Spacer()
-                        }
-                        .padding(.vertical, 8)
-                        .padding(.horizontal)
-                    }
-
                     // Empty State / Drop Zone
                     if viewModel.stagedComics.isEmpty {
                         VStack(spacing: 12) {
@@ -196,11 +141,30 @@ struct OrganizeView: View {
                     }
                 }
                 .frame(minWidth: 300)
+                .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
+                    handleDrop(providers: providers)
+                }
+                .overlay(
+                    Group {
+                        if isDropTargeted {
+                            RoundedRectangle(cornerRadius: 16)
+                                .strokeBorder(
+                                    Color.accentColor,
+                                    style: StrokeStyle(lineWidth: 2, dash: [8])
+                                )
+                                .background(Color.accentColor.opacity(0.08))
+                                .padding(8)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                )
 
                 // Right: Inspector / Editor
                 if let selected = viewModel.selectedComic {
                     OrganizeInspectorView(comic: selected, viewModel: viewModel)
-                        .id(selected.id)  // Force rebuild on selection change
+                        // Rebuild on selection change AND when a batch fetch
+                        // updates staged metadata behind the inspector's back.
+                        .id("\(selected.id.uuidString)-\(viewModel.metadataRevision)")
                         .frame(minWidth: 300)
                 } else {
                     VStack {
@@ -210,6 +174,15 @@ struct OrganizeView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(Color(NSColor.textBackgroundColor))
+                }
+                }
+
+                // Batch Action Bar — spans the full window width beneath both
+                // panes, so button sizing is dictated by the window and never
+                // squished by the File Details panel.
+                if !viewModel.stagedComics.isEmpty {
+                    Divider()
+                    batchActionBar
                 }
             }
             .sheet(isPresented: $showingBulkEdit) {
@@ -256,4 +229,129 @@ struct OrganizeView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         #endif
     }
+
+    #if os(macOS)
+        // MARK: - Batch Action Bar
+
+        /// Full-width action bar shown while files are staged. Lives OUTSIDE
+        /// the split view so the File Details panel never squeezes it.
+        private var batchActionBar: some View {
+            HStack {
+                // Quick selection: check/uncheck everything at once
+                Button(action: {
+                    viewModel.setAllChecked(
+                        viewModel.checkedComicIDs.count < viewModel.stagedComics.count)
+                }) {
+                    Label(
+                        viewModel.checkedComicIDs.count < viewModel.stagedComics.count
+                            ? "Check All" : "Uncheck All",
+                        systemImage: "checklist")
+                }
+
+                // Bulk edit the CHECKED items (set year/publisher/etc. once)
+                Button(action: {
+                    showingBulkEdit = true
+                }) {
+                    Label(
+                        "Edit \(viewModel.checkedComicIDs.count) Checked…",
+                        systemImage: "square.and.pencil")
+                }
+                .disabled(viewModel.checkedComicIDs.isEmpty)
+
+                // Import the CHECKED items straight into a folder
+                Button(action: {
+                    folderPromptMode = .checked
+                    showingFolderPrompt = true
+                }) {
+                    Label(
+                        "Add \(viewModel.checkedComicIDs.count) to Folder…",
+                        systemImage: "folder.badge.plus")
+                }
+                .disabled(viewModel.checkedComicIDs.isEmpty)
+
+                // Fetch ComicVine metadata for every checked file
+                Button(action: {
+                    Task { await viewModel.fetchComicVineForChecked() }
+                }) {
+                    if viewModel.isBatchFetchingCV {
+                        HStack(spacing: 4) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Fetching \(viewModel.batchCVDone)/\(viewModel.batchCVTotal)…")
+                        }
+                    } else {
+                        Label(
+                            "Fetch \(viewModel.checkedComicIDs.count) from ComicVine",
+                            systemImage: "sparkles")
+                    }
+                }
+                .disabled(viewModel.checkedComicIDs.isEmpty || viewModel.isBatchFetchingCV)
+
+                if let summary = viewModel.batchCVSummary, !viewModel.isBatchFetchingCV {
+                    Text(summary)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .help(summary)
+                }
+
+                Spacer()
+
+                Button(action: {
+                    // More than one book? Offer to file them into a
+                    // folder first. A single book just applies.
+                    if viewModel.readyCount > 1 {
+                        folderPromptMode = .allReady
+                        showingFolderPrompt = true
+                    } else {
+                        Task { await viewModel.confirmAllReady() }
+                    }
+                }) {
+                    Label("Apply All Ready", systemImage: "checkmark.circle.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(viewModel.readyCount == 0 || viewModel.isBatchFetchingCV)
+            }
+            .padding(.vertical, 8)
+            .padding(.horizontal)
+            .background(Color(NSColor.controlBackgroundColor))
+        }
+
+        /// Handle files/folders dropped onto the staging list.
+        /// URL validation and folder scanning happen in `viewModel.addFiles`.
+        private func handleDrop(providers: [NSItemProvider]) -> Bool {
+            let group = DispatchGroup()
+            var urls: [URL] = []
+
+            for provider in providers {
+                group.enter()
+                provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) {
+                    (urlData, error) in
+                    defer { group.leave() }
+
+                    if let error = error {
+                        AppLog.organize.error("Drop: error loading item: \(error)")
+                        return
+                    }
+
+                    if let urlData = urlData as? Data,
+                        let urlString = String(data: urlData, encoding: .utf8),
+                        let url = URL(string: urlString)
+                    {
+                        urls.append(url)
+                    }
+                }
+            }
+
+            group.notify(queue: .main) {
+                if !urls.isEmpty {
+                    Task {
+                        await viewModel.addFiles(urls)
+                    }
+                }
+            }
+
+            return true
+        }
+    #endif
 }

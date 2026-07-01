@@ -509,6 +509,26 @@ final class DatabaseManager {
             AppLog.database.info("[DatabaseManager] ✅ Migration v20_folders complete")
         }
 
+        // Version 21: Folder covers. Lets a folder be illustrated by a custom
+        // picture (cover_image_data) or a single chosen member book
+        // (cover_comic_id). When both are nil the card keeps the default 2×2
+        // collage of recent members.
+        migrator.registerMigration("v21_folder_cover") { db in
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v21_folder_cover")
+            if try db.tableExists("folders") {
+                let columns = try db.columns(in: "folders").map(\.name)
+                try db.alter(table: "folders") { t in
+                    if !columns.contains("cover_image_data") {
+                        t.add(column: "cover_image_data", .blob)
+                    }
+                    if !columns.contains("cover_comic_id") {
+                        t.add(column: "cover_comic_id", .text)
+                    }
+                }
+            }
+            AppLog.database.info("[DatabaseManager] ✅ Migration v21_folder_cover complete")
+        }
+
         return migrator
     }
 

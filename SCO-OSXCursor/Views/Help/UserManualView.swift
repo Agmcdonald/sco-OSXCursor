@@ -214,7 +214,14 @@ struct UserManualView: View {
                             icon: "folder",
                             title: "Folder View",
                             description:
-                                "The folder icon in the View toggle opens a grid of collection cards, each with a cover collage and book count, plus 'All Books' and 'Unfiled' cards. Folder view honours the Sort menu, so you can order collections by name, date created, recently modified, or book count. Tap a card to open that collection; right-click (or long-press) a card to Rename or Delete it."
+                                "The folder icon in the View toggle opens a grid of collection cards, each with a cover collage and book count, plus 'All Books' and 'Unfiled' cards. Folder view honours the Sort menu, so you can order collections by name, date created, recently modified, or book count. Tap a card to open that collection; right-click (or long-press) a card to Rename it, Set its Cover, or Delete it."
+                        )
+
+                        FeatureRow(
+                            icon: "photo.on.rectangle.angled",
+                            title: "Customizing a Folder's Cover",
+                            description:
+                                "By default a folder card shows a 2×2 collage of its four most recent covers. To give a collection its own look, right-click (or long-press) its card and open 'Set Cover'. On iPad you can pick 'Choose from Photos…' to use a shot from your photo library or 'Choose from Files…' for an image saved in Files; on Mac, 'Choose Picture…' opens any image on your drive. Either way, or choose 'Pick a Book…' to let one member book's cover represent the whole folder. Pick 'Use Book Collage' anytime to return to the default four-book look. A custom cover only changes how the card looks — it never moves or alters your files."
                         )
 
                         FeatureRow(

@@ -553,8 +553,19 @@ struct ComicReaderView: View {
     //   Right 85–100% → Next page
     //   Centre 15–85% → Toggle controls / HUD
     #if os(iOS)
+        /// Full screen width via the active window scene. iOS 26 deprecated
+        /// `UIScreen.main`; tap zones are measured in global coordinates, so we
+        /// need the screen width (not the container's) to map a tap to a zone.
+        private var activeScreenWidth: CGFloat {
+            let scenes = UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+            let scene = scenes.first(where: { $0.activationState == .foregroundActive })
+                ?? scenes.first
+            return scene?.screen.bounds.width ?? 0
+        }
+
         private func handleGlobalTap(at location: CGPoint) {
-            let screenWidth = UIScreen.main.bounds.width
+            let screenWidth = activeScreenWidth
             guard screenWidth > 0 else { return }
             let percent = location.x / screenWidth
 

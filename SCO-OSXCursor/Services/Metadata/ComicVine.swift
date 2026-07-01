@@ -524,6 +524,20 @@ extension LibraryViewModel {
 
     @MainActor
     private func applyVolume(_ volume: CVVolumeResult, to comic: Comic) async -> ComicVineFetchOutcome {
+        var updated = await ComicVineFetcher.fill(comic, from: volume)
+        updated.dateModified = Date()
+        updateComic(updated)
+        return .updated
+    }
+}
+
+// MARK: - Shared fetch core
+
+/// Fills a `Comic`'s metadata from a ComicVine volume (and its issue +
+/// creator credits when the issue number is known). Pure — no persistence —
+/// so both the Library fetch and the Organize staging fetch can share it.
+enum ComicVineFetcher {
+    static func fill(_ comic: Comic, from volume: CVVolumeResult) async -> Comic {
         var updated = comic
 
         // Volume-level fields: series is canonical from ComicVine; the rest
@@ -586,9 +600,7 @@ extension LibraryViewModel {
 
         updated.metadataFetchedAt = Date()
         updated.metadataCandidates = nil
-        updated.dateModified = Date()
-        updateComic(updated)
-        return .updated
+        return updated
     }
 }
 
