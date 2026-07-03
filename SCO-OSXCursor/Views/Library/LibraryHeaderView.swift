@@ -44,6 +44,7 @@ struct LibraryHeaderView: View {
     let onQuickAdd: () -> Void
     let onAddComicsOrganize: (() -> Void)?
     let onMarkAsRead: () -> Void
+    var onMarkAsUnread: () -> Void = {}
     let onEditFields: () -> Void
     let onAddToList: () -> Void
     let onRegenerateCovers: () -> Void
@@ -55,6 +56,8 @@ struct LibraryHeaderView: View {
     var folders: [Folder] = []
     var onAddToFolder: (UUID) -> Void = { _ in }
     var onNewFolderForSelection: () -> Void = {}
+    /// Package the selection as .scobook files for AirDrop (macOS-only in v1).
+    var onSendToDevice: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
@@ -229,6 +232,7 @@ struct LibraryHeaderView: View {
             selectedComics: $selectedComics,
             visibleComicIDs: visibleComicIDs,
             onMarkAsRead: onMarkAsRead,
+            onMarkAsUnread: onMarkAsUnread,
             onEditFields: onEditFields,
             onAddToList: onAddToList,
             onRegenerateCovers: onRegenerateCovers,
@@ -241,7 +245,8 @@ struct LibraryHeaderView: View {
             isFetchingMetadata: isFetchingMetadata,
             folders: folders,
             onAddToFolder: onAddToFolder,
-            onNewFolder: onNewFolderForSelection
+            onNewFolder: onNewFolderForSelection,
+            onSendToDevice: onSendToDevice
         )
     }
 

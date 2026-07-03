@@ -24,10 +24,18 @@ struct ComicCellActions {
     let focus: (Comic) -> Void
     /// Fetch ComicVine metadata directly (no edit sheet) — fills and saves.
     var fetchMetadata: (Comic) -> Void = { _ in }
+    /// Undo the last applied ComicVine fetch (shown only when a pre-fetch
+    /// snapshot exists on the record).
+    var revertMetadataFetch: (Comic) -> Void = { _ in }
+    /// Mark unread / reset reading progress ("start over").
+    var markAsUnread: (Comic) -> Void = { _ in }
     /// Show the read-only Info panel (inspector on macOS, half-sheet on iPad).
     var showInfo: (Comic) -> Void = { _ in }
     /// Re-link a missing/moved file (shown only when the book needs attention).
     var relink: (Comic) -> Void = { _ in }
+    /// Package this book as a .scobook and hand it to the share sheet
+    /// (Mac → iPad transfer). Menu item is macOS-only in v1.
+    var sendToDevice: (Comic) -> Void = { _ in }
 
     // MARK: Folders
     /// All user folders (for the "Add to Folder" submenu).
@@ -138,8 +146,23 @@ struct ComicCellInteraction: ViewModifier {
             Label("Fetch from ComicVine", systemImage: "network")
         }
 
+        // Escape hatch for a wrong ComicVine match — only offered while a
+        // pre-fetch snapshot is stored on the record.
+        if comic.metadataBackup != nil {
+            Button(action: { actions.revertMetadataFetch(comic) }) {
+                Label("Revert ComicVine Fetch", systemImage: "arrow.uturn.backward")
+            }
+        }
+
         Button(action: { actions.markAsRead(comic) }) {
             Label("Mark as Read", systemImage: "checkmark.circle")
+        }
+
+        // "Start over" — only meaningful once there's some reading state.
+        if comic.status != .unread || comic.currentPage > 0 || comic.lastReadDate != nil {
+            Button(action: { actions.markAsUnread(comic) }) {
+                Label("Mark as Unread", systemImage: "book.closed")
+            }
         }
 
         Button(action: { actions.toggleReadingList(comic) }) {
@@ -157,6 +180,16 @@ struct ComicCellInteraction: ViewModifier {
                 Label("Regenerate Cover", systemImage: "arrow.clockwise.circle")
             }
         }
+
+        // Mac → iPad transfer (send UI is macOS-only in v1; the receive
+        // path works on both platforms).
+        #if os(macOS)
+            if !comic.needsAttention {
+                Button(action: { actions.sendToDevice(comic) }) {
+                    Label("Send to Device…", systemImage: "ipad.and.arrow.forward")
+                }
+            }
+        #endif
 
         Divider()
 

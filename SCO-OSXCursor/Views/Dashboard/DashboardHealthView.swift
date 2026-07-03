@@ -2,34 +2,21 @@ import SwiftUI
 
 struct DashboardHealthView: View {
     @ObservedObject var libraryViewModel: LibraryViewModel
+    /// Navigates to the Maintenance tab, where the fix-it actions live.
+    var onOpenMaintenance: () -> Void = {}
 
     private var totalComics: Int { libraryViewModel.comics.count }
 
-    // Comics missing metadata
     private var missingMetadata: [Comic] {
-        libraryViewModel.comics.filter {
-            ($0.title == nil || $0.title?.isEmpty == true)
-                && ($0.series == nil || $0.series?.isEmpty == true)
-        }
+        LibraryHealth.missingMetadata(in: libraryViewModel.comics)
     }
 
-    // Comics missing covers
     private var missingCovers: [Comic] {
-        libraryViewModel.comics.filter { $0.coverImageData == nil }
+        LibraryHealth.missingCovers(in: libraryViewModel.comics)
     }
 
-    // Potential duplicates: same series + same issue number
     private var potentialDuplicateGroups: [[Comic]] {
-        var groups: [String: [Comic]] = [:]
-        for comic in libraryViewModel.comics {
-            if let series = comic.series, !series.isEmpty,
-                let issue = comic.issueNumber, !issue.isEmpty
-            {
-                let key = "\(series.lowercased())_\(issue.lowercased())"
-                groups[key, default: []].append(comic)
-            }
-        }
-        return groups.values.filter { $0.count > 1 }.map { $0 }
+        LibraryHealth.duplicateGroups(in: libraryViewModel.comics)
     }
 
     // Health score: penalise for issues
@@ -122,7 +109,8 @@ struct DashboardHealthView: View {
                                 description:
                                     "Found \(potentialDuplicateGroups.count) set\(potentialDuplicateGroups.count == 1 ? "" : "s") of comics that might be duplicates.",
                                 badgeCount: potentialDuplicateGroups.count,
-                                actionLabel: "Review Duplicates"
+                                actionLabel: "Fix in Maintenance",
+                                action: onOpenMaintenance
                             )
                         }
 
@@ -135,7 +123,8 @@ struct DashboardHealthView: View {
                                 description:
                                     "\(missingMetadata.count) comic\(missingMetadata.count == 1 ? "" : "s") missing title or series information.",
                                 badgeCount: missingMetadata.count,
-                                actionLabel: "Review Comics"
+                                actionLabel: "Fix in Maintenance",
+                                action: onOpenMaintenance
                             )
                         }
 
@@ -150,7 +139,8 @@ struct DashboardHealthView: View {
                                 description:
                                     "\(missingCovers.count) comic\(missingCovers.count == 1 ? "" : "s") have no cover image.",
                                 badgeCount: missingCovers.count,
-                                actionLabel: "Review Comics"
+                                actionLabel: "Fix in Maintenance",
+                                action: onOpenMaintenance
                             )
                         }
                     }
@@ -174,6 +164,40 @@ struct DashboardHealthView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Health Computations
+
+/// Shared issue detection used by the Health tab and its review sheet.
+enum LibraryHealth {
+    static func missingMetadata(in comics: [Comic]) -> [Comic] {
+        comics.filter {
+            ($0.title == nil || $0.title?.isEmpty == true)
+                && ($0.series == nil || $0.series?.isEmpty == true)
+        }
+    }
+
+    static func missingCovers(in comics: [Comic]) -> [Comic] {
+        comics.filter { $0.coverImageData == nil }
+    }
+
+    /// Potential duplicates: same series + same issue number. Groups are
+    /// sorted by series/issue so the list order is stable across refreshes.
+    static func duplicateGroups(in comics: [Comic]) -> [[Comic]] {
+        var groups: [String: [Comic]] = [:]
+        for comic in comics {
+            if let series = comic.series, !series.isEmpty,
+                let issue = comic.issueNumber, !issue.isEmpty
+            {
+                let key = "\(series.lowercased())_\(issue.lowercased())"
+                groups[key, default: []].append(comic)
+            }
+        }
+        return groups
+            .filter { $0.value.count > 1 }
+            .sorted { $0.key < $1.key }
+            .map { $0.value }
     }
 }
 
@@ -209,6 +233,7 @@ struct HealthIssueRow: View {
     let description: String
     let badgeCount: Int
     let actionLabel: String
+    var action: () -> Void = {}
 
     var body: some View {
         HStack(spacing: Spacing.sm) {
@@ -237,7 +262,7 @@ struct HealthIssueRow: View {
 
             Spacer()
 
-            Button(actionLabel) { /* TODO: navigate to maintenance */  }
+            Button(actionLabel, action: action)
                 .buttonStyle(.plain)
                 .font(Typography.bodySmall)
                 .padding(.horizontal, Spacing.md)
@@ -247,5 +272,274 @@ struct HealthIssueRow: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .padding(.vertical, Spacing.xs)
+    }
+}
+
+// MARK: - Review Sheet
+
+/// Which health issue the review sheet is showing.
+enum HealthReviewMode: String, Identifiable {
+    case duplicates
+    case missingMetadata
+    case missingCovers
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .duplicates: return "Potential Duplicates"
+        case .missingMetadata: return "Missing Metadata"
+        case .missingCovers: return "Missing Cover Art"
+        }
+    }
+}
+
+/// Lists the books behind a Health issue and offers a fix:
+/// duplicates → per-copy delete; missing metadata → batch ComicVine fetch;
+/// missing covers → batch cover regeneration.
+struct HealthReviewSheet: View {
+    @ObservedObject var libraryViewModel: LibraryViewModel
+    let mode: HealthReviewMode
+    let onClose: () -> Void
+
+    @State private var comicPendingDelete: Comic?
+    @State private var deleteFileToo = false
+    @State private var isWorking = false
+    @State private var statusText: String?
+
+    private var duplicateGroups: [[Comic]] {
+        LibraryHealth.duplicateGroups(in: libraryViewModel.comics)
+    }
+
+    private var flatComics: [Comic] {
+        switch mode {
+        case .duplicates: return []
+        case .missingMetadata: return LibraryHealth.missingMetadata(in: libraryViewModel.comics)
+        case .missingCovers: return LibraryHealth.missingCovers(in: libraryViewModel.comics)
+        }
+    }
+
+    private var isEmpty: Bool {
+        mode == .duplicates ? duplicateGroups.isEmpty : flatComics.isEmpty
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            Divider()
+            if isEmpty {
+                emptyState
+            } else {
+                listContent
+            }
+        }
+        .background(BackgroundColors.primary)
+        #if os(macOS)
+            .frame(minWidth: 560, minHeight: 460)
+        #endif
+        .alert(
+            deleteFileToo ? "Delete File from Device" : "Remove from Library",
+            isPresented: Binding(
+                get: { comicPendingDelete != nil },
+                set: { if !$0 { comicPendingDelete = nil } }
+            )
+        ) {
+            Button("Cancel", role: .cancel) { comicPendingDelete = nil }
+            Button(deleteFileToo ? "Delete File" : "Remove", role: .destructive) {
+                if let comic = comicPendingDelete {
+                    let deleteFile = deleteFileToo
+                    Task {
+                        if deleteFile {
+                            await libraryViewModel.deleteComicsFromDevice([comic])
+                        } else {
+                            await libraryViewModel.deleteComicsFromApp([comic])
+                        }
+                    }
+                }
+                comicPendingDelete = nil
+            }
+        } message: {
+            Text(
+                deleteFileToo
+                    ? "\"\(comicPendingDelete?.displayName ?? "")\" will be removed from the library AND its file deleted from this device. This cannot be undone."
+                    : "\"\(comicPendingDelete?.displayName ?? "")\" will be removed from the library. The file stays on disk."
+            )
+        }
+    }
+
+    // MARK: Header
+
+    private var header: some View {
+        HStack(spacing: Spacing.sm) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(mode.title)
+                    .font(Typography.h2)
+                    .foregroundColor(TextColors.primary)
+                if let statusText {
+                    Text(statusText)
+                        .font(Typography.caption)
+                        .foregroundColor(TextColors.secondary)
+                }
+            }
+
+            Spacer()
+
+            if mode == .missingMetadata && !flatComics.isEmpty {
+                Button(isWorking ? "Fetching…" : "Fetch All from ComicVine") {
+                    fetchAllMetadata()
+                }
+                .disabled(isWorking)
+            }
+
+            if mode == .missingCovers && !flatComics.isEmpty {
+                Button("Regenerate All Covers") {
+                    libraryViewModel.regenerateCovers(for: flatComics)
+                    statusText = "Regenerating \(flatComics.count) cover\(flatComics.count == 1 ? "" : "s") in the background…"
+                }
+            }
+
+            Button("Done", action: onClose)
+                .keyboardShortcut(.defaultAction)
+        }
+        .padding(Spacing.md)
+    }
+
+    // MARK: Content
+
+    private var emptyState: some View {
+        VStack(spacing: Spacing.sm) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: 32))
+                .foregroundColor(.green)
+            Text("All clear — nothing left to review.")
+                .font(Typography.body)
+                .foregroundColor(TextColors.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var listContent: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: Spacing.sm) {
+                if mode == .duplicates {
+                    ForEach(Array(duplicateGroups.enumerated()), id: \.offset) { _, group in
+                        duplicateSection(group)
+                    }
+                } else {
+                    ForEach(flatComics) { comic in
+                        HealthReviewRow(comic: comic, showDeleteMenu: false) { _ in }
+                        Divider()
+                    }
+                }
+            }
+            .padding(Spacing.md)
+        }
+    }
+
+    @ViewBuilder
+    private func duplicateSection(_ group: [Comic]) -> some View {
+        let first = group[0]
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            Text("\(first.series ?? "Unknown") #\(first.issueNumber ?? "?") — \(group.count) copies")
+                .font(Typography.h3)
+                .foregroundColor(TextColors.primary)
+                .padding(.top, Spacing.xs)
+
+            ForEach(group) { comic in
+                HealthReviewRow(comic: comic, showDeleteMenu: true) { deleteFile in
+                    deleteFileToo = deleteFile
+                    comicPendingDelete = comic
+                }
+            }
+            Divider()
+        }
+    }
+
+    // MARK: Actions
+
+    private func fetchAllMetadata() {
+        let comics = flatComics
+        isWorking = true
+        Task {
+            let result = await libraryViewModel.fetchComicVineMetadataBatch(for: comics) {
+                done, total in
+                statusText = "Fetching… \(done) of \(total)"
+            }
+            statusText = result.summary
+            isWorking = false
+        }
+    }
+}
+
+/// One book row in the review sheet: cover thumbnail, names, file details,
+/// and (for duplicates) a delete menu.
+private struct HealthReviewRow: View {
+    let comic: Comic
+    let showDeleteMenu: Bool
+    /// Called with `true` to also delete the file on disk.
+    let onDelete: (Bool) -> Void
+
+    var body: some View {
+        HStack(spacing: Spacing.sm) {
+            coverThumb
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(comic.displayName)
+                    .font(Typography.bodySmall)
+                    .foregroundColor(TextColors.primary)
+                    .lineLimit(1)
+                Text("\(comic.fileName) · \(comic.fileSizeFormatted)")
+                    .font(Typography.caption)
+                    .foregroundColor(TextColors.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            if showDeleteMenu {
+                Menu {
+                    Button("Remove from Library", role: .destructive) { onDelete(false) }
+                    Button("Delete File from Device…", role: .destructive) { onDelete(true) }
+                } label: {
+                    Image(systemName: "trash")
+                        .foregroundColor(.red)
+                }
+                .fixedSize()
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    @ViewBuilder
+    private var coverThumb: some View {
+        if let data = comic.coverImageData,
+            let cover = PageImageCache.shared.coverImage(
+                from: data, cacheKey: comic.id.uuidString)
+        {
+            #if os(macOS)
+                Image(nsImage: cover)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 32, height: 44)
+                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+            #else
+                Image(uiImage: cover)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 32, height: 44)
+                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+            #endif
+        } else {
+            RoundedRectangle(cornerRadius: 4)
+                .fill(BackgroundColors.secondary)
+                .frame(width: 32, height: 44)
+                .overlay(
+                    Image(systemName: "photo")
+                        .font(.system(size: 12))
+                        .foregroundColor(TextColors.tertiary)
+                )
+        }
     }
 }

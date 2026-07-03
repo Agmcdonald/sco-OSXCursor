@@ -101,6 +101,9 @@ struct LibraryView: View {
     @State private var relinkComicID: ComicID?
     @State private var showingRelinkPicker = false
 
+    // Mac → iPad transfer: books queued for "Send to Device…" packaging
+    @State private var transferExportRequest: TransferExportRequest?
+
     // iPad: read-only Info panel presented as a half-sheet (macOS uses .inspector)
     #if os(iOS)
         @State private var infoSheetComicID: ComicID?
@@ -228,6 +231,8 @@ struct LibraryView: View {
             handleSelectionTap: { handleSelectionTap($0) },
             focus: { focusedComic = $0 },
             fetchMetadata: { fetchMetadataSingle($0) },
+            revertMetadataFetch: { revertMetadataSingle($0) },
+            markAsUnread: { viewModel.markAsUnread([$0]) },
             showInfo: { comic in
                 #if os(macOS)
                     focusedComic = comic
@@ -239,6 +244,9 @@ struct LibraryView: View {
             relink: { comic in
                 relinkComicID = ComicID(id: comic.id)
                 showingRelinkPicker = true
+            },
+            sendToDevice: { comic in
+                transferExportRequest = TransferExportRequest(comics: [comic])
             },
             folders: viewModel.folders,
             foldersContaining: { viewModel.folders(containing: $0.id) },
@@ -315,6 +323,7 @@ struct LibraryView: View {
                 onQuickAdd: { showingFilePicker = true },
                 onAddComicsOrganize: onAddComicsOrganize,
                 onMarkAsRead: markAsReadSelectedComics,
+                onMarkAsUnread: markAsUnreadSelectedComics,
                 onEditFields: { showingBulkEdit = true },
                 onAddToList: addSelectedToReadingList,
                 onRegenerateCovers: regenerateCoversForSelected,
@@ -336,6 +345,11 @@ struct LibraryView: View {
                     newFolderContext = .selection
                     newFolderName = ""
                     showingNewFolderAlert = true
+                },
+                onSendToDevice: {
+                    let selected = viewModel.comics.filter { selectedComics.contains($0.id) }
+                    guard !selected.isEmpty else { return }
+                    transferExportRequest = TransferExportRequest(comics: selected)
                 }
             )
 
@@ -462,35 +476,45 @@ struct LibraryView: View {
                 }
             }
         )
-        .fileImporter(
-            isPresented: $showingFilePicker,
-            allowedContentTypes: [
-                .folder, .zip, .pdf, .cbr, .epub, UTType(filenameExtension: "cbr")!,
-                UTType(filenameExtension: "epub") ?? .data,
-            ],
-            allowsMultipleSelection: true
-        ) { result in
-            handleFileImport(result)
-        }
+        // NOTE: SwiftUI only honors ONE .fileImporter per view. Chaining
+        // several on the same view silently breaks all but one (this is what
+        // broke Quick Add when the folder-cover picker was added). Each
+        // importer therefore lives on its own invisible background view.
+        .background(
+            Color.clear.fileImporter(
+                isPresented: $showingFilePicker,
+                allowedContentTypes: [
+                    .folder, .zip, .pdf, .cbr, .epub, UTType(filenameExtension: "cbr")!,
+                    UTType(filenameExtension: "epub") ?? .data,
+                ],
+                allowsMultipleSelection: true
+            ) { result in
+                handleFileImport(result)
+            }
+        )
         // Locate File… — re-link a single missing/moved book
-        .fileImporter(
-            isPresented: $showingRelinkPicker,
-            allowedContentTypes: [
-                .zip, .pdf, .cbr, .epub,
-                UTType(filenameExtension: "cbz") ?? .data,
-            ],
-            allowsMultipleSelection: false
-        ) { result in
-            handleRelink(result)
-        }
+        .background(
+            Color.clear.fileImporter(
+                isPresented: $showingRelinkPicker,
+                allowedContentTypes: [
+                    .zip, .pdf, .cbr, .epub,
+                    UTType(filenameExtension: "cbz") ?? .data,
+                ],
+                allowsMultipleSelection: false
+            ) { result in
+                handleRelink(result)
+            }
+        )
         // Choose a custom cover picture for a folder
-        .fileImporter(
-            isPresented: $showingFolderCoverPicker,
-            allowedContentTypes: [.image],
-            allowsMultipleSelection: false
-        ) { result in
-            handleFolderCoverImport(result)
-        }
+        .background(
+            Color.clear.fileImporter(
+                isPresented: $showingFolderCoverPicker,
+                allowedContentTypes: [.image],
+                allowsMultipleSelection: false
+            ) { result in
+                handleFolderCoverImport(result)
+            }
+        )
         // iPad/iPhone: choose a folder cover from the Photos library.
         // Isolated in a ViewModifier so the main body stays type-checkable.
         #if os(iOS)
@@ -527,6 +551,16 @@ struct LibraryView: View {
                 viewModel.bulkEdit(ids: selectedComics, values: values)
                 isSelectionMode = false
                 selectedComics.removeAll()
+            }
+        }
+        // Mac → iPad transfer: package the book(s) then hand to the share sheet
+        .sheet(item: $transferExportRequest) { request in
+            TransferExportSheet(comics: request.comics) {
+                transferExportRequest = nil
+                if isSelectionMode {
+                    selectedComics.removeAll()
+                    isSelectionMode = false
+                }
             }
         }
         .alert("Delete from Library", isPresented: $showingDeleteConfirmation) {
@@ -923,6 +957,13 @@ struct LibraryView: View {
         isSelectionMode = false
     }
 
+    private func markAsUnreadSelectedComics() {
+        let comicsToReset = viewModel.comics.filter { selectedComics.contains($0.id) }
+        viewModel.markAsUnread(comicsToReset)
+        selectedComics.removeAll()
+        isSelectionMode = false
+    }
+
     private func addSelectedToReadingList() {
         let comics = viewModel.comics.filter { selectedComics.contains($0.id) }
         for comic in comics {
@@ -970,6 +1011,10 @@ struct LibraryView: View {
         AppLog.library.debug("🎯 [LibraryView] User tapped comic: \(comic.fileName)")
         AppLog.library.debug("🎯 [LibraryView] File type: \(comic.fileType.rawValue)")
         AppLog.library.debug("🎯 [LibraryView] Has bookmark: \(comic.bookmarkData != nil)")
+
+        // Snapshot the current display order (sort + filters + folder scope)
+        // so the reader's "Up Next" suggestion follows what the user sees.
+        viewModel.readingOrderIDs = filteredAndSortedComics.map(\.id)
 
         #if os(iOS)
             // Start pre-fetching immediately so the reader has a head start.
@@ -1035,6 +1080,15 @@ struct LibraryView: View {
             case .failed(let reason):
                 flashComicVineStatus("Fetch failed: \(reason)")
             }
+        }
+    }
+
+    /// Undo the last ComicVine fetch on one book (context menu).
+    private func revertMetadataSingle(_ comic: Comic) {
+        if viewModel.revertComicVineFetch(for: comic) {
+            flashComicVineStatus("\(comic.displayTitle): reverted to pre-fetch metadata.")
+        } else {
+            flashComicVineStatus("\(comic.displayTitle): nothing to revert.")
         }
     }
 

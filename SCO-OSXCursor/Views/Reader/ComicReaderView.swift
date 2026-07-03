@@ -84,6 +84,9 @@ struct ComicReaderView: View {
     @State private var currentComic: Comic  // Mutable copy for settings changes
     @State private var isDragging = false
     @State private var isPinching = false
+    /// The book that follows this one in the library's current sort order —
+    /// suggested by the end-of-book "Up Next" preview. Nil = last book.
+    @State private var nextComic: Comic?
     @State private var gestureCooldownTask: Task<Void, Never>?
     /// Fraction of screen width for pages in vertical-scroll mode (0.3…1.0).
     /// Tick 4 of 15 on the 0.3…1.0 / 0.05-step slider = 0.5, matching a comfortable reading size.
@@ -217,6 +220,26 @@ struct ComicReaderView: View {
 
             // Start auto-hide timer when reader loads
             resetAutoHideTimer()
+
+            // Resolve the "Up Next" suggestion (next book in the library's
+            // current sort order / the list this book was opened from)
+            nextComic = libraryViewModel.nextComic(after: comic.id)
+            viewModel.hasNextIssue = nextComic != nil
+            if let next = nextComic {
+                AppLog.reader.debug("📖 [ComicReaderView] Up Next resolved: \(next.fileName)")
+            }
+        }
+        // The user advanced forward past the "Up Next" preview — swap books
+        .onChange(of: viewModel.advanceToNextIssueRequested) { _, requested in
+            if requested { advanceToNextIssue() }
+        }
+        // Give iOS a decoding head start as soon as the preview appears
+        .onChange(of: viewModel.showNextIssuePreview) { _, showing in
+            #if os(iOS)
+                if showing, let next = nextComic {
+                    libraryViewModel.prefetchComic(next)
+                }
+            #endif
         }
         .onChange(of: viewModel.currentPage) { oldValue, newValue in
             AppLog.reader.debug("📖 [ComicReaderView] Page changed: \(oldValue + 1) → \(newValue + 1)")
@@ -430,7 +453,7 @@ struct ComicReaderView: View {
             ReaderControlsOverlay(
                 currentPage: $viewModel.currentPage,
                 totalPages: comicBook.totalPages,
-                comicTitle: comic.displayTitle,
+                comicTitle: currentComic.displayTitle,  // follows in-place book switches
                 pages: viewModel.allPages,
                 onClose: {
                     libraryViewModel.readingComic = nil
@@ -494,6 +517,25 @@ struct ComicReaderView: View {
                 .zIndex(1000)
             }
 
+            // End-of-book "Up Next" preview — slides in from the reading
+            // direction like one more page; forward again advances into it.
+            if viewModel.showNextIssuePreview, let next = nextComic {
+                NextIssuePreviewOverlay(
+                    comic: next,
+                    isRTL: viewModel.isMangaRTL,
+                    onStart: { advanceToNextIssue() },
+                    onDismiss: { viewModel.dismissNextIssuePreview() }
+                )
+                .transition(
+                    .asymmetric(
+                        insertion: .move(edge: viewModel.isMangaRTL ? .leading : .trailing)
+                            .combined(with: .opacity),
+                        removal: .opacity
+                    )
+                )
+                .zIndex(1200)
+            }
+
             // Navigation menu (iPad only)
             #if os(iOS)
                 if showingMenu {
@@ -522,7 +564,14 @@ struct ComicReaderView: View {
                 Button("") { showControls() }.keyboardShortcut(.upArrow, modifiers: [])
                 Button("") { withAnimation { controlsVisible = false } }.keyboardShortcut(.downArrow, modifiers: [])
                 Button("") { handleTapToToggleControls() }.keyboardShortcut(.space, modifiers: [])
-                Button("") { libraryViewModel.readingComic = nil; dismiss() }.keyboardShortcut(.escape, modifiers: [])
+                Button("") {
+                    if viewModel.showNextIssuePreview {
+                        viewModel.dismissNextIssuePreview()
+                    } else {
+                        libraryViewModel.readingComic = nil
+                        dismiss()
+                    }
+                }.keyboardShortcut(.escape, modifiers: [])
             }
             .opacity(0)
             .frame(width: 0, height: 0)
@@ -858,6 +907,45 @@ struct ComicReaderView: View {
 
     // MARK: - Helper Methods
 
+    /// Advance into the suggested next book IN PLACE — the same reader
+    /// instance tears down the finished book and loads the next one, so the
+    /// fullScreenCover / overlay never dismisses and re-presents.
+    private func advanceToNextIssue() {
+        guard let next = nextComic else { return }
+        viewModel.advanceToNextIssueRequested = false
+        viewModel.dismissNextIssuePreview()
+        AppLog.reader.info("📖 [ComicReaderView] ➡️ Advancing into next issue: \(next.fileName)")
+
+        // EPUBs need a different reader view — swap via the library instead
+        if next.fileType == .epub {
+            libraryViewModel.readingComic = next
+            return
+        }
+
+        currentComic = next
+        nextComic = nil
+        viewModel.hasNextIssue = false
+
+        Task {
+            #if os(iOS)
+                // Use the pre-fetched book (kicked off when the preview
+                // appeared) to skip the loading spinner entirely.
+                if let prefetched = libraryViewModel.consumePrefetchedComicBook(for: next.id) {
+                    viewModel.switchToPrefetched(prefetched, for: next)
+                } else {
+                    await viewModel.switchToComic(next)
+                }
+            #else
+                await viewModel.switchToComic(next)
+            #endif
+
+            // Line up the book after this one
+            nextComic = libraryViewModel.nextComic(after: next.id)
+            viewModel.hasNextIssue = nextComic != nil
+            resetAutoHideTimer()
+        }
+    }
+
     /// Show controls and ensure timer is running
     private func showControls() {
         if !controlsVisible {
@@ -1061,6 +1149,11 @@ struct ComicReaderView: View {
                 guard let viewModel = viewModel else { return }
 
                 Task { @MainActor in
+                    // Left = backward: dismiss the "Up Next" preview if showing
+                    if viewModel.showNextIssuePreview {
+                        viewModel.dismissNextIssuePreview()
+                        return
+                    }
                     if viewModel.isVerticalScroll {
                         // In vertical scroll mode, left arrow scrolls up half a page
                         viewModel.verticalScrollHalf(forward: false)
@@ -1088,7 +1181,11 @@ struct ComicReaderView: View {
                         // In vertical scroll mode, right arrow scrolls down half a page
                         viewModel.verticalScrollHalf(forward: true)
                     } else {
-                        guard viewModel.currentPage < totalPages - 1 else { return }
+                        guard viewModel.currentPage < totalPages - 1 else {
+                            // Already on the last page → show/advance "Up Next"
+                            viewModel.requestForwardPastEnd()
+                            return
+                        }
                         withAnimation(.easeInOut(duration: 0.3)) {
                             if viewModel.isSpreadMode {
                                 viewModel.currentPage = min(totalPages - 1, viewModel.currentPage + 2)
@@ -1118,6 +1215,11 @@ struct ComicReaderView: View {
 
             monitor.onEscape = { [self] in
                 Task { @MainActor in
+                    // Escape closes the "Up Next" preview before the reader
+                    if viewModel.showNextIssuePreview {
+                        viewModel.dismissNextIssuePreview()
+                        return
+                    }
                     libraryViewModel.readingComic = nil
                 }
             }

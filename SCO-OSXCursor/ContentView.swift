@@ -16,6 +16,10 @@ struct ContentView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
 
+    // Incoming .scobook transfer package (AirDrop / Files / double-click)
+    @State private var incomingPackage: IncomingBookPackage?
+    @State private var incomingTransferError: String?
+
     init() {
         let libVM = LibraryViewModel(database: DatabaseManager.shared)
         _libraryViewModel = StateObject(wrappedValue: libVM)
@@ -52,6 +56,28 @@ struct ContentView: View {
             SidebarView(selectedTab: $selectedTab)
                 .environmentObject(settingsViewModel)
                 .frame(width: AppLayout.sidebarWidth)
+                #if os(iOS)
+                // Remove the SYSTEM sidebar toggle at its source (the sidebar
+                // column). Removing it only from the detail column (below) was
+                // unreliable: it worked in Library (whose .inspector changes
+                // toolbar resolution) but on every other tab the system toggle
+                // survived next to our custom recall button — a duplicate.
+                .toolbar(removing: .sidebarToggle)
+                // Replace it with our own collapse button so the open sidebar
+                // can still be dismissed, matching the recall button's style.
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                columnVisibility = .detailOnly
+                            }
+                        } label: {
+                            Image(systemName: "sidebar.left")
+                                .font(.system(size: 17, weight: .medium))
+                        }
+                    }
+                }
+                #endif
         } detail: {
             // Main content
             selectedView()
@@ -59,9 +85,9 @@ struct ContentView: View {
                 #if os(iOS)
                 // Sidebar-recall button in the navigation bar zone (above content) —
                 // only visible on iPad when the sidebar is hidden.
-                // The system ALSO surfaces its own sidebar toggle in the detail
-                // bar when the sidebar is hidden, duplicating ours — remove it
-                // (the sidebar column keeps its built-in collapse button).
+                // The system toggle is removed at the sidebar column (above);
+                // removing it here too is belt-and-suspenders for the detail
+                // bar so ours is never duplicated.
                 .toolbar(removing: .sidebarToggle)
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
@@ -88,17 +114,43 @@ struct ContentView: View {
         )) {
             WelcomeSheet(hasSeenWelcome: $hasSeenWelcome)
         }
+        // ── Device transfer: receive a .scobook package ──
+        // AirDrop "Open in Super Comic Organizer", the Files app, and macOS
+        // double-click all land here via the document type in Info.plist.
+        .onOpenURL { url in
+            handleIncomingURL(url)
+        }
+        .sheet(item: $incomingPackage) { package in
+            TransferReceiveSheet(package: package, viewModel: libraryViewModel) {
+                incomingPackage = nil
+            }
+        }
+        .alert(
+            "Couldn't Open Book Package",
+            isPresented: Binding(
+                get: { incomingTransferError != nil },
+                set: { if !$0 { incomingTransferError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { incomingTransferError = nil }
+        } message: {
+            Text(incomingTransferError ?? "")
+        }
         #if os(iOS)
             // iOS/iPadOS: true full-screen cover — hides system chrome completely
             .fullScreenCover(item: $libraryViewModel.readingComic) { comic in
+                // .id(comic.id) forces a full reader rebuild when the book is
+                // swapped in place (e.g. advancing via the "Up Next" preview)
                 if comic.fileType == .epub {
                     EPUBContentView(comic: comic)
+                        .id(comic.id)
                         .environmentObject(libraryViewModel)
                         .ignoresSafeArea()
                         .statusBarHidden(true)
                         .persistentSystemOverlays(.hidden)
                 } else {
                     ComicReaderView(comic: comic)
+                        .id(comic.id)
                         .environmentObject(libraryViewModel)
                         .ignoresSafeArea()                          // Art fills the entire glass
                         .statusBarHidden(true)                      // Always hide clock/battery
@@ -114,15 +166,19 @@ struct ContentView: View {
             // macOS: overlay on top of the split view
             .overlay {
                 if let comic = libraryViewModel.readingComic {
+                    // .id(comic.id) forces a full reader rebuild when the book
+                    // is swapped in place (advancing via the "Up Next" preview)
                     Group {
                         if comic.fileType == .epub {
                             EPUBContentView(comic: comic)
+                                .id(comic.id)
                                 .environmentObject(libraryViewModel)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                                 .transition(.opacity)
                                 .zIndex(100)
                         } else {
                             ComicReaderView(comic: comic)
+                                .id(comic.id)
                                 .environmentObject(libraryViewModel)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                                 .transition(.opacity)
@@ -145,11 +201,45 @@ struct ContentView: View {
         #endif
     }
 
+    // MARK: - Incoming Transfer
+
+    /// Routes an opened file into the receive flow when it's a `.scobook`
+    /// package. Reads only the manifest + cover up front (fast), then hands
+    /// the package to `TransferReceiveSheet`.
+    private func handleIncomingURL(_ url: URL) {
+        guard url.isFileURL,
+            url.pathExtension.lowercased() == BookPackage.fileExtension
+        else { return }
+
+        // One at a time — a second package arriving mid-import would swap the
+        // sheet out from under the running import.
+        guard incomingPackage == nil else {
+            incomingTransferError =
+                "Another book is being received right now. Open this package again when it finishes."
+            return
+        }
+
+        Task {
+            do {
+                let package = try await Task.detached(priority: .userInitiated) {
+                    try BookPackageImporter.peek(at: url)
+                }.value
+                incomingPackage = package
+            } catch {
+                incomingTransferError = error.localizedDescription
+            }
+        }
+    }
+
     @ViewBuilder
     private func selectedView() -> some View {
         switch selectedTab {
         case .dashboard:
-            DashboardView(libraryViewModel: libraryViewModel)
+            DashboardView(
+                libraryViewModel: libraryViewModel,
+                onOpenKnowledge: { selectedTab = .knowledge },
+                onOpenMaintenance: { selectedTab = .maintenance }
+            )
         case .library:
             LibraryView(
                 viewModel: libraryViewModel,
@@ -165,11 +255,7 @@ struct ContentView: View {
         case .knowledge:
             KnowledgeView(libraryViewModel: libraryViewModel)
         case .maintenance:
-            PlaceholderView(
-                title: "Maintenance",
-                subtitle: "Database and file maintenance tools will appear here in future update",
-                icon: "wrench.and.screwdriver"
-            )
+            MaintenanceView(libraryViewModel: libraryViewModel)
         case .userManual:
             UserManualView()
         case .settings:

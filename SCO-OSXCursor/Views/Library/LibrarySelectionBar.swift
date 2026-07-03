@@ -17,6 +17,7 @@ struct LibrarySelectionBar: View {
     let visibleComicIDs: [Comic.ID]
 
     let onMarkAsRead: () -> Void
+    var onMarkAsUnread: () -> Void = {}
     let onEditFields: () -> Void
     let onAddToList: () -> Void
     let onRegenerateCovers: () -> Void
@@ -30,6 +31,8 @@ struct LibrarySelectionBar: View {
     var folders: [Folder] = []
     var onAddToFolder: (UUID) -> Void = { _ in }
     var onNewFolder: () -> Void = {}
+    /// Package the selection as .scobook files for AirDrop (macOS-only in v1).
+    var onSendToDevice: () -> Void = {}
 
     var body: some View {
         HStack(spacing: Spacing.md) {
@@ -60,12 +63,35 @@ struct LibrarySelectionBar: View {
             }
             .buttonStyle(.plain)
 
-            // Mark as Read button
-            actionButton(
-                title: "Mark as Read",
-                systemImage: "checkmark.circle",
-                action: onMarkAsRead
-            )
+            // Mark as Read / Unread — one control so the bar doesn't grow
+            Menu {
+                Button(action: onMarkAsRead) {
+                    Label("Mark as Read", systemImage: "checkmark.circle")
+                }
+                Button(action: onMarkAsUnread) {
+                    Label("Mark as Unread (Reset Progress)", systemImage: "book.closed")
+                }
+            } label: {
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: "checkmark.circle")
+                    Text("Mark as…")
+                        .font(Typography.bodySmall)
+                }
+                .foregroundColor(
+                    selectedComics.isEmpty ? TextColors.tertiary : AccentColors.primary
+                )
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .background(
+                    selectedComics.isEmpty
+                        ? BackgroundColors.elevated : AccentColors.primary.opacity(0.1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .menuIndicator(.hidden)
+            .buttonStyle(.plain)
+            .fixedSize()
+            .disabled(selectedComics.isEmpty)
 
             // Bulk Edit button — set series/publisher/year/format
             // on every selected book at once
@@ -186,6 +212,15 @@ struct LibrarySelectionBar: View {
             }
             .buttonStyle(.plain)
             .disabled(selectedComics.isEmpty)
+
+            // Send the selection to another device (Mac → iPad transfer)
+            #if os(macOS)
+                actionButton(
+                    title: "Send to Device",
+                    systemImage: "ipad.and.arrow.forward",
+                    action: onSendToDevice
+                )
+            #endif
 
             // Delete button
             Button(action: {

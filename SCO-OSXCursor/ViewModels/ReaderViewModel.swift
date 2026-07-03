@@ -47,6 +47,18 @@ class ReaderViewModel: ObservableObject {
     @Published private(set) var isAnimatingTurn: Bool = false
     @Published private(set) var lastInteractionAt: Date = .distantPast
 
+    // MARK: Next Issue Suggestion
+    /// True while the end-of-book "Up Next" preview is showing. Set when the
+    /// user tries to turn forward past the last page (and a next book exists);
+    /// a second forward turn requests advancing into that book.
+    @Published var showNextIssuePreview: Bool = false
+    /// One-shot signal: the user advanced "into" the suggested next book.
+    /// ComicReaderView observes this and swaps the reading comic.
+    @Published var advanceToNextIssueRequested: Bool = false
+    /// Set by ComicReaderView once the next book (per library sort order) is
+    /// known. When false, forward turns past the end stay inert as before.
+    var hasNextIssue: Bool = false
+
     // Computed style helpers
     var isVerticalScroll: Bool { readingStyle == .verticalScroll }
     var isMangaRTL: Bool { readingStyle == .mangaRTL }
@@ -494,8 +506,85 @@ class ReaderViewModel: ObservableObject {
         guard let comic = comicBook else { return }
         if currentPage < comic.totalPages - 1 {
             currentPage += 1
+        } else {
+            requestForwardPastEnd()
         }
     }
+
+    // MARK: - Next Issue Suggestion Handling
+
+    /// Called whenever the user tries to read FORWARD while already on the
+    /// last page. First attempt reveals the "Up Next" preview; a second one
+    /// advances into the suggested book (like turning one more page).
+    func requestForwardPastEnd() {
+        guard hasNextIssue else { return }
+        if showNextIssuePreview {
+            advanceToNextIssueRequested = true
+        } else {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                showNextIssuePreview = true
+            }
+        }
+        lastInteractionAt = Date()
+    }
+
+    /// Hide the preview (backward turn, tap outside, Escape).
+    func dismissNextIssuePreview() {
+        guard showNextIssuePreview else { return }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showNextIssuePreview = false
+        }
+    }
+
+    // MARK: - In-Place Book Switch (Next Issue)
+
+    /// Reset all per-book state so another book can load into this SAME
+    /// reader instance. Keeps the reader presented — swapping the library's
+    /// readingComic instead would dismiss + re-present the fullScreenCover.
+    private func tearDownCurrentBook() {
+        // Persist progress for the outgoing book before clearing references
+        saveCurrentProgress()
+
+        backgroundLoadTask?.cancel()
+        backgroundLoadTask = nil
+
+        if let url = cleanupURL {
+            url.stopAccessingSecurityScopedResource()
+            AppLog.reader.debug("🧹 Released security access (book switch): \(url.lastPathComponent)")
+        }
+        cleanupURL = nil
+        cleanupComicID = nil
+        cleanupCurrentPage = 0
+        cleanupTotalPages = 0
+
+        resolvedURL = nil
+        comicBook = nil
+        currentComic = nil
+        isLazyLoaded = false
+        loadedPages.removeAll()
+        pageAspects.removeAll()
+        thumbnailRequestsInFlight.removeAll()
+        errorMessage = nil
+        currentPage = 0
+
+        showNextIssuePreview = false
+        advanceToNextIssueRequested = false
+        hasNextIssue = false
+    }
+
+    /// Switch this reader to another book without tearing down the view.
+    func switchToComic(_ comic: Comic) async {
+        tearDownCurrentBook()
+        await loadComic(from: comic)
+    }
+
+    #if os(iOS)
+        /// Fast-path switch using an already pre-fetched ComicBook (no spinner).
+        func switchToPrefetched(_ comicBook: ComicBook, for comic: Comic) {
+            tearDownCurrentBook()
+            acceptPrefetched(comicBook, for: comic)
+        }
+    #endif
 
     func previousPage() {
         if currentPage > 0 {
@@ -520,11 +609,51 @@ class ReaderViewModel: ObservableObject {
         // In Manga/RTL mode, invert the step direction
         let effectiveSteps = isMangaRTL ? -steps : steps
 
+        // While the "Up Next" preview is visible it owns page turns:
+        // forward advances into the next book, backward dismisses it.
+        if showNextIssuePreview {
+            lastTurnAt = now
+            lastInteractionAt = now
+            if effectiveSteps > 0 {
+                requestForwardPastEnd()
+            } else {
+                dismissNextIssuePreview()
+            }
+            return
+        }
+
+        // In spread mode the last spread can show TWO pages with currentPage
+        // on its LEFT one: a plain forward turn would only move currentPage to
+        // the right page of the same visible spread — nothing changes on
+        // screen. Treat any forward turn starting on the last spread as
+        // reaching past the end.
+        if effectiveSteps > 0, isSpreadMode,
+            let lastSpread = pageSpreads.last,
+            currentPage >= lastSpread.leftPage.pageNumber - 1
+        {
+            lastTurnAt = now
+            lastInteractionAt = now
+            // Land on the true last page (same visible spread) so completion
+            // tracking still fires, then surface the suggestion.
+            if currentPage < comic.totalPages - 1 {
+                currentPage = comic.totalPages - 1
+            }
+            requestForwardPastEnd()
+            return
+        }
+
         // In spread mode, each logical step equals 2 pages
         let pageDelta = isSpreadMode ? (effectiveSteps * 2) : effectiveSteps
         let totalPages = comic.totalPages
         let target = clamp(currentPage + pageDelta, lower: 0, upper: max(0, totalPages - 1))
-        guard target != currentPage else { return }
+        guard target != currentPage else {
+            // Forward turn while already on the last page → suggest next issue
+            if effectiveSteps > 0 && currentPage >= totalPages - 1 {
+                lastTurnAt = now
+                requestForwardPastEnd()
+            }
+            return
+        }
 
         isAnimatingTurn = true
         lastTurnAt = now

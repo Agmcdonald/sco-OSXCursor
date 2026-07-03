@@ -36,12 +36,9 @@ struct SettingsView: View {
     // Publishers from the library (deduped) for the branding tool
     @State private var libraryPublishers: [String] = []
 
-    // Feedback / backup
+    // Feedback
     @State private var didCopyEmail = false
-    @State private var backupDocument: LibraryBackupDocument?
-    @State private var showingBackupExporter = false
-    @State private var backupError: String?
-    
+
     @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
     @AppStorage("showMetadataTags") private var showMetadataTags = true
 
@@ -158,11 +155,6 @@ struct SettingsView: View {
                     organizationSettings
                 }
 
-                // Backup Section
-                settingsSection(title: "Library Backup", icon: "externaldrive") {
-                    backupSettings
-                }
-
                 // Feedback & Support Section
                 settingsSection(title: "Feedback & Support", icon: "envelope") {
                     feedbackSettings
@@ -177,27 +169,6 @@ struct SettingsView: View {
         #endif
         .sheet(isPresented: $showingBrandingSheet) {
             BatchPublisherBrandingView(libraryPublishers: libraryPublishers)
-        }
-        .fileExporter(
-            isPresented: $showingBackupExporter,
-            document: backupDocument,
-            contentType: .sqliteDatabase,
-            defaultFilename: "SCO-Library-Backup-\(Self.backupDateString())"
-        ) { result in
-            if case .failure(let error) = result {
-                backupError = error.localizedDescription
-            }
-            backupDocument = nil
-        }
-        .alert(
-            "Backup Failed",
-            isPresented: Binding(
-                get: { backupError != nil },
-                set: { if !$0 { backupError = nil } })
-        ) {
-            Button("OK", role: .cancel) { backupError = nil }
-        } message: {
-            Text(backupError ?? "")
         }
         .sheet(isPresented: $showingReorganizeSheet) {
             if let libraryRoot = viewModel.resolveHomeLibraryURL() {
@@ -912,58 +883,6 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Library Backup
-
-    private static func backupDateString() -> String {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        return f.string(from: Date())
-    }
-
-    private func startBackup() {
-        Task {
-            do {
-                let data = try await DatabaseManager.shared.makeBackupData()
-                backupDocument = LibraryBackupDocument(data: data)
-                showingBackupExporter = true
-            } catch {
-                backupError = error.localizedDescription
-            }
-        }
-    }
-
-    private var backupSettings: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            Text(
-                "Save a copy of your library catalog — every book's metadata, reading progress, folders, and learned data. It's a safety net against data loss; it does not include the comic files themselves."
-            )
-            .font(Typography.bodySmall)
-            .foregroundColor(TextColors.secondary)
-
-            Button {
-                startBackup()
-            } label: {
-                HStack(spacing: Spacing.sm) {
-                    Image(systemName: "externaldrive.badge.timemachine")
-                    Text("Back Up Library Catalog…")
-                        .font(Typography.button)
-                }
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, Spacing.sm)
-                .background(AccentColors.primary)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-            }
-            .buttonStyle(.plain)
-
-            Text(
-                "Keep the backup somewhere safe, like iCloud Drive or another folder. To restore it, replace the app's database with this file — reach out if you need a hand."
-            )
-            .font(Typography.caption)
-            .foregroundColor(TextColors.tertiary)
-        }
-    }
-
     // MARK: - Feedback & Support
 
     private static let feedbackEmail = "info@rapturepress.com"
@@ -1174,28 +1093,10 @@ struct SettingsView: View {
             }
 
             if patternCount > 0 {
-                Button(action: {
-                    Task {
-                        await OrganizationLearner.shared.clearAllPatterns()
-                    }
-                }) {
-                    HStack {
-                        Image(systemName: "trash")
-                        Text("Clear Learned Patterns")
-                            .font(Typography.button)
-                    }
-                    .foregroundColor(AccentColors.error)
-                    .frame(maxWidth: .infinity)
-                    .padding(Spacing.sm)
-                    .background(AccentColors.error.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(AccentColors.error.opacity(0.3), lineWidth: 1)
-                    )
-                }
-                .buttonStyle(.plain)
-                .padding(.top, Spacing.sm)
+                Text("You can clear learned patterns from the Maintenance tab.")
+                    .font(Typography.caption)
+                    .foregroundColor(TextColors.tertiary)
+                    .padding(.top, Spacing.xs)
             }
         }
         .padding(Spacing.md)
@@ -1248,33 +1149,4 @@ struct SettingsView: View {
 
 #Preview {
     SettingsView()
-}
-
-// MARK: - Library Backup Document
-
-extension UTType {
-    /// SQLite database type, preferring the ".db" extension for exports.
-    static var sqliteDatabase: UTType {
-        UTType(filenameExtension: "db") ?? .database
-    }
-}
-
-/// A simple in-memory document used to export the library catalog snapshot.
-struct LibraryBackupDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.sqliteDatabase, .database, .data] }
-    static var writableContentTypes: [UTType] { [.sqliteDatabase] }
-
-    var data: Data
-
-    init(data: Data) {
-        self.data = data
-    }
-
-    init(configuration: ReadConfiguration) throws {
-        data = configuration.file.regularFileContents ?? Data()
-    }
-
-    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        FileWrapper(regularFileWithContents: data)
-    }
 }

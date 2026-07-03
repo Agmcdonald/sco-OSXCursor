@@ -35,6 +35,21 @@
 		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 	</array>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>SCO Book Package</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.rapturepress.supercomicorganizer.scobook</string>
+			</array>
+		</dict>
+	</array>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
@@ -56,6 +71,26 @@
 				</array>
 				<key>public.mime-type</key>
 				<string>application/x-rar-compressed</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.archive</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>SCO Book Package</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.rapturepress.supercomicorganizer.scobook</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>scobook</string>
+				</array>
+				<key>public.mime-type</key>
+				<string>application/x-scobook</string>
 			</dict>
 		</dict>
 	</array>

@@ -27,6 +27,14 @@ final class LibraryViewModel: ObservableObject {
     // ✅ Track the comic currently being read to present in full screen
     @Published var readingComic: Comic?
 
+    /// Display-order snapshot of the list the current book was opened from
+    /// (library grid/list, folder, search results). Captured by LibraryView in
+    /// openReader(); drives the "next issue" suggestion so it follows whatever
+    /// sort order the user was browsing in. Nil when opened from elsewhere
+    /// (e.g. the Dashboard) — nextComic(after:) then falls back to the whole
+    /// library in the current sort order.
+    var readingOrderIDs: [UUID]?
+
     // ✅ Pre-fetched comic data for instant reader launch (iOS only)
     #if os(iOS)
         @Published var prefetchedComicBook: ComicBook?
@@ -96,6 +104,41 @@ final class LibraryViewModel: ObservableObject {
         } catch {
             AppLog.library.error("[LibraryViewModel] ❌ Failed to load comics: \(error)")
         }
+    }
+
+    // MARK: - Next Issue Suggestion
+
+    /// The book that comes after `comicID` in the order the user is browsing.
+    ///
+    /// Preferred source is `readingOrderIDs` — the exact filtered/sorted list
+    /// the book was opened from (so folder scope, filters and search are all
+    /// respected). Falls back to the whole library sorted by the persisted
+    /// library sort option. Returns nil when the book is the last one.
+    func nextComic(after comicID: UUID) -> Comic? {
+        // 1. Exact display order captured when the book was opened
+        if let order = readingOrderIDs, let index = order.firstIndex(of: comicID) {
+            for nextID in order.dropFirst(index + 1) {
+                // Skip entries deleted since the order was captured
+                if let next = comics.first(where: { $0.id == nextID }) {
+                    return next
+                }
+            }
+            return nil
+        }
+
+        // 2. Fallback: whole library in the current sort order
+        let storedSort = UserDefaults.standard.string(forKey: "librarySortOption")
+        let sort = storedSort.flatMap(LibrarySortOption.init(rawValue:)) ?? .dateAdded
+        let ordered = LibraryQuery.apply(
+            to: comics,
+            searchText: "",
+            filters: LibraryFilters(),
+            sort: sort
+        )
+        guard let index = ordered.firstIndex(where: { $0.id == comicID }),
+            index + 1 < ordered.count
+        else { return nil }
+        return ordered[index + 1]
     }
 
     // ✅ DB-only persistence (NO array update)
@@ -709,6 +752,36 @@ final class LibraryViewModel: ObservableObject {
         return newComics.map(\.id)
     }
 
+    // MARK: - Device Transfer (.scobook)
+
+    /// Inserts a book received from another device (see BookPackageImporter).
+    /// The comic arrives fully formed from the transfer manifest — metadata,
+    /// reading progress, flags, and per-book reader prefs — so no filename
+    /// parsing or ComicVine fetch happens here.
+    func addTransferredComic(_ comic: Comic) async {
+        do {
+            try await database.saveComic(comic)
+            if let index = comics.firstIndex(where: { $0.id == comic.id }) {
+                comics[index] = comic
+            } else {
+                comics.append(comic)
+            }
+            await logActivity(.imported, comic: comic, new: comic.fileName)
+            // Teach the learning system, same as a normal import
+            SeriesKnowledge.shared.recordImport(
+                series: comic.series,
+                publisher: comic.publisher,
+                bookFormat: comic.bookFormat
+            )
+            checkAndAutoPopulateKnowledge(comic: comic)
+            AppLog.library.info(
+                "[LibraryViewModel] ✅ Received via transfer: \(comic.fileName)")
+        } catch {
+            AppLog.library.error(
+                "[LibraryViewModel] ❌ Failed to save transferred comic: \(error)")
+        }
+    }
+
     // MARK: - Bundle Import
 
     /// Scans the app bundle for comic files and imports them if not already present
@@ -755,6 +828,20 @@ final class LibraryViewModel: ObservableObject {
             if updatedComic.totalPages > 0 {
                 updatedComic.currentPage = updatedComic.totalPages - 1
             }
+            updateComic(updatedComic)
+        }
+    }
+
+    /// Mark books unread and reset their reading progress ("start over").
+    /// Clears status, current page, and last-read date; per-book reader
+    /// preferences (zoom, transition, etc.) are left untouched.
+    func markAsUnread(_ comicsToReset: [Comic]) {
+        AppLog.library.debug("[LibraryViewModel] 🔄 Resetting progress on \(comicsToReset.count) comics")
+        for comic in comicsToReset {
+            var updatedComic = comic
+            updatedComic.status = .unread
+            updatedComic.currentPage = 0
+            updatedComic.lastReadDate = nil
             updateComic(updatedComic)
         }
     }
@@ -928,6 +1015,37 @@ final class LibraryViewModel: ObservableObject {
             try? await database.deleteKnowledgeEntry(type: type, name: name)
             AppLog.library.debug("[LibraryViewModel] 🧹 Pruned orphaned \(type.rawValue) suggestion: \(name)")
         }
+    }
+
+    /// Bulk sweep for the Maintenance tab: removes every publisher/series
+    /// knowledge entry that no book in the library uses anymore. The per-edit
+    /// `pruneKnowledgeIfOrphaned` handles the common case reactively; this
+    /// catches anything that slipped through (bulk deletes, old data).
+    /// Returns the number of entries removed.
+    func pruneOrphanedKnowledge() async -> Int {
+        func normalize(_ s: String?) -> String? {
+            guard let s else { return nil }
+            let n = s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return n.isEmpty ? nil : n
+        }
+        let usedPublishers = Set(comics.compactMap { normalize($0.publisher) })
+        let usedSeries = Set(comics.compactMap { normalize($0.series) })
+
+        var removed = 0
+        for type in [KnowledgeEntry.EntryType.publisher, .series] {
+            guard let entries = try? await database.fetchKnowledgeEntries(type: type) else {
+                continue
+            }
+            let used = (type == .publisher) ? usedPublishers : usedSeries
+            for entry in entries where !used.contains(entry.normalizedName) {
+                if (try? await database.deleteKnowledgeEntry(entry)) != nil {
+                    removed += 1
+                    AppLog.library.debug(
+                        "[LibraryViewModel] 🧹 Pruned orphaned \(type.rawValue): \(entry.name)")
+                }
+            }
+        }
+        return removed
     }
 
     // MARK: - Re-sort After Edits

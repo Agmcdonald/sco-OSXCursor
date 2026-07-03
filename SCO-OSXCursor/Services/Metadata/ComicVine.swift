@@ -174,6 +174,76 @@ struct CVCandidate: Codable, Identifiable, Hashable {
     }
 }
 
+// MARK: - Pre-fetch snapshot (undo)
+
+/// The metadata fields a ComicVine fetch can change, captured just before the
+/// fetch is applied and stored (JSON) on the Comic record so the user can
+/// revert a wrong match. Reading state, tags, covers, and reader preferences
+/// are never touched by a fetch, so they're not snapshotted.
+struct CVMetadataSnapshot: Codable {
+    var title: String?
+    var publisher: String?
+    var series: String?
+    var year: Int?
+    var writer: String?
+    var artist: String?
+    var coverArtist: String?
+    var colorist: String?
+    var inker: String?
+    var editor: String?
+    var summary: String?
+    var comicVineVolumeID: Int?
+    var comicVineIssueID: Int?
+    var metadataFetchedAt: Date?
+    var metadataCandidates: String?
+
+    init(of comic: Comic) {
+        title = comic.title
+        publisher = comic.publisher
+        series = comic.series
+        year = comic.year
+        writer = comic.writer
+        artist = comic.artist
+        coverArtist = comic.coverArtist
+        colorist = comic.colorist
+        inker = comic.inker
+        editor = comic.editor
+        summary = comic.summary
+        comicVineVolumeID = comic.comicVineVolumeID
+        comicVineIssueID = comic.comicVineIssueID
+        metadataFetchedAt = comic.metadataFetchedAt
+        metadataCandidates = comic.metadataCandidates
+    }
+
+    /// Write the snapshot's fields back onto a comic (undo).
+    func restore(onto comic: inout Comic) {
+        comic.title = title
+        comic.publisher = publisher
+        comic.series = series
+        comic.year = year
+        comic.writer = writer
+        comic.artist = artist
+        comic.coverArtist = coverArtist
+        comic.colorist = colorist
+        comic.inker = inker
+        comic.editor = editor
+        comic.summary = summary
+        comic.comicVineVolumeID = comicVineVolumeID
+        comic.comicVineIssueID = comicVineIssueID
+        comic.metadataFetchedAt = metadataFetchedAt
+        comic.metadataCandidates = metadataCandidates
+    }
+
+    func encoded() -> String? {
+        (try? JSONEncoder().encode(self)).flatMap { String(data: $0, encoding: .utf8) }
+    }
+
+    static func decode(_ json: String?) -> CVMetadataSnapshot? {
+        guard let json = json, let data = json.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(CVMetadataSnapshot.self, from: data)
+    }
+}
+
 // MARK: - Request throttle
 
 /// Serializes ComicVine requests and enforces a minimum spacing between them.
@@ -524,10 +594,35 @@ extension LibraryViewModel {
 
     @MainActor
     private func applyVolume(_ volume: CVVolumeResult, to comic: Comic) async -> ComicVineFetchOutcome {
-        var updated = await ComicVineFetcher.fill(comic, from: volume)
+        // Work from the freshest copy so the pre-fetch snapshot captures any
+        // edits made since the caller grabbed its reference.
+        let current = comics.first(where: { $0.id == comic.id }) ?? comic
+        let snapshot = CVMetadataSnapshot(of: current)
+        var updated = await ComicVineFetcher.fill(current, from: volume)
+        updated.metadataBackup = snapshot.encoded()
         updated.dateModified = Date()
         updateComic(updated)
         return .updated
+    }
+
+    /// Undo the last applied ComicVine fetch: restore the pre-fetch metadata
+    /// snapshot stored on the record. Clearing `metadataFetchedAt` back to its
+    /// old (usually nil) value also re-opens the book for future fetches.
+    /// Returns false when there's nothing to revert.
+    @MainActor
+    @discardableResult
+    func revertComicVineFetch(for comic: Comic) -> Bool {
+        let current = comics.first(where: { $0.id == comic.id }) ?? comic
+        guard let snapshot = CVMetadataSnapshot.decode(current.metadataBackup) else {
+            return false
+        }
+        var updated = current
+        snapshot.restore(onto: &updated)
+        updated.metadataBackup = nil
+        updated.dateModified = Date()
+        updateComic(updated)
+        AppLog.metadata.info("[ComicVine] ↩️ Reverted fetch for \(updated.fileName)")
+        return true
     }
 }
 

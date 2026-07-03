@@ -1,11 +1,56 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct DashboardOverviewView: View {
     @ObservedObject var libraryViewModel: LibraryViewModel
+    /// Navigates to the Knowledge tab (wired up in ContentView).
+    var onOpenKnowledge: () -> Void = {}
     @ObservedObject private var comicVineQuota = ComicVineQuota.shared
     @State private var topPublishers: [(String, Int)] = []
+    @State private var showingFilePicker = false
+    @State private var showingFolderScanner = false
 
     var body: some View {
+        VStack(spacing: Spacing.md) {
+            // ComicVine API quota — full-width bar above the three columns
+            DashboardSectionCard(
+                title: "ComicVine API",
+                subtitle: "Metadata calls used this hour."
+            ) {
+                comicVineQuotaContent
+            }
+
+            columns
+        }
+        // SwiftUI honors only ONE .fileImporter per view, so each importer
+        // sits on its own invisible background view (same pattern as
+        // LibraryView).
+        // Add Files — same types as Library Quick Add.
+        .background(
+            Color.clear.fileImporter(
+                isPresented: $showingFilePicker,
+                allowedContentTypes: [
+                    .folder, .zip, .pdf, .cbr, .epub, UTType(filenameExtension: "cbr")!,
+                    UTType(filenameExtension: "epub") ?? .data,
+                ],
+                allowsMultipleSelection: true
+            ) { result in
+                handleImport(result)
+            }
+        )
+        // Scan Folder — folder-only; importComics expands folders recursively.
+        .background(
+            Color.clear.fileImporter(
+                isPresented: $showingFolderScanner,
+                allowedContentTypes: [.folder],
+                allowsMultipleSelection: true
+            ) { result in
+                handleImport(result)
+            }
+        )
+    }
+
+    private var columns: some View {
         HStack(alignment: .top, spacing: Spacing.md) {
             // Left Column
             VStack(spacing: Spacing.md) {
@@ -26,7 +71,7 @@ struct DashboardOverviewView: View {
                 DashboardSectionCard(title: "Quick Actions") {
                     VStack(spacing: Spacing.sm) {
                         Button(action: {
-                            // TODO: Add files action
+                            showingFilePicker = true
                         }) {
                             HStack {
                                 Image(systemName: "plus")
@@ -41,7 +86,7 @@ struct DashboardOverviewView: View {
                         .buttonStyle(.plain)
 
                         Button(action: {
-                            // TODO: Scan folder action
+                            showingFolderScanner = true
                         }) {
                             HStack {
                                 Image(systemName: "folder.badge.magnifyingglass")
@@ -56,7 +101,7 @@ struct DashboardOverviewView: View {
                         .buttonStyle(.plain)
 
                         Button(action: {
-                            // TODO: Open knowledge action
+                            onOpenKnowledge()
                         }) {
                             HStack {
                                 Image(systemName: "tag")
@@ -169,24 +214,27 @@ struct DashboardOverviewView: View {
                     }
                     .padding(.top, Spacing.md)
                 }
-
-                // ComicVine API quota
-                DashboardSectionCard(
-                    title: "ComicVine API",
-                    subtitle: "Metadata calls used this hour."
-                ) {
-                    comicVineQuotaContent
-                }
             }
             .frame(maxWidth: .infinity)
         }
     }
 
+    private func handleImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            Task { await libraryViewModel.importComics(from: urls) }
+        case .failure(let error):
+            AppLog.library.error(
+                "Dashboard file import failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Laid out for the full-width bar: count | progress | reset time.
     private var comicVineQuotaContent: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            HStack(alignment: .firstTextBaseline) {
+        HStack(spacing: Spacing.md) {
+            HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
                 Text("\(comicVineQuota.callsInLastHour)")
-                    .font(.system(size: 32, weight: .bold))
+                    .font(.system(size: 28, weight: .bold))
                     .foregroundColor(
                         comicVineQuota.callsInLastHour >= ComicVineQuota.hourlyLimit
                             ? AccentColors.error : TextColors.primary
@@ -194,30 +242,33 @@ struct DashboardOverviewView: View {
                 Text("/ \(ComicVineQuota.hourlyLimit) calls")
                     .font(Typography.caption)
                     .foregroundColor(TextColors.secondary)
-                Spacer()
             }
+            .fixedSize()
 
             ProgressView(
                 value: Double(min(comicVineQuota.callsInLastHour, ComicVineQuota.hourlyLimit)),
                 total: Double(ComicVineQuota.hourlyLimit)
             )
-            .tint(comicVineQuota.callsInLastHour >= ComicVineQuota.hourlyLimit ? AccentColors.error : AccentColors.primary)
+            .tint(
+                comicVineQuota.callsInLastHour >= ComicVineQuota.hourlyLimit
+                    ? AccentColors.error : AccentColors.primary
+            )
+            .frame(maxWidth: .infinity)
 
-            if let reset = comicVineQuota.nextReset {
-                HStack(spacing: Spacing.xs) {
-                    Image(systemName: "clock.arrow.circlepath")
-                        .font(.system(size: 11))
-                    Text("More budget at \(reset.formatted(date: .omitted, time: .shortened))")
-                        .font(Typography.caption)
-                }
-                .foregroundColor(TextColors.tertiary)
-            } else {
-                Text("No calls yet this hour.")
-                    .font(Typography.caption)
-                    .foregroundColor(TextColors.tertiary)
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: 11))
+                Text(
+                    comicVineQuota.nextReset.map {
+                        "More budget at \($0.formatted(date: .omitted, time: .shortened))"
+                    } ?? "No calls yet this hour."
+                )
+                .font(Typography.caption)
             }
+            .foregroundColor(TextColors.tertiary)
+            .fixedSize()
         }
-        .padding(.top, Spacing.md)
+        .padding(.top, Spacing.sm)
     }
 
     private func calculateStats() {

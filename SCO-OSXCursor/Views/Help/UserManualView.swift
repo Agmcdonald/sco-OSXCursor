@@ -160,6 +160,13 @@ struct UserManualView: View {
                         )
 
                         FeatureRow(
+                            icon: "book.closed",
+                            title: "Mark as Read & Unread",
+                            description:
+                                "Right-click (or long-press) a book to 'Mark as Read' or 'Mark as Unread' — unread also resets its reading progress back to page one. With several books selected, use the 'Mark as…' menu in the selection toolbar to update them all at once."
+                        )
+
+                        FeatureRow(
                             icon: "trash",
                             title: "Deleting Books & Files",
                             description:
@@ -374,6 +381,13 @@ struct UserManualView: View {
                             description:
                                 "Open the grid icon in the reader's top bar to see thumbnails of every page and jump anywhere instantly. Thumbnails load on demand, so even very large books open the grid without delay."
                         )
+
+                        FeatureRow(
+                            icon: "arrow.forward.circle",
+                            title: "Up Next — Jump to the Next Book",
+                            description:
+                                "Turn forward past the last page and SCO shows an 'Up Next' preview of the next book in your library's current sort order, with its cover. Turn forward once more — or tap Start Reading — to flow straight into it like turning a page. Tap anywhere else to dismiss and stay where you are."
+                        )
                     }
                 }
 
@@ -413,6 +427,13 @@ struct UserManualView: View {
                         )
 
                         FeatureRow(
+                            icon: "arrow.uturn.backward",
+                            title: "Reverting a ComicVine Fetch",
+                            description:
+                                "Applied the wrong match? Right-click (or long-press) the book and choose 'Revert ComicVine Fetch' to restore exactly the metadata it had before the fetch. Your reading progress, tags, covers, and reader preferences are never touched by a fetch, so they're always safe."
+                        )
+
+                        FeatureRow(
                             icon: "photo.artframe",
                             title: "Publisher Banners",
                             description:
@@ -448,6 +469,80 @@ struct UserManualView: View {
                             description:
                                 "Add comics to your 'Want to Read' list (from the selection toolbar or context menu) to keep them accessible at the top of the Library and Dashboard. Track the books you've started in the 'Currently Reading' section."
                         )
+
+                        FeatureRow(
+                            icon: "heart.text.square",
+                            title: "Library Health",
+                            description:
+                                "The Health tab shows an overall health score for your collection and flags issues it finds — potential duplicates, missing metadata, missing cover art, and missing files. Each issue card has a 'Fix in Maintenance' button that jumps you straight to the right tool, and duplicates open a review sheet where you can compare copies and remove or delete the extras."
+                        )
+                    }
+                }
+
+                // 4a. Send to Another Device
+                ManualSection(
+                    title: "Send to Another Device",
+                    icon: "ipad.and.arrow.forward",
+                    description: "Move books between your Mac and iPad — file, metadata, and reading progress together."
+                ) {
+                    VStack(alignment: .leading, spacing: Spacing.xl) {
+                        FeatureRow(
+                            icon: "square.and.arrow.up",
+                            title: "Sending Books",
+                            description:
+                                "Right-click (or long-press) a book and choose 'Send to Device…', or select several and use 'Send to Device' in the selection toolbar. SCO packages each book — the comic file plus its metadata and reading progress — into a .scobook package. Press 'Send…' and pick AirDrop in the share menu to beam it straight to your iPad (or save it to Files to move it any other way)."
+                        )
+
+                        FeatureRow(
+                            icon: "square.and.arrow.down",
+                            title: "Receiving Books",
+                            description:
+                                "Open a .scobook package — via AirDrop, the Files app, or double-clicking it — and SCO shows the Incoming Book sheet with the book's details. Add it to a new folder, an existing folder, or choose 'Just Add to Library'. The book arrives with its metadata and reading progress intact."
+                        )
+
+                        FeatureRow(
+                            icon: "doc.on.doc",
+                            title: "Duplicates Are Caught",
+                            description:
+                                "If the incoming book is already in your library, SCO tells you before anything is imported — choose 'Keep Existing Copy' to skip it, or add the new copy anyway."
+                        )
+                    }
+                }
+
+                // 4c. Maintenance
+                ManualSection(
+                    title: "Maintenance",
+                    icon: "wrench.and.screwdriver",
+                    description: "Keep your library catalog healthy — fix issues, back up, and reclaim space."
+                ) {
+                    VStack(alignment: .leading, spacing: Spacing.xl) {
+                        FeatureRow(
+                            icon: "checkmark.shield",
+                            title: "Library Integrity",
+                            description:
+                                "The Maintenance tab (wrench icon in the sidebar) scans for problems with the books in your library: potential duplicates, missing metadata, missing cover art, and missing files. Use 'Scan for Missing Files' to re-check that every book's file is still where it should be."
+                        )
+
+                        FeatureRow(
+                            icon: "cylinder.split.1x2",
+                            title: "Database Tools",
+                            description:
+                                "The Database section holds 'Back Up…' and 'Restore…' for your library catalog, plus deeper tools: 'Check Database Integrity' verifies the catalog is sound, 'Optimize Database' compacts it for speed, and 'Prune Activity Log' trims old activity entries (older than 30 or 90 days, or clear all)."
+                        )
+
+                        FeatureRow(
+                            icon: "brain.head.profile",
+                            title: "Knowledge Cleanup",
+                            description:
+                                "'Clean Up Knowledge Base' removes learned entries that no longer match any books, and 'Clear Learned Patterns' resets everything the app has learned from your corrections — use it only if the learning has gone wrong, as it can't be undone."
+                        )
+
+                        FeatureRow(
+                            icon: "internaldrive",
+                            title: "Reclaim Storage",
+                            description:
+                                "The Storage section shows how much disk space image caches are using. 'Clear Caches' frees that space instantly — covers and page thumbnails are simply re-created as you browse and read."
+                        )
                     }
                 }
 
@@ -462,7 +557,7 @@ struct UserManualView: View {
                             icon: "externaldrive.badge.timemachine",
                             title: "Back Up Your Library",
                             description:
-                                "In Settings → Library Backup, tap 'Back Up Library Catalog…' to save a copy of all your books' metadata, reading progress, folders, and learned data. Keep it somewhere safe like iCloud Drive. The backup is your catalog, not the comic files themselves, so it's a small, quick safety net."
+                                "In Maintenance → Database, tap 'Back Up…' to save a copy of all your books' metadata, reading progress, folders, and learned data. Keep it somewhere safe like iCloud Drive. The backup is your catalog, not the comic files themselves, so it's a small, quick safety net. To bring a backup back, use 'Restore…' right below it."
                         )
 
                         FeatureRow(

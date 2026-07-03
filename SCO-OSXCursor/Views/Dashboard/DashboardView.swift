@@ -2,6 +2,10 @@ import SwiftUI
 
 struct DashboardView: View {
     @ObservedObject var libraryViewModel: LibraryViewModel
+    /// Navigates to the Knowledge tab (wired up in ContentView).
+    var onOpenKnowledge: () -> Void = {}
+    /// Navigates to the Maintenance tab (wired up in ContentView).
+    var onOpenMaintenance: () -> Void = {}
     @State private var selectedTab: DashboardTab = .overview
 
     enum DashboardTab: String, CaseIterable {
@@ -67,13 +71,19 @@ struct DashboardView: View {
                 Group {
                     switch selectedTab {
                     case .overview:
-                        DashboardOverviewView(libraryViewModel: libraryViewModel)
+                        DashboardOverviewView(
+                            libraryViewModel: libraryViewModel,
+                            onOpenKnowledge: onOpenKnowledge
+                        )
                     case .insights:
                         DashboardInsightsView(libraryViewModel: libraryViewModel)
                     case .reading:
                         DashboardReadingView(libraryViewModel: libraryViewModel)
                     case .health:
-                        DashboardHealthView(libraryViewModel: libraryViewModel)
+                        DashboardHealthView(
+                            libraryViewModel: libraryViewModel,
+                            onOpenMaintenance: onOpenMaintenance
+                        )
                     case .activity:
                         DashboardActivityView(libraryViewModel: libraryViewModel)
                     }

@@ -74,6 +74,9 @@ struct Comic: Identifiable, Codable {
     /// JSON [CVCandidate] stored when a search was ambiguous, so the user can
     /// resolve it later from the match picker at zero additional API cost.
     var metadataCandidates: String?
+    /// JSON snapshot of the metadata fields as they were just BEFORE the last
+    /// ComicVine fetch was applied. Non-nil = the fetch can be reverted.
+    var metadataBackup: String?
 
     // MARK: - File Info
     var fileSize: Int64  // in bytes
@@ -123,6 +126,7 @@ struct Comic: Identifiable, Codable {
         comicVineIssueID: Int? = nil,
         metadataFetchedAt: Date? = nil,
         metadataCandidates: String? = nil,
+        metadataBackup: String? = nil,
         contentRating: ContentRating = .allAges,
         fileSize: Int64 = 0,
         fileType: FileType = .cbz,
@@ -167,6 +171,7 @@ struct Comic: Identifiable, Codable {
         self.comicVineIssueID = comicVineIssueID
         self.metadataFetchedAt = metadataFetchedAt
         self.metadataCandidates = metadataCandidates
+        self.metadataBackup = metadataBackup
         self.contentRating = contentRating
         self.fileSize = fileSize
         self.fileType = fileType
@@ -670,6 +675,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         static let comicVineIssueID = Column("comicvine_issue_id")
         static let metadataFetchedAt = Column("metadata_fetched_at")
         static let metadataCandidates = Column("metadata_candidates")
+        static let metadataBackup = Column("metadata_backup")
         static let contentRating = Column("content_rating")
         static let fileSize = Column("file_size")
         static let fileType = Column("file_type")
@@ -717,6 +723,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         container[Columns.comicVineIssueID] = comicVineIssueID
         container[Columns.metadataFetchedAt] = metadataFetchedAt
         container[Columns.metadataCandidates] = metadataCandidates
+        container[Columns.metadataBackup] = metadataBackup
         container[Columns.contentRating] = contentRating.rawValue
         container[Columns.fileSize] = fileSize
         container[Columns.fileType] = fileType.rawValue
@@ -789,6 +796,7 @@ extension Comic: FetchableRecord, PersistableRecord {
             comicVineIssueID: row["comicvine_issue_id"],
             metadataFetchedAt: row["metadata_fetched_at"],
             metadataCandidates: row["metadata_candidates"],
+            metadataBackup: row["metadata_backup"],
             contentRating: ContentRating(rawValue: row["content_rating"] ?? 0) ?? .allAges,
             fileSize: fileSize,
             fileType: fileType,

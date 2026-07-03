@@ -529,6 +529,25 @@ final class DatabaseManager {
             AppLog.database.info("[DatabaseManager] ✅ Migration v21_folder_cover complete")
         }
 
+        // Version 22: ComicVine fetch undo. Stores a JSON snapshot of the
+        // metadata fields as they were just before the last fetch was applied,
+        // so a wrong match can be reverted (metadata_fetched_at gates
+        // re-fetching, so users need an escape hatch).
+        migrator.registerMigration("v22_metadata_backup") { db in
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v22_metadata_backup")
+            if try db.tableExists("comics") {
+                do {
+                    try db.alter(table: "comics") { t in
+                        t.add(column: "metadata_backup", .text)
+                    }
+                    AppLog.database.info("[DatabaseManager] ✅ Added metadata_backup column")
+                } catch {
+                    AppLog.database.error("[DatabaseManager] ℹ️ metadata_backup column may already exist: \(error.localizedDescription)")
+                }
+            }
+            AppLog.database.info("[DatabaseManager] ✅ Migration v22_metadata_backup complete")
+        }
+
         return migrator
     }
 
@@ -784,6 +803,75 @@ final class DatabaseManager {
         return try await dbQueue.read { _ in
             try Data(contentsOf: path)
         }
+    }
+
+    /// Replaces the live database with a backup snapshot previously produced
+    /// by `makeBackupData()`, then re-runs migrations and reopens the
+    /// connection. Callers must reload any in-memory state afterwards
+    /// (e.g. `LibraryViewModel.loadComics()`).
+    func restoreFromBackup(_ data: Data) async throws {
+        // Cheap sanity check before touching the live file: every SQLite
+        // database starts with this 16-byte header string.
+        let magic = Data("SQLite format 3\0".utf8)
+        guard data.count > magic.count, data.prefix(magic.count) == magic else {
+            throw DatabaseError.invalidBackupFile
+        }
+
+        let path = try getDatabasePath()
+
+        // Close the current connection so the file can be swapped safely.
+        dbQueue = nil
+
+        do {
+            try data.write(to: path, options: .atomic)
+            // Remove stale sidecar files left over from the previous database.
+            let fm = FileManager.default
+            try? fm.removeItem(atPath: path.path + "-wal")
+            try? fm.removeItem(atPath: path.path + "-shm")
+
+            let newQueue = try DatabaseQueue(path: path.path)
+            try migrator.migrate(newQueue)
+            dbQueue = newQueue
+            AppLog.database.info("[DatabaseManager] ✅ Restored database from backup")
+        } catch {
+            // Best effort: reopen whatever is on disk so the app keeps working.
+            dbQueue = try? DatabaseQueue(path: path.path)
+            AppLog.database.error("[DatabaseManager] ❌ Restore failed: \(error)")
+            throw error
+        }
+    }
+}
+
+// MARK: - Maintenance
+
+extension DatabaseManager {
+    /// Size in bytes of the database file on disk.
+    func databaseFileSizeBytes() throws -> Int64 {
+        let path = try getDatabasePath()
+        let attrs = try FileManager.default.attributesOfItem(atPath: path.path)
+        return (attrs[.size] as? Int64) ?? 0
+    }
+
+    /// Runs SQLite's built-in integrity check. Returns "ok" when the file is
+    /// healthy, otherwise a description of the corruption found.
+    func integrityCheck() async throws -> String {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+        return try await dbQueue.read { db in
+            try String.fetchOne(db, sql: "PRAGMA integrity_check") ?? "unknown"
+        }
+    }
+
+    /// Rebuilds all indexes and reclaims free space (REINDEX + VACUUM).
+    /// VACUUM cannot run inside a transaction, so this uses the
+    /// no-transaction write entry point on a background task.
+    func optimizeDatabase() async throws {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+        try await Task.detached(priority: .utility) {
+            try dbQueue.writeWithoutTransaction { db in
+                try db.execute(sql: "REINDEX")
+                try db.execute(sql: "VACUUM")
+            }
+        }.value
     }
 }
 
@@ -1199,6 +1287,7 @@ enum DatabaseError: LocalizedError {
     case fetchFailed
     case updateFailed
     case deleteFailed
+    case invalidBackupFile
 
     var errorDescription: String? {
         switch self {
@@ -1212,6 +1301,8 @@ enum DatabaseError: LocalizedError {
             return "Failed to update database"
         case .deleteFailed:
             return "Failed to delete from database"
+        case .invalidBackupFile:
+            return "That file doesn't look like a library backup (not a SQLite database)"
         }
     }
 }

@@ -303,6 +303,42 @@ final class PageImageCache {
         sizeCache.removeAllObjects()
     }
 
+    /// Total size in bytes of the grid thumbnails persisted to disk.
+    /// Enumerates the cache folder, so call this off the main thread.
+    func diskCacheSizeBytes() -> Int64 {
+        guard let dir = Self.gridThumbnailDir else { return 0 }
+        let fm = FileManager.default
+        guard
+            let files = try? fm.contentsOfDirectory(
+                at: dir, includingPropertiesForKeys: [.fileSizeKey],
+                options: .skipsHiddenFiles)
+        else { return 0 }
+        return files.reduce(Int64(0)) { total, url in
+            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            return total + Int64(size)
+        }
+    }
+
+    /// Empty every in-memory cache AND delete the persisted grid thumbnails.
+    /// Everything is regenerated on demand, so this is always safe — it just
+    /// makes the next render of each page/cover a little slower. Disk deletion
+    /// runs on the cache's serial disk queue; `completion` fires (on that
+    /// queue) once the folder has been emptied.
+    func clearAllIncludingDisk(completion: (@Sendable () -> Void)? = nil) {
+        removeAll()
+        diskQueue.async {
+            if let dir = Self.gridThumbnailDir {
+                let fm = FileManager.default
+                if let files = try? fm.contentsOfDirectory(
+                    at: dir, includingPropertiesForKeys: nil)
+                {
+                    for url in files { try? fm.removeItem(at: url) }
+                }
+            }
+            completion?()
+        }
+    }
+
     // MARK: Disk-backed grid thumbnails
 
     /// Directory holding persisted grid thumbnails. A `static let` so it is

@@ -163,7 +163,12 @@ struct DashboardReadingView: View {
                                 ForEach(items) { comic in
                                     ReadingListRow(
                                         comic: comic,
-                                        onOpen: { libraryViewModel.readingComic = comic },
+                                        onOpen: {
+                                            // No grid context — "Up Next" falls back
+                                            // to the library-wide sort order
+                                            libraryViewModel.readingOrderIDs = nil
+                                            libraryViewModel.readingComic = comic
+                                        },
                                         onRemove: selectedSubTab == .readingList
                                             ? { libraryViewModel.toggleReadingList(comic) }
                                             : nil
