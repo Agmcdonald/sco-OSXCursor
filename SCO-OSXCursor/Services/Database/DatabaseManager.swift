@@ -899,6 +899,55 @@ extension DatabaseManager {
         }
     }
 
+    /// Populate the Knowledge Base from a comic's metadata — series, publisher,
+    /// and every creator credit (each split into individual people). This is the
+    /// single source of truth for comic → KB sync, shared by the manual inspector
+    /// save and every automated import path (including ComicVine enrichment), so
+    /// the two can never drift apart again. Idempotent: duplicate names are
+    /// ignored via the table's UNIQUE(type, normalized_name) constraint.
+    func syncKnowledge(from comic: Comic) async {
+        let fields: [(String?, KnowledgeEntry.EntryType)] = [
+            (comic.series, .series),
+            (comic.publisher, .publisher),
+            (comic.writer, .writer),
+            (comic.artist, .artist),
+            (comic.coverArtist, .coverArtist),
+            (comic.colorist, .colorist),
+            (comic.inker, .inker),
+            (comic.editor, .editor),
+        ]
+        for (value, type) in fields {
+            // Creator credits can list several people in one field
+            // ("Claire Roe, J. Bone & Nicola Scott") — store one entry per
+            // person. Series/publisher are single values and stay intact.
+            let names = type.isCreatorType
+                ? KnowledgeEntry.splitCreditNames(value)
+                : [value?.trimmingCharacters(in: .whitespacesAndNewlines)]
+                    .compactMap { $0 }.filter { !$0.isEmpty }
+            for name in names {
+                try? await saveKnowledgeEntry(KnowledgeEntry(type: type, name: name))
+            }
+        }
+    }
+
+    /// One-time repair for libraries built before comic → KB creator sync
+    /// existed. Older import paths (notably ComicVine enrichment) wrote creator
+    /// credits into comic metadata but never into the Knowledge Base, so the KB
+    /// was missing writers/artists/etc. for imported books. Re-sync every comic
+    /// once. Idempotent and guarded by a UserDefaults flag, so it runs at most
+    /// once per install and is a cheap no-op on every launch thereafter.
+    func backfillKnowledgeIfNeeded() async {
+        let key = "didBackfillKnowledgeCreatorsV1"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        guard let comics = try? await fetchAllComics() else { return }
+        for comic in comics {
+            await syncKnowledge(from: comic)
+        }
+        UserDefaults.standard.set(true, forKey: key)
+        AppLog.database.info(
+            "[DatabaseManager] ✅ Knowledge Base creator backfill complete (\(comics.count) comics)")
+    }
+
     /// Delete a knowledge entry
     func deleteKnowledgeEntry(_ entry: KnowledgeEntry) async throws {
         guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }

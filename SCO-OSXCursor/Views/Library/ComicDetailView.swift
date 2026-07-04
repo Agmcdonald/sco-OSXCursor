@@ -306,23 +306,22 @@ struct ComicDetailView: View {
     private var headerView: some View {
         HStack(spacing: Spacing.lg) {
             // Cover Image
-            if let coverData = editedComic.coverImageData {
+            if let coverData = editedComic.coverImageData,
+                let cover = PageImageCache.shared.coverImage(
+                    from: coverData, cacheKey: editedComic.id.uuidString)
+            {
                 #if os(macOS)
-                    if let nsImage = NSImage(data: coverData) {
-                        Image(nsImage: nsImage)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: 120, height: 180)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
+                    Image(nsImage: cover)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 120, height: 180)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
                 #else
-                    if let uiImage = UIImage(data: coverData) {
-                        Image(uiImage: uiImage)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: 120, height: 180)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
+                    Image(uiImage: cover)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 120, height: 180)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
                 #endif
             } else {
                 RoundedRectangle(cornerRadius: 8)
@@ -656,37 +655,11 @@ struct ComicDetailView: View {
         AppLog.library.debug("[ComicDetailView]    Publisher: '\(editedComic.publisher ?? "nil")'")
         AppLog.library.debug("[ComicDetailView]    Series: '\(editedComic.series ?? "nil")'")
 
-        // Auto-add new values to the Knowledge Base
-        let fieldsToCheck: [(String?, KnowledgeEntry.EntryType)] = [
-            (editedComic.series, .series),
-            (editedComic.publisher, .publisher),
-            (editedComic.writer, .writer),
-            (editedComic.artist, .artist),
-            (editedComic.coverArtist, .coverArtist),
-            (editedComic.colorist, .colorist),
-            (editedComic.inker, .inker),
-            (editedComic.editor, .editor),
-        ]
-
-        for (value, type) in fieldsToCheck {
-            // Creator credits can list several people in one field
-            // ("Claire Roe, J. Bone & Nicola Scott") — store one entry per
-            // person. Series/publisher are single values and stay intact.
-            let names = type.isCreatorType
-                ? KnowledgeEntry.splitCreditNames(value)
-                : [value?.trimmingCharacters(in: .whitespacesAndNewlines)]
-                    .compactMap { $0 }.filter { !$0.isEmpty }
-
-            for name in names {
-                let exists = try? await DatabaseManager.shared.knowledgeEntryExists(
-                    type: type, name: name)
-                if exists == false {
-                    let newEntry = KnowledgeEntry(type: type, name: name)
-                    try? await DatabaseManager.shared.saveKnowledgeEntry(newEntry)
-                    AppLog.library.debug("[ComicDetailView] ➕ Auto-added '\(name)' to \(type.pluralName) Knowledge Base")
-                }
-            }
-        }
+        // Auto-add new values (series, publisher, and every creator credit) to
+        // the Knowledge Base via the shared helper — the same path every import
+        // uses, so manual edits and imports can never disagree on what lands in
+        // the KB.
+        await DatabaseManager.shared.syncKnowledge(from: editedComic)
 
         // Stamp modification date
         var finalComic = editedComic

@@ -101,6 +101,11 @@ final class LibraryViewModel: ObservableObject {
                 self.comics = fetchedComics
                 AppLog.library.info("[LibraryViewModel] ✅ Loaded \(fetchedComics.count) comics from database")
             }
+            // One-time Knowledge Base repair for books imported before creator
+            // sync existed (e.g. ComicVine-enriched imports wrote creators to
+            // metadata but not the KB). Guarded internally so it only does work
+            // once; runs in the background so it never delays the library load.
+            Task { await database.backfillKnowledgeIfNeeded() }
         } catch {
             AppLog.library.error("[LibraryViewModel] ❌ Failed to load comics: \(error)")
         }
@@ -1237,19 +1242,12 @@ final class LibraryViewModel: ObservableObject {
     // MARK: - Knowledge Base Integration
 
     private func checkAndAutoPopulateKnowledge(comic: Comic) {
+        // Sync series, publisher AND every creator credit through the shared
+        // helper. Previously this only wrote series + publisher, so creators
+        // enriched from ComicVine reached the comic's metadata but never the
+        // Knowledge Base (see DatabaseManager.syncKnowledge).
         Task {
-            // Auto-add Series
-            if let series = comic.series, !series.isEmpty {
-                let entry = KnowledgeEntry(type: .series, name: series)
-                try? await database.saveKnowledgeEntry(entry)
-            }
-
-            // Auto-add Publisher
-            if let publisher = comic.publisher, !publisher.isEmpty {
-                // Optional: Add to knowledge base
-                let entry = KnowledgeEntry(type: .publisher, name: publisher)
-                try? await database.saveKnowledgeEntry(entry)
-            }
+            await database.syncKnowledge(from: comic)
         }
     }
 
