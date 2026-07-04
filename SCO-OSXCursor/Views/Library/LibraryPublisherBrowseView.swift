@@ -135,23 +135,23 @@ struct LibraryPublisherBrowseView: View {
                     .frame(width: 14, height: 14)
 
                 // Thumbnail of first cover
-                if let coverData = group.comics.first?.coverImageData {
+                if let firstComic = group.comics.first,
+                    let coverData = firstComic.coverImageData,
+                    let cover = PageImageCache.shared.coverImage(
+                        from: coverData, cacheKey: firstComic.id.uuidString)
+                {
                     #if os(macOS)
-                        if let nsImg = NSImage(data: coverData) {
-                            Image(nsImage: nsImg)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: 32, height: 48)
-                                .clipShape(RoundedRectangle(cornerRadius: 4))
-                        }
+                        Image(nsImage: cover)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 32, height: 48)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
                     #else
-                        if let uiImg = UIImage(data: coverData) {
-                            Image(uiImage: uiImg)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: 32, height: 48)
-                                .clipShape(RoundedRectangle(cornerRadius: 4))
-                        }
+                        Image(uiImage: cover)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 32, height: 48)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
                     #endif
                 } else {
                     RoundedRectangle(cornerRadius: 4)

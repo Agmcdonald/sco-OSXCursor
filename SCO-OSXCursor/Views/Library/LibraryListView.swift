@@ -58,27 +58,22 @@ struct ComicRowView: View {
         HStack(spacing: Spacing.lg) {
             // Cover image
             ZStack {
-                if let coverData = comic.coverImageData {
+                if let coverData = comic.coverImageData,
+                    let cover = PageImageCache.shared.coverImage(
+                        from: coverData, cacheKey: comic.id.uuidString)
+                {
                     #if os(macOS)
-                        if let nsImage = NSImage(data: coverData) {
-                            Image(nsImage: nsImage)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: 60, height: 90)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                        } else {
-                            placeholderThumbnail
-                        }
+                        Image(nsImage: cover)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 60, height: 90)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
                     #else
-                        if let uiImage = UIImage(data: coverData) {
-                            Image(uiImage: uiImage)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: 60, height: 90)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                        } else {
-                            placeholderThumbnail
-                        }
+                        Image(uiImage: cover)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 60, height: 90)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
                     #endif
                 } else {
                     placeholderThumbnail

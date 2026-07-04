@@ -57,38 +57,37 @@ struct PublisherBannerView: View {
             #endif
         } label: {
             ZStack {
-                if let data = imageData {
+                if let data = imageData,
+                    let banner = PageImageCache.shared.coverImage(
+                        from: data, cacheKey: "banner|\(publisherName)")
+                {
                     // Loaded banner
                     #if os(macOS)
-                        if let nsImg = NSImage(data: data) {
-                            Image(nsImage: nsImg)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: bannerWidth, height: bannerHeight)
-                                .clipped()
-                                .clipShape(RoundedRectangle(cornerRadius: 5))
-                                .overlay(
-                                    // Edit hint on hover
-                                    Group {
-                                        if isHovered && allowEditing {
-                                            RoundedRectangle(cornerRadius: 5)
-                                                .fill(Color.black.opacity(0.45))
-                                            Image(systemName: "pencil")
-                                                .font(.system(size: 14, weight: .semibold))
-                                                .foregroundColor(.white)
-                                        }
+                        Image(nsImage: banner)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: bannerWidth, height: bannerHeight)
+                            .clipped()
+                            .clipShape(RoundedRectangle(cornerRadius: 5))
+                            .overlay(
+                                // Edit hint on hover
+                                Group {
+                                    if isHovered && allowEditing {
+                                        RoundedRectangle(cornerRadius: 5)
+                                            .fill(Color.black.opacity(0.45))
+                                        Image(systemName: "pencil")
+                                            .font(.system(size: 14, weight: .semibold))
+                                            .foregroundColor(.white)
                                     }
-                                )
-                        }
+                                }
+                            )
                     #else
-                        if let uiImg = UIImage(data: data) {
-                            Image(uiImage: uiImg)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: bannerWidth, height: bannerHeight)
-                                .clipped()
-                                .clipShape(RoundedRectangle(cornerRadius: 5))
-                        }
+                        Image(uiImage: banner)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: bannerWidth, height: bannerHeight)
+                            .clipped()
+                            .clipShape(RoundedRectangle(cornerRadius: 5))
                     #endif
                 } else if !isLoading {
                     // Placeholder

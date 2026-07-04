@@ -21,6 +21,20 @@ class CBRReader: ComicReaderProtocol {
 
     private let imageExtensions = ["jpg", "jpeg", "png", "gif", "webp", "bmp"]
 
+    // MARK: - Sorted-entry cache
+    //
+    // Enumerating a RAR (`archive.entries()`) opens the native handle in LIST
+    // mode and walks EVERY header, then we filter + naturally sort. Previously
+    // this ran on every `loadPage`, so a single windowed prefetch (up to
+    // ~8 pages per turn) re-walked and re-sorted the whole archive ~8 times.
+    // We cache the sorted `[Entry]` for the currently-open book. `Entry` is a
+    // detached `Sendable`/`Equatable` value (equality by fileName) and
+    // `extract(_:)` opens its own fresh handle, so cached entries stay valid
+    // without holding an `Archive` instance. One slot is enough — a reader
+    // instance reads one book at a time; a different URL replaces the slot.
+    private var cachedEntries: (path: String, entries: [Entry])?
+    private let entryCacheLock = NSLock()
+
     // MARK: - Load Comic
     func loadComic(from url: URL) async throws -> ComicBook {
         return try await Task.detached {
@@ -49,7 +63,8 @@ class CBRReader: ComicReaderProtocol {
             throw ComicReaderError.invalidFormat
         }
 
-        let sortedEntries = try sortedImageEntries(from: archive)
+        // Populate the sorted-entry cache for the on-demand page loads that follow.
+        let sortedEntries = try cachedSortedImageEntries(for: url)
 
         guard !sortedEntries.isEmpty else {
             throw ComicReaderError.noImages
@@ -177,14 +192,18 @@ class CBRReader: ComicReaderProtocol {
             throw ComicReaderError.fileNotFound
         }
 
-        let archive = try Archive(fileURL: url)
-        let sortedEntries = try sortedImageEntries(from: archive)
+        // Sorted entries come from the per-book cache (built once), so we skip
+        // the full header walk + filter + sort on every page turn.
+        let sortedEntries = try cachedSortedImageEntries(for: url)
 
         guard index >= 0 && index < sortedEntries.count else {
             throw ComicReaderError.extractionFailed
         }
 
         let entry = sortedEntries[index]
+        // Fresh handle purely for extraction — `extract` opens/closes its own
+        // native RAR handle and locates the entry by fileName equality.
+        let archive = try Archive(fileURL: url)
         let imageData = try archive.extract(entry)
 
         return ComicPage(
@@ -195,6 +214,31 @@ class CBRReader: ComicReaderProtocol {
     }
 
     // MARK: - Helper Methods
+
+    /// Sorted image entries for `url`, served from cache when the book matches.
+    /// Building the list (open + full header walk + filter + sort) happens
+    /// outside the lock so concurrent prefetch tasks don't serialize on it.
+    private func cachedSortedImageEntries(for url: URL) throws -> [Entry] {
+        let path = url.path
+
+        entryCacheLock.lock()
+        if let cached = cachedEntries, cached.path == path {
+            let entries = cached.entries
+            entryCacheLock.unlock()
+            return entries
+        }
+        entryCacheLock.unlock()
+
+        // Cache miss — build without holding the lock.
+        let archive = try Archive(fileURL: url)
+        let sorted = try sortedImageEntries(from: archive)
+
+        entryCacheLock.lock()
+        cachedEntries = (path, sorted)
+        entryCacheLock.unlock()
+
+        return sorted
+    }
 
     /// All image entries from the archive, naturally sorted (1, 2, 10 — not 1, 10, 2).
     private func sortedImageEntries(from archive: Archive) throws -> [Entry] {

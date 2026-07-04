@@ -43,25 +43,24 @@ struct ComicInspectorView: View {
 
                 // ── Cover art ─────────────────────────────────────────────
                 ZStack {
-                    if let coverData = comic.coverImageData {
+                    if let coverData = comic.coverImageData,
+                        let cover = PageImageCache.shared.coverImage(
+                            from: coverData, cacheKey: comic.id.uuidString)
+                    {
                         #if os(macOS)
-                            if let nsImage = NSImage(data: coverData) {
-                                Image(nsImage: nsImage)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fit)
-                                    .frame(maxWidth: .infinity, maxHeight: 300)
-                                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                                    .shadow(radius: 4)
-                            }
+                            Image(nsImage: cover)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(maxWidth: .infinity, maxHeight: 300)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .shadow(radius: 4)
                         #else
-                            if let uiImage = UIImage(data: coverData) {
-                                Image(uiImage: uiImage)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fit)
-                                    .frame(maxWidth: .infinity, maxHeight: 300)
-                                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                                    .shadow(radius: 4)
-                            }
+                            Image(uiImage: cover)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(maxWidth: .infinity, maxHeight: 300)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .shadow(radius: 4)
                         #endif
                     } else {
                         RoundedRectangle(cornerRadius: 12)
