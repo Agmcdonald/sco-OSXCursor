@@ -125,10 +125,21 @@ struct StagedComicReadinessTests {
     }
 
     @Test func userEditedCoreFieldsBecomeReady() {
+        // `userEdited` no longer flips status on its own: Ready still requires the
+        // full field set (series + issue + year + publisher). Supplying the
+        // missing fields is what promotes an issue from Pending to Ready.
         var comic = staged(series: "Sludge", issue: "005", format: .issue)
         comic.status = .pending
+
+        // Core-only fields aren't enough, even with userEdited.
         comic.reevaluate(userEdited: true)
-        #expect(comic.status == .ready)  // user-confirmed core fields suffice
+        #expect(comic.status == .pending)
+
+        // Once the user fills in year + publisher, it goes Ready.
+        comic.year = 1994
+        comic.publisher = "Malibu Comics Entertainment"
+        comic.reevaluate(userEdited: true)
+        #expect(comic.status == .ready)
     }
 
     @Test func oneShotNeedsNoIssueNumber() {
