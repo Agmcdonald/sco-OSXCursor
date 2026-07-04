@@ -12,8 +12,10 @@ import os
 #endif
 
 /// A 230×100 landscape banner slot for a named publisher.
-/// Tapping an unset banner opens a file picker; the chosen image is persisted
-/// to `DatabaseManager` and displayed going forward.
+/// Clicking the tile shows a menu: choose an image file, browse the bundled
+/// premade logo library, download the blank template, or remove the banner.
+/// The chosen image is persisted to `DatabaseManager` and displayed going
+/// forward. Premade logos are never auto-assigned.
 @MainActor
 struct PublisherBannerView: View {
     let publisherName: String
@@ -22,6 +24,7 @@ struct PublisherBannerView: View {
 
     @State private var imageData: Data? = nil
     @State private var showingPicker = false
+    @State private var showingPremadeLibrary = false
     @State private var isLoading = true
     @State private var isHovered = false
 
@@ -31,31 +34,86 @@ struct PublisherBannerView: View {
     private let bannerHeight: CGFloat = 100
 
     var body: some View {
-        Button {
-            guard allowEditing else { return }
-            #if os(macOS)
-                let panel = NSOpenPanel()
-                panel.allowedContentTypes = [.image]
-                panel.allowsMultipleSelection = false
-                panel.canChooseDirectories = false
-                panel.canChooseFiles = true
-                panel.begin { response in
-                    if response == .OK, let url = panel.url {
-                        Task { @MainActor in
-                            guard url.startAccessingSecurityScopedResource() else { return }
-                            defer { url.stopAccessingSecurityScopedResource() }
-                            if let data = try? Data(contentsOf: url) {
-                                try? await DatabaseManager.shared.savePublisherBanner(
-                                    name: publisherName, data: data)
-                                self.imageData = data
-                            }
+        Group {
+            if allowEditing {
+                Menu {
+                    Button("Choose Image File…") {
+                        #if os(macOS)
+                            presentOpenPanel()
+                        #else
+                            showingPicker = true
+                        #endif
+                    }
+                    Button("Browse Premade Logos…") {
+                        showingPremadeLibrary = true
+                    }
+                    #if os(macOS)
+                        Divider()
+                        Button("Download Blank Template…") {
+                            PremadePublisherLogoLibrary.exportTemplate()
+                        }
+                    #endif
+                    if imageData != nil {
+                        Divider()
+                        Button("Remove Banner", role: .destructive) {
+                            removeBanner()
                         }
                     }
+                } label: {
+                    bannerContent
                 }
-            #else
-                showingPicker = true
-            #endif
-        } label: {
+                .menuIndicator(.hidden)
+                .buttonStyle(.plain)
+                .fixedSize()
+            } else {
+                bannerContent
+            }
+        }
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.15)) { isHovered = hovering }
+        }
+        .task {
+            await loadBanner()
+        }
+        .sheet(isPresented: $showingPremadeLibrary) {
+            PremadeLogoPickerSheet(publisherName: publisherName) { data in
+                Task { @MainActor in
+                    try? await DatabaseManager.shared.savePublisherBanner(
+                        name: publisherName, data: data)
+                    self.imageData = data
+                }
+            }
+        }
+        .fileImporter(
+            isPresented: $showingPicker,
+            allowedContentTypes: [.image],
+            allowsMultipleSelection: false
+        ) { result in
+            handlePickerResult(result)
+        }
+        .onDrop(of: [.image], isTargeted: nil) { providers in
+            guard allowEditing else { return false }
+            guard let provider = providers.first else { return false }
+
+            _ = provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) {
+                data, error in
+                if let data = data {
+                    Task { @MainActor in
+                        try? await DatabaseManager.shared.savePublisherBanner(
+                            name: publisherName, data: data)
+                        self.imageData = data
+                    }
+                } else if let error = error {
+                    AppLog.library.error("[PublisherBannerView] Drop error: \(error)")
+                }
+            }
+            return true
+        }
+    }
+
+    // MARK: - Banner content
+
+    private var bannerContent: some View {
             ZStack {
                 if let data = imageData,
                     let banner = PageImageCache.shared.coverImage(
@@ -101,39 +159,6 @@ struct PublisherBannerView: View {
             }
             .frame(width: bannerWidth, height: bannerHeight)
             .contentShape(Rectangle())
-        }
-        .buttonStyle(.borderless)
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) { isHovered = hovering }
-        }
-        .task {
-            await loadBanner()
-        }
-        .fileImporter(
-            isPresented: $showingPicker,
-            allowedContentTypes: [.image],
-            allowsMultipleSelection: false
-        ) { result in
-            handlePickerResult(result)
-        }
-        .onDrop(of: [.image], isTargeted: nil) { providers in
-            guard allowEditing else { return false }
-            guard let provider = providers.first else { return false }
-
-            _ = provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) {
-                data, error in
-                if let data = data {
-                    Task { @MainActor in
-                        try? await DatabaseManager.shared.savePublisherBanner(
-                            name: publisherName, data: data)
-                        self.imageData = data
-                    }
-                } else if let error = error {
-                    AppLog.library.error("[PublisherBannerView] Drop error: \(error)")
-                }
-            }
-            return true
-        }
     }
 
     // MARK: - Placeholder
@@ -169,7 +194,7 @@ struct PublisherBannerView: View {
             )
             .help(
                 allowEditing
-                    ? "Click or Drag & Drop to set a 230×100 custom publisher banner image"
+                    ? "Click for options: choose your own 230×100 image, browse premade logos, or download a blank template. You can also drag & drop an image here."
                     : "No custom banner set")
     }
 
@@ -179,6 +204,36 @@ struct PublisherBannerView: View {
         isLoading = true
         imageData = try? await DatabaseManager.shared.loadPublisherBanner(name: publisherName)
         isLoading = false
+    }
+
+    #if os(macOS)
+        private func presentOpenPanel() {
+            let panel = NSOpenPanel()
+            panel.allowedContentTypes = [.image]
+            panel.allowsMultipleSelection = false
+            panel.canChooseDirectories = false
+            panel.canChooseFiles = true
+            panel.begin { response in
+                if response == .OK, let url = panel.url {
+                    Task { @MainActor in
+                        guard url.startAccessingSecurityScopedResource() else { return }
+                        defer { url.stopAccessingSecurityScopedResource() }
+                        if let data = try? Data(contentsOf: url) {
+                            try? await DatabaseManager.shared.savePublisherBanner(
+                                name: publisherName, data: data)
+                            self.imageData = data
+                        }
+                    }
+                }
+            }
+        }
+    #endif
+
+    private func removeBanner() {
+        Task { @MainActor in
+            try? await DatabaseManager.shared.clearPublisherBanner(name: publisherName)
+            self.imageData = nil
+        }
     }
 
     private func handlePickerResult(_ result: Result<[URL], Error>) {

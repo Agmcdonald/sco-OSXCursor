@@ -765,13 +765,17 @@ final class LibraryViewModel: ObservableObject {
     /// parsing or ComicVine fetch happens here.
     func addTransferredComic(_ comic: Comic) async {
         do {
+            AppLog.library.info("[LibraryViewModel] ⏱ transfer: saving comic…")
             try await database.saveComic(comic)
+            AppLog.library.info("[LibraryViewModel] ⏱ transfer: saved, updating list…")
             if let index = comics.firstIndex(where: { $0.id == comic.id }) {
                 comics[index] = comic
             } else {
                 comics.append(comic)
             }
+            AppLog.library.info("[LibraryViewModel] ⏱ transfer: logging activity…")
             await logActivity(.imported, comic: comic, new: comic.fileName)
+            AppLog.library.info("[LibraryViewModel] ⏱ transfer: activity logged")
             // Teach the learning system, same as a normal import
             SeriesKnowledge.shared.recordImport(
                 series: comic.series,

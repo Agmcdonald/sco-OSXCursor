@@ -394,8 +394,10 @@ struct TransferReceiveSheet: View {
                         Task { @MainActor in progress = fraction }
                     }
                 }.value
+                AppLog.files.info("[TransferReceiveSheet] ⏱ importNewBook returned: \(comic.fileName)")
 
                 await viewModel.addTransferredComic(comic)
+                AppLog.files.info("[TransferReceiveSheet] ⏱ addTransferredComic done")
 
                 switch choice {
                 case .none:
@@ -407,8 +409,10 @@ struct TransferReceiveSheet: View {
                         await viewModel.addComics([comic.id], toFolder: folder.id)
                     }
                 }
+                AppLog.files.info("[TransferReceiveSheet] ⏱ folder choice applied")
 
                 BookPackageImporter.cleanUp(package)
+                AppLog.files.info("[TransferReceiveSheet] ⏱ cleanUp done — calling onDone")
                 onDone()
             } catch {
                 phase = .failed(error.localizedDescription)

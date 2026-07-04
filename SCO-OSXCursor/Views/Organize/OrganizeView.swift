@@ -14,9 +14,37 @@ struct OrganizeView: View {
     @State private var showingFolderPrompt = false
     @State private var folderPromptMode: FolderPromptMode = .allReady
     @State private var isDropTargeted = false
+    /// Routes dropped/opened `.scobook` transfer packages into the shared
+    /// receive flow instead of the staging pipeline, which only understands
+    /// plain comic files.
+    @EnvironmentObject private var incomingTransferCoordinator: IncomingTransferCoordinator
+
+    #if os(iOS)
+        @State private var iosColumnVisibility: NavigationSplitViewVisibility = .all
+        @State private var showingAddFilePicker = false
+    #endif
 
     /// Which set of staged books the folder prompt applies to.
     private enum FolderPromptMode { case allReady, checked }
+
+    /// Splits dropped/opened URLs into `.scobook` transfer packages (routed
+    /// to the shared receive flow) and plain comic files (staged for
+    /// review). Shared by the macOS and iOS drop handlers.
+    private func routeDroppedURLs(_ urls: [URL]) {
+        let scobookURLs = urls.filter {
+            $0.pathExtension.lowercased() == BookPackage.fileExtension
+        }
+        let otherURLs = urls.filter {
+            $0.pathExtension.lowercased() != BookPackage.fileExtension
+        }
+
+        if !scobookURLs.isEmpty {
+            incomingTransferCoordinator.enqueue(urls: scobookURLs)
+        }
+        if !otherURLs.isEmpty {
+            Task { await viewModel.addFiles(otherURLs) }
+        }
+    }
 
     var body: some View {
         #if os(macOS)
@@ -39,14 +67,13 @@ struct OrganizeView: View {
                             let types = [
                                 UTType(filenameExtension: "cbz"), UTType(filenameExtension: "cbr"),
                                 UTType(filenameExtension: "epub"), .pdf, .epub,
+                                UTType(exportedAs: BookPackage.typeIdentifier),
                             ].compactMap { $0 }
                             panel.allowedContentTypes = types
 
                             panel.begin { response in
                                 if response == .OK {
-                                    Task {
-                                        await viewModel.addFiles(panel.urls)
-                                    }
+                                    routeDroppedURLs(panel.urls)
                                 }
                             }
                         }) {
@@ -215,18 +242,7 @@ struct OrganizeView: View {
                 )
             }
         #else
-            VStack(spacing: 16) {
-                Image(systemName: "desktopcomputer")
-                    .font(.system(size: 48))
-                    .foregroundColor(.secondary)
-                Text("File Organization")
-                    .font(.title2)
-                Text("The Organize tab is available on Mac.")
-                    .font(.body)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            iOSBody
         #endif
     }
 
@@ -345,13 +361,329 @@ struct OrganizeView: View {
 
             group.notify(queue: .main) {
                 if !urls.isEmpty {
-                    Task {
-                        await viewModel.addFiles(urls)
-                    }
+                    routeDroppedURLs(urls)
                 }
             }
 
             return true
         }
     #endif
+
+    #if os(iOS)
+        // MARK: - iOS Body
+        //
+        // Mirrors the Mac staging workflow (staged list, per-file inspector,
+        // ComicVine fetch, bulk edit, batch folder-filing) using a
+        // NavigationSplitView so it collapses to a stack on compact widths
+        // and shows list+inspector side by side on a full-size iPad. The
+        // underlying OrganizeViewModel/OrganizeInspectorView/BulkEditSheet/
+        // ImportFolderChoiceSheet are all already cross-platform — this is
+        // just the iPad-shaped container around them.
+
+        private var iOSBody: some View {
+            NavigationSplitView(columnVisibility: $iosColumnVisibility) {
+                stagedListColumn
+            } detail: {
+                if let selected = viewModel.selectedComic {
+                    OrganizeInspectorView(comic: selected, viewModel: viewModel)
+                        // Rebuild on selection change AND when a batch fetch
+                        // updates staged metadata behind the inspector's back.
+                        .id("\(selected.id.uuidString)-\(viewModel.metadataRevision)")
+                } else {
+                    Text("Select a file to review details")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .navigationSplitViewStyle(.balanced)
+            .sheet(isPresented: $showingBulkEdit) {
+                BulkEditSheet(
+                    itemCount: viewModel.checkedComicIDs.count,
+                    showsContentRating: false
+                ) { values in
+                    viewModel.bulkUpdate(ids: viewModel.checkedComicIDs, values: values)
+                }
+            }
+            .sheet(isPresented: $showingFolderPrompt) {
+                let count =
+                    folderPromptMode == .checked ? viewModel.checkedCount : viewModel.readyCount
+                ImportFolderChoiceSheet(
+                    bookCountText: "\(count) book\(count == 1 ? "" : "s")",
+                    folders: viewModel.availableFolders,
+                    onChoice: { choice in
+                        showingFolderPrompt = false
+                        let mode = folderPromptMode
+                        Task {
+                            switch mode {
+                            case .allReady:
+                                await viewModel.confirmAllReady(folderChoice: choice)
+                            case .checked:
+                                await viewModel.confirmChecked(folderChoice: choice)
+                            }
+                        }
+                    },
+                    onCancel: { showingFolderPrompt = false }
+                )
+            }
+            .fileImporter(
+                isPresented: $showingAddFilePicker,
+                allowedContentTypes: iOSImportTypes,
+                allowsMultipleSelection: true
+            ) { result in
+                if case .success(let urls) = result {
+                    routeDroppedURLs(urls)
+                }
+            }
+        }
+
+        /// `.scobook` is included so transfer packages picked from Files are
+        /// selectable; `routeDroppedURLs` diverts them to the receive flow.
+        private var iOSImportTypes: [UTType] {
+            [
+                .pdf, .epub, UTType(filenameExtension: "cbz"), UTType(filenameExtension: "cbr"),
+                UTType(exportedAs: BookPackage.typeIdentifier),
+            ].compactMap { $0 }
+        }
+
+        private var stagedListColumn: some View {
+            Group {
+                if viewModel.stagedComics.isEmpty {
+                    emptyStagingState
+                } else {
+                    List(selection: $viewModel.selectedComicID) {
+                        ForEach(viewModel.stagedComics) { comic in
+                            OrganizeStagedRow(
+                                comic: comic,
+                                isChecked: viewModel.checkedComicIDs.contains(comic.id),
+                                onToggleCheck: { viewModel.toggleCheck(for: comic.id) }
+                            )
+                            .tag(comic.id)
+                        }
+                    }
+                    .listStyle(.plain)
+                }
+            }
+            .navigationTitle("Organize")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showingAddFilePicker = true
+                    } label: {
+                        Label("Add Files", systemImage: "plus")
+                    }
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                if !viewModel.stagedComics.isEmpty {
+                    iOSBatchActionBar
+                }
+            }
+            .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
+                handleIOSDrop(providers: providers)
+            }
+            .overlay(
+                Group {
+                    if isDropTargeted {
+                        RoundedRectangle(cornerRadius: 16)
+                            .strokeBorder(
+                                Color.accentColor,
+                                style: StrokeStyle(lineWidth: 2, dash: [8])
+                            )
+                            .background(Color.accentColor.opacity(0.08))
+                            .padding(8)
+                            .allowsHitTesting(false)
+                    }
+                }
+            )
+        }
+
+        private var emptyStagingState: some View {
+            VStack(spacing: 12) {
+                Image(systemName: "arrow.down.doc")
+                    .font(.system(size: 40))
+                    .foregroundColor(.secondary)
+                Text("No Files Staged")
+                    .font(.headline)
+                Text("Tap Add Files, or drag comic files here from the Files app.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+
+        // MARK: - Batch Action Bar (iOS)
+
+        /// Bottom action bar mirroring Mac's `batchActionBar`. Space is
+        /// tighter on iPad, so the less-common actions (bulk edit, add to
+        /// folder, ComicVine fetch) live behind a single "Actions" menu
+        /// instead of sitting inline as separate buttons.
+        private var iOSBatchActionBar: some View {
+            VStack(spacing: 4) {
+                Divider()
+
+                HStack {
+                    Button {
+                        viewModel.setAllChecked(
+                            viewModel.checkedComicIDs.count < viewModel.stagedComics.count)
+                    } label: {
+                        Label(
+                            viewModel.checkedComicIDs.count < viewModel.stagedComics.count
+                                ? "Check All" : "Uncheck All",
+                            systemImage: "checklist")
+                    }
+
+                    Spacer()
+
+                    Menu {
+                        Button {
+                            showingBulkEdit = true
+                        } label: {
+                            Label(
+                                "Edit \(viewModel.checkedComicIDs.count) Checked…",
+                                systemImage: "square.and.pencil")
+                        }
+                        .disabled(viewModel.checkedComicIDs.isEmpty)
+
+                        Button {
+                            folderPromptMode = .checked
+                            showingFolderPrompt = true
+                        } label: {
+                            Label(
+                                "Add \(viewModel.checkedComicIDs.count) to Folder…",
+                                systemImage: "folder.badge.plus")
+                        }
+                        .disabled(viewModel.checkedComicIDs.isEmpty)
+
+                        Button {
+                            Task { await viewModel.fetchComicVineForChecked() }
+                        } label: {
+                            Label(
+                                "Fetch \(viewModel.checkedComicIDs.count) from ComicVine",
+                                systemImage: "sparkles")
+                        }
+                        .disabled(viewModel.checkedComicIDs.isEmpty || viewModel.isBatchFetchingCV)
+                    } label: {
+                        if viewModel.isBatchFetchingCV {
+                            HStack(spacing: 4) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Fetching \(viewModel.batchCVDone)/\(viewModel.batchCVTotal)…")
+                            }
+                        } else {
+                            Label("Actions", systemImage: "ellipsis.circle")
+                        }
+                    }
+                    .disabled(viewModel.isBatchFetchingCV)
+
+                    Spacer()
+
+                    Button {
+                        if viewModel.readyCount > 1 {
+                            folderPromptMode = .allReady
+                            showingFolderPrompt = true
+                        } else {
+                            Task { await viewModel.confirmAllReady() }
+                        }
+                    } label: {
+                        Label("Apply All Ready (\(viewModel.readyCount))", systemImage: "checkmark.circle.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(viewModel.readyCount == 0 || viewModel.isBatchFetchingCV)
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 8)
+
+                if let summary = viewModel.batchCVSummary, !viewModel.isBatchFetchingCV {
+                    Text(summary)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                        .padding(.bottom, 6)
+                }
+            }
+            .background(.bar)
+        }
+
+        /// Handle files dropped onto the iOS staging list (Split View drag,
+        /// or a drag onto the app's Dock icon). `.scobook` packages and
+        /// plain comic files are routed separately by `routeDroppedURLs`.
+        private func handleIOSDrop(providers: [NSItemProvider]) -> Bool {
+            Task {
+                var urls: [URL] = []
+                for provider in providers {
+                    if provider.hasItemConformingToTypeIdentifier("public.file-url") {
+                        do {
+                            if let url = try await provider.loadItem(
+                                forTypeIdentifier: "public.file-url", options: nil) as? URL
+                            {
+                                urls.append(url)
+                            }
+                        } catch {
+                            AppLog.organize.error("Drop: failed to load dropped item: \(error)")
+                        }
+                    }
+                }
+                routeDroppedURLs(urls)
+            }
+            return true
+        }
+    #endif
 }
+
+#if os(iOS)
+    // MARK: - Staged Row (iOS)
+
+    /// One row in the iPad staging list: checkbox, proposed name, original
+    /// name, and a Ready/Pending badge — the iOS equivalent of the inline
+    /// row content Mac's `List` builds directly.
+    private struct OrganizeStagedRow: View {
+        let comic: StagedComic
+        let isChecked: Bool
+        let onToggleCheck: () -> Void
+
+        var body: some View {
+            HStack(spacing: 8) {
+                Button(action: onToggleCheck) {
+                    Image(systemName: isChecked ? "checkmark.square.fill" : "square")
+                        .foregroundColor(isChecked ? .accentColor : .secondary)
+                        .font(.system(size: 18))
+                }
+                .buttonStyle(.plain)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(comic.proposedFileName)
+                        .font(.body)
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+
+                    HStack {
+                        Text(comic.originalFileName)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+
+                        Spacer()
+
+                        if comic.status == .ready {
+                            Text("Ready")
+                                .font(.caption)
+                                .foregroundColor(.green)
+                                .padding(.horizontal, 4)
+                                .background(Color.green.opacity(0.1))
+                                .cornerRadius(4)
+                        } else {
+                            Text("Pending")
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                        }
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        }
+    }
+#endif

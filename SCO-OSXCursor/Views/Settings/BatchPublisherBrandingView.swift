@@ -236,6 +236,32 @@ struct BatchPublisherBrandingView: View {
                 }
                 .buttonStyle(.plain)
 
+                // Download Template
+                #if os(macOS)
+                    Button {
+                        PremadePublisherLogoLibrary.exportTemplate()
+                    } label: {
+                        HStack(spacing: Spacing.xs) {
+                            Image(systemName: "square.and.arrow.down")
+                            Text("Download Template")
+                                .font(Typography.button)
+                        }
+                        .foregroundColor(TextColors.primary)
+                        .padding(.horizontal, Spacing.lg)
+                        .padding(.vertical, Spacing.sm)
+                        .background(BackgroundColors.elevated)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(BorderColors.subtle, lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .help(
+                        "Save a blank 230×100 banner template to edit in your own image software."
+                    )
+                #endif
+
                 Spacer()
 
                 // Status message

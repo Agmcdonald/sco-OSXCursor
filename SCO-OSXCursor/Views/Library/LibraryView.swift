@@ -40,6 +40,10 @@ struct LibraryView: View {
     @ObservedObject var viewModel: LibraryViewModel
     @Binding var columnVisibility: NavigationSplitViewVisibility
     var onAddComicsOrganize: (() -> Void)?
+    /// Routes dropped `.scobook` transfer packages into the shared receive
+    /// flow (folder choice / duplicate check) instead of the plain comic
+    /// importer, which doesn't understand the package format.
+    @EnvironmentObject private var incomingTransferCoordinator: IncomingTransferCoordinator
 
     init(
         viewModel: LibraryViewModel,
@@ -1128,6 +1132,33 @@ struct LibraryView: View {
         }
     }
 
+    /// Splits dropped URLs into plain comic files (imported straight into the
+    /// Library, as before) and `.scobook` transfer packages (routed to the
+    /// shared receive flow — they carry their own manifest/folder-choice/
+    /// duplicate-check and aren't something the comic importer understands).
+    private func routeDroppedURLs(_ urls: [URL]) {
+        var comicURLs: [URL] = []
+        var scobookURLs: [URL] = []
+        for url in urls {
+            let fileExtension = url.pathExtension.lowercased()
+            if fileExtension == BookPackage.fileExtension {
+                scobookURLs.append(url)
+            } else if fileExtension == "cbz" || fileExtension == "pdf" || fileExtension == "zip" {
+                comicURLs.append(url)
+            }
+        }
+
+        if !scobookURLs.isEmpty {
+            incomingTransferCoordinator.enqueue(urls: scobookURLs)
+        }
+        if !comicURLs.isEmpty {
+            AppLog.library.debug("Importing \(comicURLs.count) dropped files")
+            Task {
+                await viewModel.importComics(from: comicURLs)
+            }
+        }
+    }
+
     private func handleDrop(providers: [NSItemProvider]) -> Bool {
         #if os(macOS)
             // macOS drag & drop handling
@@ -1149,26 +1180,14 @@ struct LibraryView: View {
                         let urlString = String(data: urlData, encoding: .utf8),
                         let url = URL(string: urlString)
                     {
-
-                        let fileExtension = url.pathExtension.lowercased()
-                        if fileExtension == "cbz" || fileExtension == "pdf"
-                            || fileExtension == "zip"
-                        {
-                            // Get bookmark data for persistent access
-                            urls.append(url)
-                        }
+                        urls.append(url)
                     }
                 }
             }
 
-            // Wait for all loads to complete, then import
+            // Wait for all loads to complete, then route
             group.notify(queue: .main) {
-                if !urls.isEmpty {
-                    AppLog.library.debug("Importing \(urls.count) dropped files")
-                    Task {
-                        await viewModel.importComics(from: urls)
-                    }
-                }
+                routeDroppedURLs(urls)
             }
 
             return true
@@ -1183,12 +1202,7 @@ struct LibraryView: View {
                             if let url = try await provider.loadItem(
                                 forTypeIdentifier: "public.file-url", options: nil) as? URL
                             {
-                                let fileExtension = url.pathExtension.lowercased()
-                                if fileExtension == "cbz" || fileExtension == "pdf"
-                                    || fileExtension == "zip"
-                                {
-                                    urls.append(url)
-                                }
+                                urls.append(url)
                             }
                         } catch {
                             AppLog.library.error("Failed to load dropped item: \(error)")
@@ -1196,9 +1210,7 @@ struct LibraryView: View {
                     }
                 }
 
-                if !urls.isEmpty {
-                    await viewModel.importComics(from: urls)
-                }
+                routeDroppedURLs(urls)
             }
 
             return true
@@ -1263,4 +1275,5 @@ private struct FileDropTarget: ViewModifier {
 
 #Preview {
     LibraryView(viewModel: LibraryViewModel(database: DatabaseManager.shared))
+        .environmentObject(IncomingTransferCoordinator())
 }

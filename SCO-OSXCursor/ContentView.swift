@@ -16,9 +16,11 @@ struct ContentView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
 
-    // Incoming .scobook transfer package (AirDrop / Files / double-click)
-    @State private var incomingPackage: IncomingBookPackage?
-    @State private var incomingTransferError: String?
+    // Incoming .scobook transfer package (AirDrop / Files / double-click /
+    // drag-and-drop onto Library or Organize). Shared so every entry point
+    // queues into the same slot instead of racing each other — see
+    // IncomingTransferCoordinator for why this isn't just @State here.
+    @StateObject private var incomingTransferCoordinator = IncomingTransferCoordinator()
 
     init() {
         let libVM = LibraryViewModel(database: DatabaseManager.shared)
@@ -117,24 +119,34 @@ struct ContentView: View {
         // ── Device transfer: receive a .scobook package ──
         // AirDrop "Open in Super Comic Organizer", the Files app, and macOS
         // double-click all land here via the document type in Info.plist.
+        // (Drag-and-drop onto Library/Organize feeds the same coordinator
+        // directly, without going through onOpenURL.)
         .onOpenURL { url in
-            handleIncomingURL(url)
+            incomingTransferCoordinator.enqueue(url)
         }
-        .sheet(item: $incomingPackage) { package in
+        .sheet(
+            item: $incomingTransferCoordinator.incomingPackage,
+            onDismiss: {
+                // Fires only after UIKit fully tears the sheet down — the
+                // safe moment to present the next queued package. Also
+                // covers interactive swipe-dismiss, where onDone never runs.
+                incomingTransferCoordinator.presentNextQueued()
+            }
+        ) { package in
             TransferReceiveSheet(package: package, viewModel: libraryViewModel) {
-                incomingPackage = nil
+                incomingTransferCoordinator.packageSheetDismissed()
             }
         }
         .alert(
             "Couldn't Open Book Package",
             isPresented: Binding(
-                get: { incomingTransferError != nil },
-                set: { if !$0 { incomingTransferError = nil } }
+                get: { incomingTransferCoordinator.incomingTransferError != nil },
+                set: { if !$0 { incomingTransferCoordinator.incomingTransferError = nil } }
             )
         ) {
-            Button("OK", role: .cancel) { incomingTransferError = nil }
+            Button("OK", role: .cancel) { incomingTransferCoordinator.incomingTransferError = nil }
         } message: {
-            Text(incomingTransferError ?? "")
+            Text(incomingTransferCoordinator.incomingTransferError ?? "")
         }
         #if os(iOS)
             // iOS/iPadOS: true full-screen cover — hides system chrome completely
@@ -201,36 +213,6 @@ struct ContentView: View {
         #endif
     }
 
-    // MARK: - Incoming Transfer
-
-    /// Routes an opened file into the receive flow when it's a `.scobook`
-    /// package. Reads only the manifest + cover up front (fast), then hands
-    /// the package to `TransferReceiveSheet`.
-    private func handleIncomingURL(_ url: URL) {
-        guard url.isFileURL,
-            url.pathExtension.lowercased() == BookPackage.fileExtension
-        else { return }
-
-        // One at a time — a second package arriving mid-import would swap the
-        // sheet out from under the running import.
-        guard incomingPackage == nil else {
-            incomingTransferError =
-                "Another book is being received right now. Open this package again when it finishes."
-            return
-        }
-
-        Task {
-            do {
-                let package = try await Task.detached(priority: .userInitiated) {
-                    try BookPackageImporter.peek(at: url)
-                }.value
-                incomingPackage = package
-            } catch {
-                incomingTransferError = error.localizedDescription
-            }
-        }
-    }
-
     @ViewBuilder
     private func selectedView() -> some View {
         switch selectedTab {
@@ -248,8 +230,10 @@ struct ContentView: View {
                     selectedTab = .organize
                 }
             )
+            .environmentObject(incomingTransferCoordinator)
         case .organize:
             OrganizeView(viewModel: organizeViewModel)
+                .environmentObject(incomingTransferCoordinator)
         case .learning:
             LearningView(libraryViewModel: libraryViewModel)
         case .knowledge:
