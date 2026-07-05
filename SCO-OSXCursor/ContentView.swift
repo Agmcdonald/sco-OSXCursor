@@ -15,6 +15,11 @@ struct ContentView: View {
     @State private var selectedTab: Tab = .library
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
+    #if os(iOS)
+        /// Compact width = iPhone (and non-Max iPhone landscape) — drives the
+        /// tab-bar layout. Regular width (iPad) keeps the split view.
+        @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
 
     // Incoming .scobook transfer package (AirDrop / Files / double-click /
     // drag-and-drop onto Library or Organize). Shared so every entry point
@@ -52,7 +57,38 @@ struct ContentView: View {
         }
     }
 
-    var body: some View {
+    /// Chooses the layout for the current platform / size class: iPhone
+    /// (compact width) gets a bottom tab bar; iPad regular width and macOS
+    /// keep the sidebar split view.
+    @ViewBuilder
+    private var mainLayout: some View {
+        #if os(iOS)
+            if horizontalSizeClass == .compact {
+                compactTabLayout
+            } else {
+                splitLayout
+            }
+        #else
+            splitLayout
+        #endif
+    }
+
+    #if os(iOS)
+        /// iPhone: standard bottom tab bar. The first four tabs are shown
+        /// directly; the rest (Knowledge, Maintenance, User Manual, Settings)
+        /// land in the system "More" tab automatically.
+        private var compactTabLayout: some View {
+            TabView(selection: $selectedTab) {
+                ForEach(Tab.allCases, id: \.self) { tab in
+                    detailView(for: tab)
+                        .tabItem { Label(tab.rawValue, systemImage: tab.icon) }
+                        .tag(tab)
+                }
+            }
+        }
+    #endif
+
+    private var splitLayout: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             // Sidebar
             SidebarView(selectedTab: $selectedTab)
@@ -82,7 +118,7 @@ struct ContentView: View {
                 #endif
         } detail: {
             // Main content
-            selectedView()
+            detailView(for: selectedTab)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 #if os(iOS)
                 // Sidebar-recall button in the navigation bar zone (above content) —
@@ -110,6 +146,10 @@ struct ContentView: View {
                 #endif
         }
         .navigationSplitViewStyle(.balanced)
+    }
+
+    var body: some View {
+        mainLayout
         .sheet(isPresented: Binding(
             get: { !hasSeenWelcome },
             set: { _ in hasSeenWelcome = true }
@@ -214,8 +254,8 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func selectedView() -> some View {
-        switch selectedTab {
+    private func detailView(for tab: Tab) -> some View {
+        switch tab {
         case .dashboard:
             DashboardView(
                 libraryViewModel: libraryViewModel,

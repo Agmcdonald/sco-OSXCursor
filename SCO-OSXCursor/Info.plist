@@ -28,6 +28,17 @@
 	<true/>
 	<key>UIStatusBarStyle</key>
 	<string></string>
+	<!-- Base key covers iPhone. Declaring only the ~ipad variant left the
+	     built app with NO iPhone orientations (Xcode's generated
+	     INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone doesn't merge
+	     when this file declares a sibling variant), locking iPhones to
+	     landscape. -->
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
