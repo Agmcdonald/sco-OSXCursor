@@ -71,10 +71,12 @@ struct LibraryFilters: Equatable {
     var publisher: String? = nil
     var series: String? = nil
     var year: Int? = nil
+    var contentRating: Comic.ContentRating? = nil
     var readingList: Bool = false
 
     var hasActive: Bool {
-        status != nil || publisher != nil || series != nil || year != nil || readingList
+        status != nil || publisher != nil || series != nil || year != nil
+            || contentRating != nil || readingList
     }
 
     mutating func clear() {
@@ -148,6 +150,9 @@ enum LibraryQuery {
                     || comic.tags.contains(where: {
                         $0.localizedCaseInsensitiveContains(searchText)
                     })
+                    || comic.storyArcs.contains(where: {
+                        $0.localizedCaseInsensitiveContains(searchText)
+                    })
             }
         }
 
@@ -165,6 +170,9 @@ enum LibraryQuery {
         }
         if let year = filters.year {
             result = result.filter { $0.year == year }
+        }
+        if let contentRating = filters.contentRating {
+            result = result.filter { $0.contentRating == contentRating }
         }
 
         switch sort {
@@ -186,7 +194,26 @@ enum LibraryQuery {
             result.sort { $0.fileSize > $1.fileSize }
         }
 
+        // Rank search results: comics whose *visible* identity (title, series,
+        // filename) matches the query float above comics that only matched
+        // deep metadata (summary, creators, tags, story arcs). Both groups
+        // keep the user's chosen sort order (filter is a stable partition).
+        if !searchText.isEmpty {
+            let primary = result.filter { isPrimaryMatch($0, searchText) }
+            let secondary = result.filter { !isPrimaryMatch($0, searchText) }
+            result = primary + secondary
+        }
+
         return result
+    }
+
+    /// True when the query matches the fields a user actually sees on the
+    /// card — the comic's own name — rather than buried metadata.
+    private static func isPrimaryMatch(_ comic: Comic, _ searchText: String) -> Bool {
+        comic.displayTitle.localizedCaseInsensitiveContains(searchText)
+            || comic.title?.localizedCaseInsensitiveContains(searchText) == true
+            || comic.series?.localizedCaseInsensitiveContains(searchText) == true
+            || comic.fileName.localizedCaseInsensitiveContains(searchText)
     }
 
     /// Sort folders for the folder view, reusing the shared sort menu.

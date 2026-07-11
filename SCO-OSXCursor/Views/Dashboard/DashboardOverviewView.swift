@@ -9,18 +9,21 @@ struct DashboardOverviewView: View {
     @State private var topPublishers: [(String, Int)] = []
     @State private var showingFilePicker = false
     @State private var showingFolderScanner = false
+    // Import paused while the user decides on a home library folder
+    @State private var showingHomeLibraryPrompt = false
+    @State private var pendingImportURLs: [URL] = []
 
     var body: some View {
         VStack(spacing: Spacing.md) {
-            // ComicVine API quota — full-width bar above the three columns
-            DashboardSectionCard(
-                title: "ComicVine API",
-                subtitle: "Metadata calls used this hour."
-            ) {
-                comicVineQuotaContent
+            if useSingleColumn {
+                // iPhone: actions first, quota bar last
+                columns
+                comicVineQuotaCard
+            } else {
+                // ComicVine API quota — full-width bar above the three columns
+                comicVineQuotaCard
+                columns
             }
-
-            columns
         }
         // SwiftUI honors only ONE .fileImporter per view, so each importer
         // sits on its own invisible background view (same pattern as
@@ -48,27 +51,87 @@ struct DashboardOverviewView: View {
                 handleImport(result)
             }
         )
+        // Offer to set a home library before the first sorted import
+        .modifier(
+            HomeLibrarySetupPrompt(
+                isPresented: $showingHomeLibraryPrompt,
+                pendingURLs: $pendingImportURLs,
+                onImport: { urls in
+                    Task { await libraryViewModel.importComics(from: urls) }
+                }
+            )
+        )
     }
 
+    #if os(iOS)
+        @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+        /// iPhone: three side-by-side columns don't fit — stack every card
+        /// full-width instead (same width as the ComicVine API bar).
+        private var useSingleColumn: Bool { horizontalSizeClass == .compact }
+    #else
+        private var useSingleColumn: Bool { false }
+    #endif
+
+    @ViewBuilder
     private var columns: some View {
-        HStack(alignment: .top, spacing: Spacing.md) {
-            // Left Column
+        if useSingleColumn {
             VStack(spacing: Spacing.md) {
-                // Queue Progress
-                DashboardSectionCard(title: "Queue Progress") {
-                    VStack(alignment: .leading, spacing: Spacing.sm) {
-                        ProgressView(value: 0.0)  // Placeholder
-                            .progressViewStyle(.linear)
-                            .tint(AccentColors.primary)
-
-                        Text("0 of 0 files processed.")
-                            .font(Typography.caption)
-                            .foregroundColor(TextColors.secondary)
-                    }
+                quickActionsCard
+                queueProgressCard
+                libraryStatsCard
+                recentActionsCard
+            }
+        } else {
+            HStack(alignment: .top, spacing: Spacing.md) {
+                // Left Column
+                VStack(spacing: Spacing.md) {
+                    queueProgressCard
+                    quickActionsCard
                 }
+                .frame(maxWidth: .infinity)
 
-                // Quick Actions
-                DashboardSectionCard(title: "Quick Actions") {
+                // Middle Column
+                VStack(spacing: Spacing.md) {
+                    libraryStatsCard
+                }
+                .frame(maxWidth: .infinity)
+
+                // Right Column
+                VStack(spacing: Spacing.md) {
+                    recentActionsCard
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    // MARK: - Cards
+
+    private var comicVineQuotaCard: some View {
+        DashboardSectionCard(
+            title: "ComicVine API",
+            subtitle: "Metadata calls used this hour."
+        ) {
+            comicVineQuotaContent
+        }
+    }
+
+    private var queueProgressCard: some View {
+        DashboardSectionCard(title: "Queue Progress") {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                ProgressView(value: 0.0)  // Placeholder
+                    .progressViewStyle(.linear)
+                    .tint(AccentColors.primary)
+
+                Text("0 of 0 files processed.")
+                    .font(Typography.caption)
+                    .foregroundColor(TextColors.secondary)
+            }
+        }
+    }
+
+    private var quickActionsCard: some View {
+        DashboardSectionCard(title: "Quick Actions") {
                     VStack(spacing: Spacing.sm) {
                         Button(action: {
                             showingFilePicker = true
@@ -114,16 +177,14 @@ struct DashboardOverviewView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
                         .buttonStyle(.plain)
-                    }
-                }
             }
-            .frame(maxWidth: .infinity)
+        }
+    }
 
-            // Middle Column
-            VStack(spacing: Spacing.md) {
-                DashboardSectionCard(
-                    title: "Library Statistics", subtitle: "Breakdown of your comic collection"
-                ) {
+    private var libraryStatsCard: some View {
+        DashboardSectionCard(
+            title: "Library Statistics", subtitle: "Breakdown of your comic collection"
+        ) {
                     VStack(alignment: .leading, spacing: Spacing.lg) {
 
                         VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -181,20 +242,18 @@ struct DashboardOverviewView: View {
                         }
                     }
                 }
-                .onAppear {
-                    calculateStats()
-                }
-                .onChange(of: libraryViewModel.comics) { _, _ in
-                    calculateStats()
-                }
-            }
-            .frame(maxWidth: .infinity)
+        .onAppear {
+            calculateStats()
+        }
+        .onChange(of: libraryViewModel.comics) { _, _ in
+            calculateStats()
+        }
+    }
 
-            // Right Column
-            VStack(spacing: Spacing.md) {
-                DashboardSectionCard(
-                    title: "Recent Actions", subtitle: "A log of the latest file operations."
-                ) {
+    private var recentActionsCard: some View {
+        DashboardSectionCard(
+            title: "Recent Actions", subtitle: "A log of the latest file operations."
+        ) {
                     VStack(spacing: Spacing.lg) {
                         HStack(alignment: .top, spacing: Spacing.sm) {
                             Image(systemName: "info.circle")
@@ -212,17 +271,19 @@ struct DashboardOverviewView: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .padding(.top, Spacing.md)
-                }
-            }
-            .frame(maxWidth: .infinity)
+            .padding(.top, Spacing.md)
         }
     }
 
     private func handleImport(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
-            Task { await libraryViewModel.importComics(from: urls) }
+            if HomeLibrarySetupPrompt.needsPrompt {
+                pendingImportURLs = urls
+                showingHomeLibraryPrompt = true
+            } else {
+                Task { await libraryViewModel.importComics(from: urls) }
+            }
         case .failure(let error):
             AppLog.library.error(
                 "Dashboard file import failed: \(error.localizedDescription)")

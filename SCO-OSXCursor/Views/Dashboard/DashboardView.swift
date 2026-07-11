@@ -8,6 +8,15 @@ struct DashboardView: View {
     var onOpenMaintenance: () -> Void = {}
     @State private var selectedTab: DashboardTab = .overview
 
+    #if os(iOS)
+        @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+        /// iPhone: four metric tiles in one row squeeze the text — use a
+        /// 2×2 grid instead, and let the tab selector scroll.
+        private var isCompact: Bool { horizontalSizeClass == .compact }
+    #else
+        private var isCompact: Bool { false }
+    #endif
+
     enum DashboardTab: String, CaseIterable {
         case overview = "Overview"
         case insights = "Insights"
@@ -41,30 +50,28 @@ struct DashboardView: View {
                 .padding(.top, Spacing.xl)
                 .padding(.horizontal, Spacing.xl)
 
-                // Top Metrics Row
-                HStack(spacing: Spacing.md) {
-                    MetricCard(
-                        title: "Files in Queue",
-                        value: "0"  // Placeholder until OrganizeViewModel is integrated
-                    )
-                    MetricCard(
-                        title: "Comics in Library",
-                        value: "\(libraryViewModel.comics.count)"
-                    )
-                    MetricCard(
-                        title: "Needs Review",
-                        value: "0"  // Placeholder
-                    )
-                    MetricCard(
-                        title: "Errors",
-                        value: "0",  // Placeholder
-                        valueColor: AccentColors.error
-                    )
+                // Top Metrics Row — iPhone gets a 2×2 grid, wider screens one row
+                Group {
+                    if isCompact {
+                        LazyVGrid(
+                            columns: [
+                                GridItem(.flexible(), spacing: Spacing.md),
+                                GridItem(.flexible(), spacing: Spacing.md),
+                            ],
+                            spacing: Spacing.md
+                        ) {
+                            metricCards
+                        }
+                    } else {
+                        HStack(spacing: Spacing.md) {
+                            metricCards
+                        }
+                    }
                 }
                 .padding(.horizontal, Spacing.xl)
 
                 // Tab Selector
-                DashboardTabSelector(selectedTab: $selectedTab)
+                DashboardTabSelector(selectedTab: $selectedTab, isCompact: isCompact)
                     .padding(.horizontal, Spacing.xl)
 
                 // Tab Content
@@ -93,6 +100,28 @@ struct DashboardView: View {
             }
         }
         .background(BackgroundColors.primary)
+    }
+
+    /// The four metric tiles, shared by the compact grid and the wide row.
+    @ViewBuilder
+    private var metricCards: some View {
+        MetricCard(
+            title: "Files in Queue",
+            value: "0"  // Placeholder until OrganizeViewModel is integrated
+        )
+        MetricCard(
+            title: "Comics in Library",
+            value: "\(libraryViewModel.comics.count)"
+        )
+        MetricCard(
+            title: "Needs Review",
+            value: "0"  // Placeholder
+        )
+        MetricCard(
+            title: "Errors",
+            value: "0",  // Placeholder
+            valueColor: AccentColors.error
+        )
     }
 }
 
@@ -123,8 +152,26 @@ struct MetricCard: View {
 
 struct DashboardTabSelector: View {
     @Binding var selectedTab: DashboardView.DashboardTab
+    /// iPhone: tabs keep their natural width and scroll horizontally instead
+    /// of dividing the bar into five slivers that wrap mid-word.
+    var isCompact: Bool = false
 
     var body: some View {
+        Group {
+            if isCompact {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    tabButtons
+                }
+            } else {
+                tabButtons
+            }
+        }
+        .padding(Spacing.xs)
+        .background(BackgroundColors.secondary)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var tabButtons: some View {
         HStack(spacing: 0) {
             ForEach(DashboardView.DashboardTab.allCases, id: \.self) { tab in
                 Button(action: {
@@ -135,20 +182,24 @@ struct DashboardTabSelector: View {
                     HStack(spacing: Spacing.xs) {
                         Image(systemName: tab.icon)
                         Text(tab.rawValue)
+                            .fixedSize()
                     }
                     .font(Typography.button)
                     .padding(.vertical, Spacing.sm)
-                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, isCompact ? Spacing.md : 0)
+                    .frame(maxWidth: isCompact ? nil : .infinity)
                     .background(selectedTab == tab ? BackgroundColors.elevated : Color.clear)
                     .foregroundColor(selectedTab == tab ? TextColors.primary : TextColors.secondary)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
+                    // Make the WHOLE tab area clickable, not just the label.
+                    // .plain buttons only hit-test opaque pixels, so without
+                    // this the transparent padding around the text ignores
+                    // clicks.
+                    .contentShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(Spacing.xs)
-        .background(BackgroundColors.secondary)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
 

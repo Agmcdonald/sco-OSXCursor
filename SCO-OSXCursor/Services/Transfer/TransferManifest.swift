@@ -113,6 +113,8 @@ struct TransferManifest: Codable {
         var tags: [String]
         var rating: Int?
         var contentRating: Int   // Comic.ContentRating.rawValue
+        /// Optional so manifests from older app versions still decode.
+        var storyArcs: [String]?
         var comicVineVolumeID: Int?
         var comicVineIssueID: Int?
         /// Preserved so the receiver's re-fetch gate keeps working (cached
@@ -186,6 +188,7 @@ struct TransferManifest: Codable {
             tags: comic.tags,
             rating: comic.rating,
             contentRating: comic.contentRating.rawValue,
+            storyArcs: comic.storyArcs,
             comicVineVolumeID: comic.comicVineVolumeID,
             comicVineIssueID: comic.comicVineIssueID,
             metadataFetchedAt: comic.metadataFetchedAt
@@ -290,6 +293,7 @@ struct TransferManifest: Codable {
             comicVineVolumeID: metadata.comicVineVolumeID,
             comicVineIssueID: metadata.comicVineIssueID,
             metadataFetchedAt: metadata.metadataFetchedAt,
+            storyArcs: metadata.storyArcs ?? [],
             contentRating: decodedContentRating,
             fileSize: fileSize,
             fileType: decodedFileType,
@@ -323,6 +327,7 @@ struct TransferManifest: Codable {
         updated.tags = metadata.tags
         updated.rating = metadata.rating
         updated.contentRating = decodedContentRating
+        updated.storyArcs = metadata.storyArcs ?? []
         updated.comicVineVolumeID = metadata.comicVineVolumeID
         updated.comicVineIssueID = metadata.comicVineIssueID
         updated.metadataFetchedAt = metadata.metadataFetchedAt

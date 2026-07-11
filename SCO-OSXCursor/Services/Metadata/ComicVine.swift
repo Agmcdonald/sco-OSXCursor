@@ -134,17 +134,24 @@ struct CVPersonCredit: Decodable {
     let role: String?
 }
 
+struct CVStoryArcCredit: Decodable {
+    let id: Int?
+    let name: String?
+}
+
 struct CVIssueDetail: Decodable {
     let id: Int
     let name: String?
     let description: String?
     let coverDate: String?
     let personCredits: [CVPersonCredit]?
+    let storyArcCredits: [CVStoryArcCredit]?
 
     enum CodingKeys: String, CodingKey {
         case id, name, description
         case coverDate = "cover_date"
         case personCredits = "person_credits"
+        case storyArcCredits = "story_arc_credits"
     }
 }
 
@@ -192,6 +199,7 @@ struct CVMetadataSnapshot: Codable {
     var inker: String?
     var editor: String?
     var summary: String?
+    var storyArcs: [String]?  // Optional so pre-v23 snapshots still decode
     var comicVineVolumeID: Int?
     var comicVineIssueID: Int?
     var metadataFetchedAt: Date?
@@ -209,6 +217,7 @@ struct CVMetadataSnapshot: Codable {
         inker = comic.inker
         editor = comic.editor
         summary = comic.summary
+        storyArcs = comic.storyArcs
         comicVineVolumeID = comic.comicVineVolumeID
         comicVineIssueID = comic.comicVineIssueID
         metadataFetchedAt = comic.metadataFetchedAt
@@ -228,6 +237,7 @@ struct CVMetadataSnapshot: Codable {
         comic.inker = inker
         comic.editor = editor
         comic.summary = summary
+        comic.storyArcs = storyArcs ?? []
         comic.comicVineVolumeID = comicVineVolumeID
         comic.comicVineIssueID = comicVineIssueID
         comic.metadataFetchedAt = metadataFetchedAt
@@ -366,12 +376,12 @@ final class ComicVineService {
         )
     }
 
-    /// Full issue details (creator credits). 1 API call.
+    /// Full issue details (creator credits + story arcs). 1 API call.
     func issueDetail(id: Int) async throws -> CVIssueDetail {
         try await request(
             path: "issue/4000-\(id)/",
             query: [
-                URLQueryItem(name: "field_list", value: "id,name,description,cover_date,person_credits"),
+                URLQueryItem(name: "field_list", value: "id,name,description,cover_date,person_credits,story_arc_credits"),
             ]
         )
     }
@@ -675,12 +685,21 @@ enum ComicVineFetcher {
                         updated.year = Int(coverDate.prefix(4))
                     }
 
-                    // Creators
-                    if let detail = try? await ComicVineService.shared.issueDetail(id: issue.id),
-                       let credits = detail.personCredits {
-                        ComicVineMatcher.applyCredits(credits, to: &updated)
+                    // Creators + story arcs (single detail call)
+                    if let detail = try? await ComicVineService.shared.issueDetail(id: issue.id) {
+                        if let credits = detail.personCredits {
+                            ComicVineMatcher.applyCredits(credits, to: &updated)
+                        }
                         if updated.summary == nil || updated.summary?.isEmpty == true {
                             updated.summary = ComicVineMatcher.stripHTML(detail.description)
+                        }
+                        // Story arcs: ComicVine is authoritative — replace,
+                        // but never wipe existing arcs with an empty result.
+                        let arcNames = (detail.storyArcCredits ?? [])
+                            .compactMap { $0.name?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                            .filter { !$0.isEmpty }
+                        if !arcNames.isEmpty {
+                            updated.storyArcs = arcNames
                         }
                     }
                     AppLog.metadata.info("[ComicVine] Issue #\(issueNumber) matched (id \(issue.id)) for volume \(volume.id) — writer:\(updated.writer ?? "–") artist:\(updated.artist ?? "–")")

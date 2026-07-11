@@ -55,6 +55,13 @@ struct Comic: Identifiable, Codable {
     var isOnReadingList: Bool
     /// Set when a file move fails or the file is missing on disk; cleared when resolved.
     var needsAttention: Bool
+    /// True when no publisher is set. Quick Add parks these books in the
+    /// "Unknown Publisher" library folder; the badge invites the user to fix
+    /// the publisher (which re-files the book via `resortAfterEdit`).
+    /// Derived — auto-clears the moment a publisher is assigned.
+    var needsPublisher: Bool {
+        (publisher ?? "").trimmingCharacters(in: .whitespaces).isEmpty
+    }
 
     // MARK: - Reader Preferences
     var preferredTransition: String?  // Per-book transition override (PageTransition.rawValue)
@@ -77,6 +84,9 @@ struct Comic: Identifiable, Codable {
     /// JSON snapshot of the metadata fields as they were just BEFORE the last
     /// ComicVine fetch was applied. Non-nil = the fetch can be reverted.
     var metadataBackup: String?
+    /// Story arcs / events this issue belongs to (from ComicVine
+    /// story_arc_credits), e.g. ["Civil War"]. Searchable alongside tags.
+    var storyArcs: [String]
 
     // MARK: - File Info
     var fileSize: Int64  // in bytes
@@ -127,6 +137,7 @@ struct Comic: Identifiable, Codable {
         metadataFetchedAt: Date? = nil,
         metadataCandidates: String? = nil,
         metadataBackup: String? = nil,
+        storyArcs: [String] = [],
         contentRating: ContentRating = .allAges,
         fileSize: Int64 = 0,
         fileType: FileType = .cbz,
@@ -172,6 +183,7 @@ struct Comic: Identifiable, Codable {
         self.metadataFetchedAt = metadataFetchedAt
         self.metadataCandidates = metadataCandidates
         self.metadataBackup = metadataBackup
+        self.storyArcs = storyArcs
         self.contentRating = contentRating
         self.fileSize = fileSize
         self.fileType = fileType
@@ -216,16 +228,54 @@ extension Comic {
 
 // MARK: - Content Rating Enum
 extension Comic {
+    /// Age guideline following the industry model used by US publishers and
+    /// manga labels (e.g. Marvel/DC age bands, Viz ratings):
+    ///   All Ages (A) · Teen (T, 12+) · Teen Plus (T+, 15+) · Mature (M, 17+) · Explicit (E)
+    /// Raw values are unchanged from the original enum, so no data migration.
     enum ContentRating: Int, Codable, CaseIterable {
         case allAges = 0, teen, matureTeen, mature, explicit
 
+        /// Full label for pickers and inspector fields.
         var label: String {
             switch self {
             case .allAges: return "All Ages"
-            case .teen: return "Teen"
-            case .matureTeen: return "Mature Teen"
+            case .teen: return "T (Teen)"
+            case .matureTeen: return "T+ (Teen Plus)"
             case .mature: return "Mature"
             case .explicit: return "Explicit"
+            }
+        }
+
+        /// Short code for compact badges on covers (matches print/manga codes).
+        var code: String {
+            switch self {
+            case .allAges: return "A"
+            case .teen: return "T"
+            case .matureTeen: return "T+"
+            case .mature: return "M"
+            case .explicit: return "E"
+            }
+        }
+
+        /// Age guidance shown in tooltips/help.
+        var ageGuidance: String {
+            switch self {
+            case .allAges: return "Appropriate for all readers"
+            case .teen: return "Ages 12 and up"
+            case .matureTeen: return "Ages 15 and up"
+            case .mature: return "Ages 17 and up"
+            case .explicit: return "Adults only"
+            }
+        }
+
+        /// Badge color, escalating with maturity.
+        var color: Color {
+            switch self {
+            case .allAges: return AccentColors.success
+            case .teen: return AccentColors.primary
+            case .matureTeen: return AccentColors.warning
+            case .mature: return AccentColors.error
+            case .explicit: return SemanticColors.vertigo
             }
         }
     }
@@ -676,6 +726,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         static let metadataFetchedAt = Column("metadata_fetched_at")
         static let metadataCandidates = Column("metadata_candidates")
         static let metadataBackup = Column("metadata_backup")
+        static let storyArcs = Column("story_arcs")
         static let contentRating = Column("content_rating")
         static let fileSize = Column("file_size")
         static let fileType = Column("file_type")
@@ -724,6 +775,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         container[Columns.metadataFetchedAt] = metadataFetchedAt
         container[Columns.metadataCandidates] = metadataCandidates
         container[Columns.metadataBackup] = metadataBackup
+        container[Columns.storyArcs] = try? JSONEncoder().encode(storyArcs)  // Store as JSON
         container[Columns.contentRating] = contentRating.rawValue
         container[Columns.fileSize] = fileSize
         container[Columns.fileType] = fileType.rawValue
@@ -755,6 +807,12 @@ extension Comic: FetchableRecord, PersistableRecord {
         var decodedTags: [String] = []
         if let tagsData: Data = row["tags"] {
             decodedTags = (try? JSONDecoder().decode([String].self, from: tagsData)) ?? []
+        }
+
+        // Decode story arcs from JSON
+        var decodedStoryArcs: [String] = []
+        if let arcsData: Data = row["story_arcs"] {
+            decodedStoryArcs = (try? JSONDecoder().decode([String].self, from: arcsData)) ?? []
         }
 
         self.init(
@@ -797,6 +855,7 @@ extension Comic: FetchableRecord, PersistableRecord {
             metadataFetchedAt: row["metadata_fetched_at"],
             metadataCandidates: row["metadata_candidates"],
             metadataBackup: row["metadata_backup"],
+            storyArcs: decodedStoryArcs,
             contentRating: ContentRating(rawValue: row["content_rating"] ?? 0) ?? .allAges,
             fileSize: fileSize,
             fileType: fileType,

@@ -23,6 +23,15 @@ struct LibraryPublisherBrowseView: View {
     @State private var expandedPublishers: Set<String> = []
     @State private var expandedSeries: Set<String> = []
 
+    #if os(iOS)
+        @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+        /// iPhone: the fixed-width banner leaves no room beside it, so the
+        /// name/series/issues text moves BELOW the banner instead.
+        private var useStackedPublisherHeader: Bool { horizontalSizeClass == .compact }
+    #else
+        private var useStackedPublisherHeader: Bool { false }
+    #endif
+
     var body: some View {
         ScrollView {
             if publisherGroups.isEmpty {
@@ -51,50 +60,56 @@ struct LibraryPublisherBrowseView: View {
                 }
             }
         } label: {
-            HStack(spacing: Spacing.md) {
-                // Chevron
-                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(TextColors.tertiary)
-                    .frame(width: 16, height: 16)
+            Group {
+                if useStackedPublisherHeader {
+                    // iPhone: banner on top, text row underneath — side by
+                    // side the fixed-width banner squeezed the text into a
+                    // one-character-per-line column.
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        PublisherBannerView(publisherName: group.publisher)
+                            .frame(maxWidth: .infinity)
 
-                // Publisher colour dot + banner image
-                Circle()
-                    .fill(publisherColor(for: group.publisher))
-                    .frame(width: 10, height: 10)
-
-                PublisherBannerView(publisherName: group.publisher)
-
-                // Name + subtitle
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(group.publisher)
-                        .font(Typography.h3)
-                        .foregroundColor(TextColors.primary)
-                    HStack(spacing: Spacing.xs) {
-                        Text("\(group.seriesGroups.count) series")
-                            .font(Typography.caption)
-                            .foregroundColor(TextColors.secondary)
-                        if !group.yearRange.isEmpty {
-                            Text("•")
-                                .font(Typography.caption)
+                        HStack(spacing: Spacing.md) {
+                            // Chevron
+                            Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
                                 .foregroundColor(TextColors.tertiary)
-                            Text(group.yearRange)
-                                .font(Typography.caption)
-                                .foregroundColor(TextColors.secondary)
+                                .frame(width: 16, height: 16)
+
+                            // Publisher colour dot
+                            Circle()
+                                .fill(publisherColor(for: group.publisher))
+                                .frame(width: 10, height: 10)
+
+                            publisherTitleBlock(group)
+
+                            Spacer()
+
+                            publisherIssueBadge(group)
                         }
                     }
+                } else {
+                    HStack(spacing: Spacing.md) {
+                        // Chevron
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(TextColors.tertiary)
+                            .frame(width: 16, height: 16)
+
+                        // Publisher colour dot + banner image
+                        Circle()
+                            .fill(publisherColor(for: group.publisher))
+                            .frame(width: 10, height: 10)
+
+                        PublisherBannerView(publisherName: group.publisher)
+
+                        publisherTitleBlock(group)
+
+                        Spacer()
+
+                        publisherIssueBadge(group)
+                    }
                 }
-
-                Spacer()
-
-                // Issue count badge
-                Text("\(group.totalComics) \(group.totalComics == 1 ? "issue" : "issues")")
-                    .font(Typography.caption)
-                    .foregroundColor(TextColors.secondary)
-                    .padding(.horizontal, Spacing.md)
-                    .padding(.vertical, 4)
-                    .background(BackgroundColors.elevated)
-                    .clipShape(Capsule())
             }
             .padding(.vertical, Spacing.md)
             .contentShape(Rectangle())
@@ -109,6 +124,39 @@ struct LibraryPublisherBrowseView: View {
                 seriesSection(seriesGroup, publisherID: group.id)
             }
         }
+    }
+
+    /// Publisher name + "N series • year range" subtitle.
+    private func publisherTitleBlock(_ group: PublisherGroup) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(group.publisher)
+                .font(Typography.h3)
+                .foregroundColor(TextColors.primary)
+            HStack(spacing: Spacing.xs) {
+                Text("\(group.seriesGroups.count) series")
+                    .font(Typography.caption)
+                    .foregroundColor(TextColors.secondary)
+                if !group.yearRange.isEmpty {
+                    Text("•")
+                        .font(Typography.caption)
+                        .foregroundColor(TextColors.tertiary)
+                    Text(group.yearRange)
+                        .font(Typography.caption)
+                        .foregroundColor(TextColors.secondary)
+                }
+            }
+        }
+    }
+
+    /// "N issues" capsule badge.
+    private func publisherIssueBadge(_ group: PublisherGroup) -> some View {
+        Text("\(group.totalComics) \(group.totalComics == 1 ? "issue" : "issues")")
+            .font(Typography.caption)
+            .foregroundColor(TextColors.secondary)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, 4)
+            .background(BackgroundColors.elevated)
+            .clipShape(Capsule())
     }
 
     @ViewBuilder

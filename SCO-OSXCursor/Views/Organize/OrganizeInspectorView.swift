@@ -84,6 +84,10 @@ struct OrganizeInspectorView: View {
                     .font(.caption)  // Typography.caption -> .caption
                     .foregroundColor(.secondary)  // TextColors.tertiary -> .secondary
 
+                // Ready/Pending explainer — tells the user exactly which
+                // fields still stand between this book and "Ready".
+                readyChecklist
+
                 // Cover preview — extracted lazily for the selected file only,
                 // so staging stays fast. Click to enlarge.
                 coverPreview
@@ -109,9 +113,7 @@ struct OrganizeInspectorView: View {
 
                     // Series
                     VStack(alignment: .leading, spacing: 4) {  // Spacing.xs -> 4
-                        Text("Series")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        fieldLabel("Series")
                         AutocompleteTextField(
                             title: "Series Name",
                             text: $series,
@@ -125,27 +127,21 @@ struct OrganizeInspectorView: View {
                     HStack(spacing: 12) {  // Spacing.md -> 12
                         // Issue
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Issue")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                            fieldLabel("Issue")
                             TextField("001", text: $issueNumber)
                                 .textFieldStyle(RoundedBorderTextFieldStyle())
                         }
 
                         // Volume
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Volume")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                            fieldLabel("Volume")
                             TextField("1", value: $volume, formatter: NumberFormatter())
                                 .textFieldStyle(RoundedBorderTextFieldStyle())
                         }
 
                         // Year
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Year")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                            fieldLabel("Year")
                             TextField("YYYY", value: $year, formatter: NumberFormatter())
                                 .textFieldStyle(RoundedBorderTextFieldStyle())
                         }
@@ -153,9 +149,7 @@ struct OrganizeInspectorView: View {
 
                     // Publisher
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Publisher")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        fieldLabel("Publisher")
                         AutocompleteTextField(
                             title: "Unknown Publisher",
                             text: $publisher,
@@ -354,6 +348,12 @@ struct OrganizeInspectorView: View {
             // Sync auto-parsed metadata back to viewModel so confirmMatch reads current values
             update()
         }
+        .featureHint(
+            id: "organizeDetails",
+            icon: "checkmark.circle",
+            title: "Review, then import",
+            message: "Check the detected details — fields marked in orange decide whether a book is Ready or Pending. Fetch from ComicVine fills them for you. Import books one at a time here, or all at once with Apply All Ready."
+        )
         .sheet(isPresented: $showingCoverZoom) {
             CoverZoomView(
                 coverData: viewModel.selectedCoverData,
@@ -479,6 +479,101 @@ struct OrganizeInspectorView: View {
             }
             .help("Click to enlarge")
             Spacer()
+        }
+    }
+
+    // MARK: - Ready Checklist
+    //
+    // Mirrors StagedComic.reevaluate(userEdited:) — the format-aware rules
+    // that decide Ready (High confidence) vs Pending. Keep the two in sync.
+
+    /// Fields still missing before this book reaches "Ready".
+    private var missingForReady: [String] {
+        var missing: [String] = []
+        if series.isEmpty { missing.append("Series") }
+        switch bookFormat {
+        case .issue:
+            if issueNumber.isEmpty { missing.append("Issue") }
+            if year <= 0 { missing.append("Year") }
+            if publisher.isEmpty { missing.append("Publisher") }
+        case .oneShot:
+            if year <= 0 { missing.append("Year") }
+            if publisher.isEmpty { missing.append("Publisher") }
+        case .volume:
+            if volume == nil { missing.append("Volume") }
+            if year <= 0 { missing.append("Year") }
+            if publisher.isEmpty { missing.append("Publisher") }
+        case .ebook:
+            if year <= 0 && publisher.isEmpty { missing.append("Year or Publisher") }
+        }
+        return missing
+    }
+
+    /// Whether a given field label should carry the "needed for Ready" marker.
+    private func fieldNeedsAttention(_ field: String) -> Bool {
+        if missingForReady.contains(field) { return true }
+        // Ebooks accept either Year OR Publisher — flag both while neither is set
+        if missingForReady.contains("Year or Publisher"),
+            field == "Year" || field == "Publisher"
+        {
+            return true
+        }
+        return false
+    }
+
+    /// Field caption that grows an orange "needed for Ready" marker while
+    /// the field is empty and required for Ready status.
+    private func fieldLabel(_ name: String) -> some View {
+        HStack(spacing: 5) {
+            Text(name)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            if fieldNeedsAttention(name) {
+                HStack(spacing: 3) {
+                    Circle()
+                        .fill(Color.orange)
+                        .frame(width: 6, height: 6)
+                    Text("needed for Ready")
+                        .font(.caption2)
+                        .foregroundColor(.orange)
+                }
+                .help("Optional for import, but the book stays Pending until this is filled")
+            }
+        }
+    }
+
+    /// Green "all set" / orange "still missing …" callout under the header.
+    @ViewBuilder
+    private var readyChecklist: some View {
+        if missingForReady.isEmpty {
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.green)
+                Text("All key fields filled — this book is Ready to import.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.green.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        } else {
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: "info.circle.fill")
+                    .foregroundColor(.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Pending — still missing: \(missingForReady.joined(separator: ", "))")
+                        .font(.caption.weight(.semibold))
+                    Text("These aren't required to import, but the book stays Pending until they're filled. Fetch from ComicVine can fill them automatically.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.orange.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
         }
     }
 

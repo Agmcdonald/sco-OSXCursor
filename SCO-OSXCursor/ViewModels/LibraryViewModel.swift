@@ -514,6 +514,15 @@ final class LibraryViewModel: ObservableObject {
         var imported = 0
         var newComics: [Comic] = []
 
+        // Home-library auto-sort: Quick Add files books into the canonical
+        // hierarchy just like Organize does. Books without a publisher land
+        // in "Unknown Publisher/<Series>/" awaiting user correction (editing
+        // the publisher later re-files them via resortAfterEdit).
+        let libraryRoot: URL? =
+            AppSettings.load().autoSortIntoLibrary
+            ? SettingsViewModel().resolveHomeLibraryURL()
+            : nil
+
         for (index, url) in urls.enumerated() {
             do {
                 // Start accessing security-scoped resource
@@ -702,10 +711,27 @@ final class LibraryViewModel: ObservableObject {
                 }
 
                 // Merge with existing comic if present
-                let finalComic = Comic.merged(existing: existingComic, extracted: extractedComic)
+                var finalComic = Comic.merged(existing: existingComic, extracted: extractedComic)
 
                 // Save to database
                 try await database.saveComic(finalComic)
+
+                // Sort into the home library. Non-fatal: on failure the book
+                // stays where it is (imported in place, like before).
+                if let libraryRoot, !isBundledFile {
+                    do {
+                        let moved = try await LibraryFileService.shared.moveToLibrary(
+                            finalComic, libraryRoot: libraryRoot, database: database)
+                        if moved.filePath != finalComic.filePath {
+                            await logActivity(.fileMoved, comic: moved, new: moved.fileName)
+                        }
+                        finalComic = moved
+                    } catch {
+                        AppLog.library.error(
+                            "[LibraryViewModel] ⚠️ Library sort failed for \(finalComic.fileName): \(error.localizedDescription)"
+                        )
+                    }
+                }
 
                 // Auto-populate Knowledge Base with Series/Publisher
                 checkAndAutoPopulateKnowledge(comic: finalComic)

@@ -20,7 +20,11 @@ import os
 @MainActor
 struct SettingsView: View {
     @ObservedObject private var readerSettings = ReaderSettings.shared
-    @StateObject private var viewModel = SettingsViewModel()
+    // The app-wide instance injected at the root (SCO_OSXCursorApp). Using
+    // the shared instance — not a private copy — is what makes the theme
+    // picker (and every other setting) take effect immediately: the root
+    // WindowGroup reads `settings.theme` from this same object.
+    @EnvironmentObject private var viewModel: SettingsViewModel
 
     @Environment(\.openURL) private var openURL
 
@@ -38,6 +42,9 @@ struct SettingsView: View {
 
     // Feedback
     @State private var didCopyEmail = false
+
+    // Feature hints reset (Appearance section)
+    @State private var didResetHints = false
 
     @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
     @AppStorage("showMetadataTags") private var showMetadataTags = true
@@ -89,6 +96,32 @@ struct SettingsView: View {
 
                         HStack {
                             VStack(alignment: .leading, spacing: Spacing.xs) {
+                                Text("Show Feature Hints Again")
+                                    .font(Typography.h3)
+                                    .foregroundColor(TextColors.primary)
+
+                                Text(didResetHints
+                                    ? "Hints re-armed — they'll appear as you revisit each area"
+                                    : "Replay the one-time tips that introduce each area of the app")
+                                    .font(Typography.bodySmall)
+                                    .foregroundColor(TextColors.secondary)
+                            }
+
+                            Spacer()
+
+                            Button(didResetHints ? "Done" : "Reset") {
+                                FeatureHintStore.resetAll()
+                                didResetHints = true
+                            }
+                            .disabled(didResetHints)
+                        }
+
+                        Divider()
+                            .background(BorderColors.subtle)
+                            .padding(.vertical, Spacing.xs)
+
+                        HStack {
+                            VStack(alignment: .leading, spacing: Spacing.xs) {
                                 Text("Show Metadata Status Tags")
                                     .font(Typography.h3)
                                     .foregroundColor(TextColors.primary)
@@ -104,6 +137,21 @@ struct SettingsView: View {
                                 .labelsHidden()
                         }
                     }
+                }
+
+                // Organization Settings Section
+                settingsSection(title: "Organization", icon: "folder.badge.gearshape") {
+                    organizationSettings
+                }
+
+                // Reader Settings Section
+                settingsSection(title: "Reader", icon: "book.fill") {
+                    readerDefaultsSettings
+                }
+
+                // Ebook Typography Section
+                settingsSection(title: "Ebook Typography", icon: "textformat") {
+                    ebookTypographySettings
                 }
 
                 // Publisher Branding Section
@@ -140,19 +188,9 @@ struct SettingsView: View {
                     }
                 }
 
-                // Reader Settings Section
-                settingsSection(title: "Reader", icon: "book.fill") {
-                    readerDefaultsSettings
-                }
-
                 // ComicVine Metadata Section
                 settingsSection(title: "ComicVine Metadata", icon: "network") {
                     comicVineSettings
-                }
-
-                // Organization Settings Section
-                settingsSection(title: "Organization", icon: "folder.badge.gearshape") {
-                    organizationSettings
                 }
 
                 // Feedback & Support Section
@@ -297,62 +335,6 @@ struct SettingsView: View {
             .background(BackgroundColors.elevated)
             .clipShape(RoundedRectangle(cornerRadius: 8))
 
-            // eBook typography (applies to all EPUBs; font size stays per-book)
-            VStack(alignment: .leading, spacing: Spacing.sm) {
-                Text("eBook Typography")
-                    .font(Typography.h3)
-                    .foregroundColor(TextColors.primary)
-
-                Text("Font, line spacing, and margins for all eBooks. Text size is adjusted per book from the reader bar.")
-                    .font(Typography.bodySmall)
-                    .foregroundColor(TextColors.secondary)
-
-                // Live preview — re-renders as the pickers below change
-                typographyPreview
-
-                HStack {
-                    Text("Font")
-                        .font(Typography.body)
-                        .foregroundColor(TextColors.primary)
-                    Spacer()
-                    Picker("", selection: $readerSettings.epubFontFamily) {
-                        ForEach(EPUBFontFamily.allCases, id: \.self) { family in
-                            Text(family.displayName).tag(family)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                }
-
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("Line Spacing")
-                        .font(Typography.body)
-                        .foregroundColor(TextColors.primary)
-                    Picker("", selection: $readerSettings.epubLineSpacing) {
-                        ForEach(EPUBLineSpacing.allCases, id: \.self) { spacing in
-                            Text(spacing.displayName).tag(spacing)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                }
-                .padding(.top, Spacing.xs)
-
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("Margins")
-                        .font(Typography.body)
-                        .foregroundColor(TextColors.primary)
-                    Picker("", selection: $readerSettings.epubMargins) {
-                        ForEach(EPUBMargins.allCases, id: \.self) { margin in
-                            Text(margin.displayName).tag(margin)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                }
-                .padding(.top, Spacing.xs)
-            }
-            .padding(Spacing.md)
-            .background(BackgroundColors.elevated)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-
             #if os(iOS)
                 // Tap-zone width (touch only)
                 VStack(alignment: .leading, spacing: Spacing.sm) {
@@ -376,6 +358,64 @@ struct SettingsView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             #endif
         }
+    }
+
+    // MARK: - Ebook Typography Settings
+    //
+    // Applies to all EPUBs; font size stays per-book and is adjusted from
+    // the reader bar.
+
+    private var ebookTypographySettings: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text("Font, line spacing, and margins for all eBooks. Text size is adjusted per book from the reader bar.")
+                .font(Typography.bodySmall)
+                .foregroundColor(TextColors.secondary)
+
+            // Live preview — re-renders as the pickers below change
+            typographyPreview
+
+            HStack {
+                Text("Font")
+                    .font(Typography.body)
+                    .foregroundColor(TextColors.primary)
+                Spacer()
+                Picker("", selection: $readerSettings.epubFontFamily) {
+                    ForEach(EPUBFontFamily.allCases, id: \.self) { family in
+                        Text(family.displayName).tag(family)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("Line Spacing")
+                    .font(Typography.body)
+                    .foregroundColor(TextColors.primary)
+                Picker("", selection: $readerSettings.epubLineSpacing) {
+                    ForEach(EPUBLineSpacing.allCases, id: \.self) { spacing in
+                        Text(spacing.displayName).tag(spacing)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+            .padding(.top, Spacing.xs)
+
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("Margins")
+                    .font(Typography.body)
+                    .foregroundColor(TextColors.primary)
+                Picker("", selection: $readerSettings.epubMargins) {
+                    ForEach(EPUBMargins.allCases, id: \.self) { margin in
+                        Text(margin.displayName).tag(margin)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+            .padding(.top, Spacing.xs)
+        }
+        .padding(Spacing.md)
+        .background(BackgroundColors.elevated)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     // MARK: - ComicVine Settings
@@ -1149,4 +1189,5 @@ struct SettingsView: View {
 
 #Preview {
     SettingsView()
+        .environmentObject(SettingsViewModel())
 }

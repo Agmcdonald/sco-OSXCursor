@@ -548,6 +548,21 @@ final class DatabaseManager {
             AppLog.database.info("[DatabaseManager] ✅ Migration v22_metadata_backup complete")
         }
 
+        migrator.registerMigration("v23_story_arcs") { db in
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v23_story_arcs")
+            if try db.tableExists("comics") {
+                do {
+                    try db.alter(table: "comics") { t in
+                        t.add(column: "story_arcs", .blob)  // JSON [String], like tags
+                    }
+                    AppLog.database.info("[DatabaseManager] ✅ Added story_arcs column")
+                } catch {
+                    AppLog.database.error("[DatabaseManager] ℹ️ story_arcs column may already exist: \(error.localizedDescription)")
+                }
+            }
+            AppLog.database.info("[DatabaseManager] ✅ Migration v23_story_arcs complete")
+        }
+
         return migrator
     }
 

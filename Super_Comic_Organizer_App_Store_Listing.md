@@ -13,85 +13,82 @@ Drop in your comics — Super Comic Organizer identifies them, pulls in cover ar
 
 Your comic collection deserves better than a folder full of cryptic filenames.
 
-Super Comic Organizer turns a messy pile of CBZ, CBR, PDF, and EPUB files into a real library. Drop your files in and it reads each filename, extracting the series, issue number, year, and volume automatically — no typing required. Every match comes with a confidence rating, so you always know what's solid and what's worth a second look. As you add books and make corrections, Super Comic Organizer builds its own knowledge base from your library, getting sharper the more you use it.
+Super Comic Organizer turns a pile of CBZ, CBR, PDF, and EPUB files into a real library. Drop files in and it reads each filename, extracting series, issue number, year, and volume automatically, with a confidence rating on every match. As you add books and make corrections, it builds a knowledge base from your own library, getting sharper the more you use it.
 
-Want richer detail? Connect to ComicVine and pull in publishers, creators (writer, penciller, inker, colorist, cover artist, editor), summaries, and cover dates for the issues in your library.
+Want richer detail? Connect to ComicVine (beta) for publisher, creator credits, summaries, and cover dates.
 
-Once it's organized, browse it your way: a grid of covers, a list view, or a publisher-and-series shelf that feels like flipping through a real longbox. Sort your books into folders, search and filter by series, publisher, or reading status, however makes sense to you.
+Browse your way: grid, list, or a publisher-and-series shelf like a real longbox. Sort into folders, search, and filter by series, publisher, or reading status.
 
-Then just read. The built-in reader supports single-page, two-page spread, and continuous scroll modes, with pinch-to-zoom, double-tap zoom, and adjustable tap zones for turning pages. Prefer manga? Flip on right-to-left mode. Reading an EPUB? Switch between dark, light, and sepia themes and jump around with a full table of contents. Your zoom level, reading position, and progress are all remembered — pick up any book exactly where you left off.
+Then read. The built-in reader offers single-page, spread, and continuous scroll modes, pinch and double-tap zoom, adjustable tap zones, and right-to-left manga mode. EPUBs get dark/light/sepia themes and a table of contents. Zoom, position, and progress are all remembered.
 
-Reading on your Mac but heading out with your iPad? Transfer books straight from your Mac library to your iPad and keep reading.
+Reading on your Mac but heading out with your iPad? Transfer books straight from your Mac library to your iPad.
 
-Behind the scenes, Super Comic Organizer flags duplicates and missing files, learns from your manual corrections so it gets smarter over time, and gives you a dashboard of your collection: publisher breakdowns, decade analysis, completion stats, and reading activity.
+Behind the scenes: duplicate and missing-file detection, and a dashboard with publisher breakdowns, decade analysis, and reading activity.
 
 Built natively for Mac, with iPad support built in.
 
 ## What's Included
 
 ### Smart Import & Parsing
-- Drag-and-drop import for CBZ, CBR, PDF, and EPUB files
-- Automatic filename parsing — series, issue number, year, and volume extracted instantly
-- Reads embedded ComicInfo.xml metadata when available
-- Confidence scoring (High / Medium / Low) on every automatic match
-- Batch import with live progress tracking
+- Drag-and-drop import for CBZ, CBR, PDF, and EPUB
+- Automatic filename parsing (series, issue, year, volume)
+- Reads embedded ComicInfo.xml metadata
+- Confidence scoring (High/Medium/Low) on every match
+- Batch import with progress tracking
 - Automatic cover extraction and caching
 
-### Metadata & Your Personal Knowledge Base
-- Your own knowledge base of series, built automatically as you add books to your library
-- Manual correction tool that teaches the system for next time
+### Metadata & Your Own Knowledge Base
+- Personal knowledge base of series, built as you add books
+- Manual corrections teach the system for next time
 - Publisher auto-detection from filenames
-- Full metadata editor with intelligent field suggestions
+- Full metadata editor with smart suggestions
 
 ### ComicVine Integration (Beta)
-- Search and match your series against ComicVine's database
-- Pull in publisher, creators, summaries, and cover dates
-- Issue-level creator credits: writer, penciller, inker, colorist, cover artist, editor
-- Smart disambiguation when multiple series match
-- Batch metadata fetch for your whole selection at once
-- Note: newly added and not yet stress-tested at scale — beta feedback welcome
+- Match series against ComicVine's database
+- Publisher, creators, summaries, cover dates
+- Issue-level credits: writer, penciller, inker, colorist, cover artist, editor
+- Smart disambiguation for ambiguous matches
+- Batch metadata fetch
+- New and not yet stress-tested at scale — beta feedback welcome
 
 ### Folders
 - Organize your library into folders, your way
-- Keep series, runs, or reading lists grouped however makes sense to you
 
 ### Mac ↔ iPad Book Transfer
-- Send books straight from your Mac library to your iPad
-- Verified working in testing so far
+- Send books from your Mac library straight to your iPad
+- Working well in testing so far
 
 ### Library Browsing
-- Grid view with adjustable cover sizes
-- List view for fast scanning
+- Grid and list views, adjustable cover size
 - Publisher → Series → Issues shelf browsing
-- Advanced search and filtering by series, publisher, and more
-- Multi-select for bulk actions
-- Reading-progress indicators right on each cover
+- Advanced search and filtering
+- Multi-select bulk actions
+- Reading-progress indicators on each cover
 
 ### Full-Featured Reader
-- Single-page, two-page spread, and continuous scroll modes
-- Realistic page-curl turning animation
-- Pinch-to-zoom and pan, with double-tap zoom
+- Single-page, spread, and continuous scroll modes
+- Realistic page-curl animation
+- Pinch and double-tap zoom with pan
 - Adjustable tap zones for page turning
 - Right-to-left (manga) reading mode
-- Per-book zoom and page memory — resume exactly where you left off
-- EPUB support with dark, light, and sepia themes, plus a full table of contents
+- Per-book zoom and page memory
+- EPUB themes (dark/light/sepia) and table of contents
 
 ### Collection Insights
-- Dashboard with publisher breakdowns and decade analysis
+- Publisher breakdowns and decade analysis
 - Completion and processing metrics
-- Reading activity tracking (books read, pages read)
-- Collection health monitoring with cleanup recommendations
+- Reading activity tracking
+- Collection health recommendations
 
 ### Organization & File Management
-- Duplicate detection across your library
+- Duplicate detection
 - Missing-file tracking
-- Configurable naming structures for your files on disk
+- Configurable file naming structures
 
 ### Platform
-- Native macOS app built in SwiftUI
-- iPad support
-- Full dark mode support
-- Local, private storage — your library lives on your device
+- Native macOS app (SwiftUI), iPad support
+- Full dark mode
+- Local, private storage on your device
 
 ---
 

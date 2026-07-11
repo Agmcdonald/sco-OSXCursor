@@ -58,6 +58,12 @@ struct LibraryView: View {
     // MARK: - State
 
     @State private var searchText = ""
+    /// True while the header search field has keyboard focus — used to keep
+    /// the Space/Return "open reader" shortcuts from stealing keystrokes.
+    @FocusState private var isSearchFieldFocused: Bool
+    /// Focus target for the browse area so key presses still land in this
+    /// view once the search field is blurred (e.g. after clicking a card).
+    @FocusState private var isBrowseAreaFocused: Bool
     @State private var viewMode: LibraryViewMode = .grid
     @State private var hasLoaded = false
     @AppStorage("librarySortOption") private var sortOption: LibrarySortOption = .dateAdded
@@ -104,6 +110,9 @@ struct LibraryView: View {
     // Missing-file recovery (Locate File…)
     @State private var relinkComicID: ComicID?
     @State private var showingRelinkPicker = false
+    // Import paused while the user decides on a home library folder
+    @State private var showingHomeLibraryPrompt = false
+    @State private var pendingImportURLs: [URL] = []
 
     // Mac → iPad transfer: books queued for "Send to Device…" packaging
     @State private var transferExportRequest: TransferExportRequest?
@@ -307,6 +316,7 @@ struct LibraryView: View {
             LibraryHeaderView(
                 viewMode: $viewMode,
                 searchText: $searchText,
+                searchFieldFocus: $isSearchFieldFocused,
                 sortOption: $sortOption,
                 filters: $filters,
                 showingFilters: $showingFilters,
@@ -380,8 +390,11 @@ struct LibraryView: View {
             }
 
             // Content
-            switch viewMode {
-            case .grid:
+            // Focusable so keyboard events (Space/Return open reader) still
+            // have a landing spot once the search field gives up focus.
+            Group {
+                switch viewMode {
+                case .grid:
                 LibraryGridView(
                     comics: filteredAndSortedComics,
                     isSelectionMode: isSelectionMode,
@@ -468,7 +481,13 @@ struct LibraryView: View {
                         Task { await viewModel.clearFolderCover(folder) }
                     }
                 )
+                }
             }
+            // Focusable so keyboard events (Space/Return open reader) still
+            // have a landing spot once the search field gives up focus.
+            .focusable()
+            .focusEffectDisabled()
+            .focused($isBrowseAreaFocused)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(BackgroundColors.primary)
@@ -495,6 +514,16 @@ struct LibraryView: View {
             ) { result in
                 handleFileImport(result)
             }
+        )
+        // Offer to set a home library before the first sorted import
+        .modifier(
+            HomeLibrarySetupPrompt(
+                isPresented: $showingHomeLibraryPrompt,
+                pendingURLs: $pendingImportURLs,
+                onImport: { urls in
+                    Task { await viewModel.importComics(from: urls) }
+                }
+            )
         )
         // Locate File… — re-link a single missing/moved book
         .background(
@@ -715,9 +744,18 @@ struct LibraryView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .onChange(of: focusedComic) { _, _ in
+        .onChange(of: focusedComic) { oldValue, newValue in
             // Selection alone no longer opens the inspector —
             // the user must tap the Info (ⓘ) button explicitly.
+            //
+            // When the user focuses a *different* comic (e.g. clicks a card),
+            // release keyboard focus from the search field so the Space/Return
+            // "open reader" shortcuts work again. Guarded by an ID comparison
+            // so refreshes of the same comic don't blur the field mid-search.
+            if let newValue, oldValue?.id != newValue.id {
+                isSearchFieldFocused = false
+                isBrowseAreaFocused = true
+            }
         }
         .onChange(of: viewModel.comics) { _, newComics in
             if let focused = focusedComic,
@@ -754,8 +792,8 @@ struct LibraryView: View {
             }
         }
         .onKeyPress(.space) {
-            // Only act when no sheet / overlay is capturing keyboard input
-            guard editingComicID == nil, !showingFilters else { return .ignored }
+            // Only act when no sheet / overlay / text field is capturing keyboard input
+            guard editingComicID == nil, !showingFilters, !isSearchFieldFocused else { return .ignored }
             if let comic = focusedComic, !isSelectionMode {
                 openReader(for: comic)
                 return .handled
@@ -763,7 +801,7 @@ struct LibraryView: View {
             return .ignored
         }
         .onKeyPress(.return) {
-            guard editingComicID == nil, !showingFilters else { return .ignored }
+            guard editingComicID == nil, !showingFilters, !isSearchFieldFocused else { return .ignored }
             if let comic = focusedComic, !isSelectionMode {
                 openReader(for: comic)
                 return .handled
@@ -1122,13 +1160,23 @@ struct LibraryView: View {
     private func handleFileImport(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
-            // Quick Add always imports straight away. (Folder placement is
-            // offered on the Organize "Add Comics" flow instead.)
-            Task {
-                await viewModel.importComics(from: urls)
-            }
+            // Quick Add imports straight away and auto-sorts into the home
+            // library. (Per-folder placement is offered on the Organize
+            // "Add Comics" flow instead.)
+            startImport(urls)
         case .failure(let error):
             AppLog.library.error("File import failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Imports immediately, or pauses to offer setting a home library first
+    /// (auto-sort on, no library folder chosen yet).
+    private func startImport(_ urls: [URL]) {
+        if HomeLibrarySetupPrompt.needsPrompt {
+            pendingImportURLs = urls
+            showingHomeLibraryPrompt = true
+        } else {
+            Task { await viewModel.importComics(from: urls) }
         }
     }
 
@@ -1153,9 +1201,7 @@ struct LibraryView: View {
         }
         if !comicURLs.isEmpty {
             AppLog.library.debug("Importing \(comicURLs.count) dropped files")
-            Task {
-                await viewModel.importComics(from: comicURLs)
-            }
+            startImport(comicURLs)
         }
     }
 

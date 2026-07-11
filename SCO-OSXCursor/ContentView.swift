@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 @MainActor
 struct ContentView: View {
@@ -155,6 +156,7 @@ struct ContentView: View {
             set: { _ in hasSeenWelcome = true }
         )) {
             WelcomeSheet(hasSeenWelcome: $hasSeenWelcome)
+                .environmentObject(settingsViewModel)
         }
         // ── Device transfer: receive a .scobook package ──
         // AirDrop "Open in Super Comic Organizer", the Files app, and macOS
@@ -200,6 +202,12 @@ struct ContentView: View {
                         .ignoresSafeArea()
                         .statusBarHidden(true)
                         .persistentSystemOverlays(.hidden)
+                        .featureHint(
+                            id: "readerEpub",
+                            icon: "textformat",
+                            title: "Reading an eBook",
+                            message: "Tap the center of the page to show the controls. Adjust text size from the reader bar; font, spacing, and margins live in Settings → Ebook Typography."
+                        )
                 } else {
                     ComicReaderView(comic: comic)
                         .id(comic.id)
@@ -207,6 +215,12 @@ struct ContentView: View {
                         .ignoresSafeArea()                          // Art fills the entire glass
                         .statusBarHidden(true)                      // Always hide clock/battery
                         .persistentSystemOverlays(.hidden)          // Always hide home bar
+                        .featureHint(
+                            id: "readerComic",
+                            icon: "book.pages",
+                            title: "Welcome to the reader",
+                            message: "Tap the screen edges to turn pages and the center to show controls. Reading style — single page, spread, manga, or vertical scroll — can be changed from the controls."
+                        )
                 }
             }
         #else
@@ -226,6 +240,12 @@ struct ContentView: View {
                                 .id(comic.id)
                                 .environmentObject(libraryViewModel)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .featureHint(
+                                    id: "readerEpub",
+                                    icon: "textformat",
+                                    title: "Reading an eBook",
+                                    message: "Click the center of the page to show the controls. Adjust text size from the reader bar; font, spacing, and margins live in Settings → Ebook Typography."
+                                )
                                 .transition(.opacity)
                                 .zIndex(100)
                         } else {
@@ -233,6 +253,12 @@ struct ContentView: View {
                                 .id(comic.id)
                                 .environmentObject(libraryViewModel)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .featureHint(
+                                    id: "readerComic",
+                                    icon: "book.pages",
+                                    title: "Welcome to the reader",
+                                    message: "Use the arrow keys or click the page edges to turn pages, and click the center to show controls. Reading style — single page, spread, manga, or vertical scroll — can be changed from the controls."
+                                )
                                 .transition(.opacity)
                                 .zIndex(100)
                         }
@@ -262,6 +288,12 @@ struct ContentView: View {
                 onOpenKnowledge: { selectedTab = .knowledge },
                 onOpenMaintenance: { selectedTab = .maintenance }
             )
+            .featureHint(
+                id: "dashboard",
+                icon: "chart.bar",
+                title: "Your collection at a glance",
+                message: "The Dashboard tracks reading progress, collection stats, and recent activity. It fills in as you import and read books."
+            )
         case .library:
             LibraryView(
                 viewModel: libraryViewModel,
@@ -271,15 +303,48 @@ struct ContentView: View {
                 }
             )
             .environmentObject(incomingTransferCoordinator)
+            .featureHint(
+                id: "library",
+                icon: "books.vertical",
+                title: "This is your Library",
+                message: "Every book you add lives here. Click a cover to start reading, or use Quick Add to import CBZ, CBR, PDF, and EPUB files — whole folders work too."
+            )
         case .organize:
-            OrganizeView(viewModel: organizeViewModel)
-                .environmentObject(incomingTransferCoordinator)
+            OrganizeView(
+                viewModel: organizeViewModel,
+                onOpenSettings: { selectedTab = .settings }
+            )
+            .environmentObject(incomingTransferCoordinator)
+                .featureHint(
+                    id: "organize",
+                    icon: "folder.badge.gearshape",
+                    title: "Sort new books into place",
+                    message: "Drop files or folders here. Series, issue, and publisher are detected automatically — review each match, then confirm to move books into your home library folder."
+                )
         case .learning:
             LearningView(libraryViewModel: libraryViewModel)
+                .featureHint(
+                    id: "learning",
+                    icon: "brain.head.profile",
+                    title: "The app learns as you go",
+                    message: "Each import teaches the app your naming patterns, so future matches get more accurate. You can review and manage what it has learned here."
+                )
         case .knowledge:
             KnowledgeView(libraryViewModel: libraryViewModel)
+                .featureHint(
+                    id: "knowledge",
+                    icon: "book.closed",
+                    title: "Explore your collection's knowledge",
+                    message: "Browse publishers, series, and creators gathered from your collection and ComicVine metadata."
+                )
         case .maintenance:
             MaintenanceView(libraryViewModel: libraryViewModel)
+                .featureHint(
+                    id: "maintenance",
+                    icon: "wrench.and.screwdriver",
+                    title: "Housekeeping tools",
+                    message: "Rebuild thumbnails, clean up the database, fix broken file links, and clear learned patterns when you need a fresh start."
+                )
         case .userManual:
             UserManualView()
         case .settings:
@@ -291,7 +356,12 @@ struct ContentView: View {
 // MARK: - Welcome Sheet
 struct WelcomeSheet: View {
     @Binding var hasSeenWelcome: Bool
-    
+    @EnvironmentObject private var settingsViewModel: SettingsViewModel
+
+    /// 0 = feature highlights, 1 = choose home library folder
+    @State private var step = 0
+    @State private var showingFolderPicker = false
+
     var body: some View {
         ScrollView {
             VStack(spacing: Spacing.xl) {
@@ -311,54 +381,11 @@ struct WelcomeSheet: View {
                     }
                 #endif
 
-                VStack(spacing: Spacing.sm) {
-                    Text("Welcome to Super Comic Organizer")
-                        .font(Typography.h1)
-                        .multilineTextAlignment(.center)
-
-                    Text("Organize, read, and track your comic collection — here's what you can do.")
-                        .font(Typography.body)
-                        .foregroundColor(TextColors.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, Spacing.xl)
+                if step == 0 {
+                    featuresStep
+                } else {
+                    homeFolderStep
                 }
-
-                VStack(alignment: .leading, spacing: Spacing.lg) {
-                    WelcomeHighlight(
-                        icon: "plus.rectangle.on.folder",
-                        title: "Import in seconds",
-                        text: "Use Quick Add to bring in CBZ, CBR, PDF, or EPUB files — or whole folders at once."
-                    )
-                    WelcomeHighlight(
-                        icon: "sparkle.magnifyingglass",
-                        title: "Auto-organized",
-                        text: "Series, publisher, and issue are detected automatically, with optional ComicVine lookups."
-                    )
-                    WelcomeHighlight(
-                        icon: "folder",
-                        title: "Make collections",
-                        text: "Group books into folders, then browse and sort them in the Folder view."
-                    )
-                    WelcomeHighlight(
-                        icon: "book.pages",
-                        title: "Read your way",
-                        text: "A gesture-driven reader with single-page, two-page spread, manga, and vertical-scroll styles."
-                    )
-                }
-                .frame(maxWidth: 440, alignment: .leading)
-
-                Button("Get Started") {
-                    hasSeenWelcome = true
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .padding(.top, Spacing.sm)
-                .tint(AccentColors.primary)
-
-                Text("Need a hand later? Open the User Manual or send feedback from Settings.")
-                    .font(Typography.caption)
-                    .foregroundColor(TextColors.tertiary)
-                    .multilineTextAlignment(.center)
             }
             .padding(Spacing.xxl)
             .frame(maxWidth: .infinity)
@@ -367,6 +394,148 @@ struct WelcomeSheet: View {
             .frame(width: 640, height: 660)
         #endif
         .background(BackgroundColors.primary)
+        .fileImporter(
+            isPresented: $showingFolderPicker,
+            allowedContentTypes: [.folder],
+            allowsMultipleSelection: false
+        ) { result in
+            if case .success(let urls) = result, let url = urls.first {
+                settingsViewModel.setHomeLibraryFolder(url)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: step)
+    }
+
+    // MARK: Step 1 — feature highlights
+
+    private var featuresStep: some View {
+        VStack(spacing: Spacing.xl) {
+            VStack(spacing: Spacing.sm) {
+                Text("Welcome to Super Comic Organizer")
+                    .font(Typography.h1)
+                    .multilineTextAlignment(.center)
+
+                Text("Organize, read, and track your comic collection — here's what you can do.")
+                    .font(Typography.body)
+                    .foregroundColor(TextColors.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, Spacing.xl)
+            }
+
+            VStack(alignment: .leading, spacing: Spacing.lg) {
+                WelcomeHighlight(
+                    icon: "plus.rectangle.on.folder",
+                    title: "Import in seconds",
+                    text: "Use Quick Add to bring in CBZ, CBR, PDF, or EPUB files — or whole folders at once."
+                )
+                WelcomeHighlight(
+                    icon: "sparkle.magnifyingglass",
+                    title: "Auto-organized",
+                    text: "Series, publisher, and issue are detected automatically, with optional ComicVine lookups."
+                )
+                WelcomeHighlight(
+                    icon: "folder",
+                    title: "Make collections",
+                    text: "Group books into folders, then browse and sort them in the Folder view."
+                )
+                WelcomeHighlight(
+                    icon: "book.pages",
+                    title: "Read your way",
+                    text: "A gesture-driven reader with single-page, two-page spread, manga, and vertical-scroll styles."
+                )
+            }
+            .frame(maxWidth: 440, alignment: .leading)
+
+            Button("Continue") {
+                step = 1
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .padding(.top, Spacing.sm)
+            .tint(AccentColors.primary)
+
+            Text("Need a hand later? Open the User Manual or send feedback from Settings.")
+                .font(Typography.caption)
+                .foregroundColor(TextColors.tertiary)
+                .multilineTextAlignment(.center)
+        }
+    }
+
+    // MARK: Step 2 — choose home library folder
+
+    private var homeFolderStep: some View {
+        VStack(spacing: Spacing.xl) {
+            VStack(spacing: Spacing.sm) {
+                Text("Choose a Home for Your Books")
+                    .font(Typography.h1)
+                    .multilineTextAlignment(.center)
+
+                Text("Pick the folder where your books will be stored. When you confirm imports, files are moved here and organized by publisher and series.")
+                    .font(Typography.body)
+                    .foregroundColor(TextColors.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, Spacing.xl)
+            }
+
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                // Current selection / picker
+                HStack(spacing: Spacing.md) {
+                    Image(systemName: settingsViewModel.settings.rootLibraryPath == nil
+                        ? "folder.badge.questionmark" : "checkmark.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(settingsViewModel.settings.rootLibraryPath == nil
+                            ? TextColors.tertiary : AccentColors.success)
+
+                    Text(settingsViewModel.settings.rootLibraryPath?.path ?? "No folder selected")
+                        .font(Typography.body)
+                        .foregroundColor(settingsViewModel.settings.rootLibraryPath == nil
+                            ? TextColors.tertiary : TextColors.primary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Button(settingsViewModel.settings.rootLibraryPath == nil
+                        ? "Choose Folder…" : "Change…") {
+                        showingFolderPicker = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(AccentColors.primary)
+                }
+                .padding(Spacing.md)
+                .background(BackgroundColors.elevated)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                // Cloud & network drive warning (same constraint as Settings)
+                HStack(alignment: .top, spacing: Spacing.sm) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(AccentColors.warning)
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("Choose a local folder on your Mac's internal drive (like Documents). Cloud and network drives — iCloud, Dropbox, Google Drive, NAS — can't be used due to macOS sandbox restrictions.")
+                        .font(Typography.caption)
+                        .foregroundColor(TextColors.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(Spacing.sm)
+                .background(AccentColors.warning.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .frame(maxWidth: 480)
+
+            VStack(spacing: Spacing.sm) {
+                Button(settingsViewModel.settings.rootLibraryPath == nil
+                    ? "Skip for Now" : "Get Started") {
+                    hasSeenWelcome = true
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .tint(AccentColors.primary)
+
+                Text("You can set or change this anytime in Settings → Organization.")
+                    .font(Typography.caption)
+                    .foregroundColor(TextColors.tertiary)
+                    .multilineTextAlignment(.center)
+            }
+        }
     }
 }
 
@@ -418,12 +587,14 @@ struct SidebarView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Top section: App logo
+            // (logo_SCO.png is trimmed to the artwork — no transparent
+            // canvas — so "fit" fills the frame with visible logo.)
             #if os(macOS)
                 if let logo = NSImage(named: "logo_SCO") {
                     Image(nsImage: logo)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: .infinity)
+                        .frame(maxWidth: .infinity, maxHeight: 90)
                         .padding(.vertical, Spacing.md)
                         .padding(.horizontal, Spacing.md)
                 } else {
@@ -434,8 +605,8 @@ struct SidebarView: View {
                     Image(uiImage: logo)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, Spacing.xxl)
+                        .frame(maxWidth: .infinity, maxHeight: 120)
+                        .padding(.vertical, Spacing.xl)
                         .padding(.horizontal, Spacing.lg)
                 } else {
                     fallbackText

@@ -95,7 +95,13 @@ struct ComicInspectorView: View {
                     }
                     
                     InspectorField(title: "Content Rating", value: comic.contentRating.label)
-                    
+
+                    if !comic.storyArcs.isEmpty {
+                        InspectorField(
+                            title: "Story Arcs",
+                            value: comic.storyArcs.joined(separator: ", "))
+                    }
+
                     if let rating = comic.rating, rating > 0 {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("User Rating")

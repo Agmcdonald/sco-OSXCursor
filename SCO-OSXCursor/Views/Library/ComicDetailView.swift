@@ -404,13 +404,19 @@ struct ComicDetailView: View {
                         .font(Typography.bodySmall)
                         .foregroundColor(TextColors.secondary)
                     
+                    // Segments show the print-style codes (A/T/T+/M/E);
+                    // the caption below spells out the selected tier.
                     Picker("Content Rating", selection: $draftContentRating) {
                         ForEach(Comic.ContentRating.allCases, id: \.self) { rating in
-                            Text(rating.label).tag(rating)
+                            Text(rating.code).tag(rating)
                         }
                     }
                     .pickerStyle(.segmented)
                     .padding(.top, Spacing.xs)
+
+                    Text("\(draftContentRating.label) — \(draftContentRating.ageGuidance)")
+                        .font(Typography.caption)
+                        .foregroundColor(TextColors.tertiary)
                 }
 
                 VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -453,6 +459,27 @@ struct ComicDetailView: View {
                 metadataField(
                     label: "Editor", text: $draftEditor, field: .editor,
                     knowledgeType: .editor)
+            }
+
+            // Story Arcs Section (read-only, from ComicVine)
+            if !editedComic.storyArcs.isEmpty {
+                metadataSection(title: "Story Arcs", icon: "point.3.connected.trianglepath.dotted") {
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        ForEach(editedComic.storyArcs, id: \.self) { arc in
+                            HStack(spacing: Spacing.xs) {
+                                Image(systemName: "bookmark")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(AccentColors.primary)
+                                Text(arc)
+                                    .font(Typography.body)
+                                    .foregroundColor(TextColors.primary)
+                            }
+                        }
+                        Text("From ComicVine — search your library by arc name to find related books.")
+                            .font(Typography.caption)
+                            .foregroundColor(TextColors.tertiary)
+                    }
+                }
             }
 
             // Summary Section

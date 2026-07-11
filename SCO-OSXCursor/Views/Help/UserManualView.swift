@@ -40,6 +40,50 @@ struct UserManualView: View {
                 }
                 .padding(.bottom, Spacing.md)
 
+                // 0. How to Start
+                ManualSection(
+                    title: "How to Start",
+                    icon: "flag.checkered",
+                    description: "New to SCO? Do these first."
+                ) {
+                    VStack(alignment: .leading, spacing: Spacing.xl) {
+                        FeatureRow(
+                            icon: "1.circle.fill",
+                            title: "Set a Home Library Folder",
+                            description:
+                                "Go to Settings → Home Library and choose a folder on your device — this is where SCO drops and organizes your books, filing each one into Publisher/Series folders with a clean filename. Pick a purely local folder (Documents, Downloads, or a dedicated Comics folder): iCloud Drive, Dropbox, Google Drive, and network drives don't allow auto-sorting."
+                        )
+
+                        FeatureRow(
+                            icon: "2.circle.fill",
+                            title: "Add Your First Books",
+                            description:
+                                "Press Quick Add in the Library (or Add Files / Scan Folder on the Dashboard) and pick your comic files or a whole folder. SCO reads each filename to detect the series, issue, and publisher, then files the book into your home library automatically. If you haven't set a home library yet, SCO offers to set one up right there."
+                        )
+
+                        FeatureRow(
+                            icon: "bolt.fill",
+                            title: "Quick Actions: Fast & Automatic",
+                            description:
+                                "Quick Add, Add Files, and Scan Folder import immediately — no questions asked. Detection runs on filenames and folder names, and anything SCO can't identify gets parked safely: books without a recognized publisher go to the 'Unknown Publisher' folder and show a ? badge until you fix them. Best for grabbing books fast and cleaning up later."
+                        )
+
+                        FeatureRow(
+                            icon: "folder.badge.plus",
+                            title: "Organize & Add Comics: Review First (Mac)",
+                            description:
+                                "The Organize & Add Comics button routes to the Organize tab, which stages files BEFORE they enter your library. You review what was detected for each book, correct anything that's wrong, fetch ComicVine metadata, and optionally group the batch into a folder — then press Apply to import. Best for big batches or messy filenames you want to verify first."
+                        )
+
+                        FeatureRow(
+                            icon: "questionmark.circle.fill",
+                            title: "Fix Unknowns Whenever",
+                            description:
+                                "Books with a ? badge just need a publisher. Edit the book (or select several and bulk-edit), set the publisher, and SCO automatically re-files it into the right folder — no manual file moving needed."
+                        )
+                    }
+                }
+
                 // 1. Library Section
                 ManualSection(
                     title: "Library & Organization",
@@ -258,7 +302,7 @@ struct UserManualView: View {
                             icon: "plus",
                             title: "Quick Add (Mac & iPad)",
                             description:
-                                "Quick Add imports files straight into the library. It accepts folders too: on iPad, navigate INTO a folder in the Files picker and tap 'Open' — every comic inside (including subfolders) is imported."
+                                "Quick Add imports files straight into the library and, when auto-sort is on, files them into your home library's Publisher/Series folders. Books whose publisher can't be detected wait in 'Unknown Publisher' (marked with a ? badge) until you set one — fixing the publisher re-files them automatically. It accepts folders too: on iPad, navigate INTO a folder in the Files picker and tap 'Open' — every comic inside (including subfolders) is imported."
                         )
 
                         FeatureRow(

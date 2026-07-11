@@ -369,7 +369,10 @@ struct EPUBReaderControlsOverlay: View {
         // The gradient background still extends to the window edge.
         return 38
         #else
-        return 0  // SwiftUI safe area handles this
+        // The reader is presented with .ignoresSafeArea() (page fills the
+        // screen), which zeroes the safe area SwiftUI reports here — so the
+        // bar must pad itself below the notch/Dynamic Island manually.
+        return windowSafeAreaInsets.top
         #endif
     }
 
@@ -377,7 +380,18 @@ struct EPUBReaderControlsOverlay: View {
         #if os(macOS)
         return 0
         #else
-        return 0
+        // Keep the scrubber clear of the home-indicator swipe zone.
+        return windowSafeAreaInsets.bottom
         #endif
     }
+
+    #if os(iOS)
+    private var windowSafeAreaInsets: UIEdgeInsets {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { $0.isKeyWindow }?
+            .safeAreaInsets ?? .zero
+    }
+    #endif
 }

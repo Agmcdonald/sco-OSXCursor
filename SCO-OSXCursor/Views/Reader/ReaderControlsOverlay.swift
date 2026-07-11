@@ -48,6 +48,28 @@ struct ReaderControlsOverlay: View {
         isVerticalScroll && (thumbnailBarPosition == .left || thumbnailBarPosition == .right)
     }
 
+    #if os(iOS)
+        @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+        /// iPhone (compact width): collapse the row of icon buttons into one
+        /// labelled menu so nothing hides under the notch / Dynamic Island.
+        private var useCompactTopBar: Bool { horizontalSizeClass == .compact }
+
+        /// Top safe-area inset read from the window. The reader is presented
+        /// with .ignoresSafeArea() (art fills the screen), which zeroes the
+        /// safe area SwiftUI reports to children — so the HUD must pad itself
+        /// below the notch manually.
+        private var extraTopInset: CGFloat {
+            UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .flatMap { $0.windows }
+                .first { $0.isKeyWindow }?
+                .safeAreaInsets.top ?? 0
+        }
+    #else
+        private var extraTopInset: CGFloat { 0 }
+    #endif
+
     var body: some View {
         ZStack {
             // Scrim is visual only - does NOT block gestures
@@ -154,6 +176,36 @@ struct ReaderControlsOverlay: View {
 
             Spacer()
 
+            #if os(iOS)
+                if useCompactTopBar {
+                    // iPhone: one labelled menu instead of a row of icons —
+                    // the row didn't fit beside the notch / Dynamic Island.
+                    compactActionsMenu
+                } else {
+                    expandedTrailingButtons
+                }
+            #else
+                expandedTrailingButtons
+            #endif
+        }
+        .padding(Spacing.lg)
+        // Reader is presented with .ignoresSafeArea(); push the HUD below
+        // the notch/Dynamic Island manually (0 on macOS).
+        .padding(.top, extraTopInset)
+        .background(
+            LinearGradient(
+                colors: [Color.black.opacity(0.7), Color.clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea(edges: .top)
+        )
+    }
+
+    // MARK: - Trailing Buttons (macOS + iPad)
+    @ViewBuilder
+    private var expandedTrailingButtons: some View {
+        Group {
             // Thumbnail grid button
             Button(action: {
                 withAnimation(.easeInOut(duration: 0.3)) {
@@ -249,7 +301,7 @@ struct ReaderControlsOverlay: View {
             #if os(macOS)
             presetsMenu
             #else
-            // iOS: menu button opens the bottom sheet
+            // iPad: menu button opens the bottom sheet
             Button(action: {
                 withAnimation {
                     showingMenu.toggle()
@@ -267,16 +319,73 @@ struct ReaderControlsOverlay: View {
             .buttonStyle(.plain)
             #endif
         }
-        .padding(Spacing.lg)
-        .background(
-            LinearGradient(
-                colors: [Color.black.opacity(0.7), Color.clear],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea(edges: .top)
-        )
     }
+
+    // MARK: - Compact Actions Menu (iPhone)
+    #if os(iOS)
+        /// All top-bar actions in a single vertical, labelled menu — replaces
+        /// the icon row on compact-width devices where the notch/Dynamic
+        /// Island leaves no room for it.
+        private var compactActionsMenu: some View {
+            Menu {
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        showingThumbnails.toggle()
+                    }
+                    onUserInteraction()
+                }) {
+                    Label("All Pages", systemImage: "square.grid.3x3")
+                }
+
+                if isVerticalScroll {
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            onCycleThumbnailBarPosition?()
+                        }
+                        onUserInteraction()
+                    }) {
+                        Label(
+                            "Thumbnail Bar: \(thumbnailBarPosition.displayName)",
+                            systemImage: thumbnailBarPosition.icon
+                        )
+                    }
+                } else {
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            isSpreadMode.toggle()
+                        }
+                        onUserToggledSpread?()
+                        onUserInteraction()
+                    }) {
+                        Label(
+                            isSpreadMode ? "Single Page" : "Two-Page Spread",
+                            systemImage: isSpreadMode ? "rectangle" : "rectangle.split.2x1"
+                        )
+                    }
+                }
+
+                Divider()
+
+                Button(action: {
+                    withAnimation {
+                        showingMenu.toggle()
+                        controlsVisible = false
+                    }
+                    onUserInteraction()
+                }) {
+                    Label("Reader Menu…", systemImage: "ellipsis.circle")
+                }
+            } label: {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 44, height: 44)
+                    .background(Color.black.opacity(0.5))
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+        }
+    #endif
 
     // MARK: - Bottom Bar
     private var bottomBar: some View {

@@ -57,6 +57,14 @@ struct LibraryFilterBadgesRow: View {
                     )
                 }
 
+                if let contentRating = filters.contentRating {
+                    FilterBadge(
+                        title: "Rating: \(contentRating.label)",
+                        icon: "shield.lefthalf.filled",
+                        onRemove: { filters.contentRating = nil }
+                    )
+                }
+
                 // Clear all button
                 Button(action: { filters.clear() }) {
                     HStack(spacing: Spacing.xs) {
@@ -210,6 +218,32 @@ struct LibraryFilterPanel: View {
                                     action: { filters.year = year }
                                 )
                             }
+                        }
+                    }
+                }
+            }
+
+            // Content rating filter
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                Text("Content Rating")
+                    .font(Typography.bodySmall)
+                    .foregroundColor(TextColors.secondary)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: Spacing.sm) {
+                        FilterChip(
+                            title: "All",
+                            isSelected: filters.contentRating == nil,
+                            action: { filters.contentRating = nil }
+                        )
+
+                        ForEach(Comic.ContentRating.allCases, id: \.self) { rating in
+                            FilterChip(
+                                title: rating.label,
+                                isSelected: filters.contentRating == rating,
+                                action: { filters.contentRating = rating }
+                            )
+                            .help(rating.ageGuidance)
                         }
                     }
                 }

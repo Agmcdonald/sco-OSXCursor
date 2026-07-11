@@ -103,6 +103,11 @@ struct ComicRowView: View {
                             .font(Typography.bodySmall)
                             .foregroundColor(TextColors.secondary)
                     }
+
+                    // Age-rating badge (hidden for All Ages)
+                    if comic.contentRating != .allAges {
+                        ContentRatingBadge(rating: comic.contentRating)
+                    }
                 }
 
                 HStack(spacing: Spacing.md) {

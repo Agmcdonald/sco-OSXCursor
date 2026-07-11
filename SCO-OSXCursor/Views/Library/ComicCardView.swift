@@ -140,6 +140,17 @@ struct ComicCardView: View {
                                 .background(.ultraThinMaterial)
                                 .clipShape(Circle())
                                 .padding(Spacing.sm)
+                        } else if comic.needsPublisher {
+                            // ? Publisher unknown — parked in "Unknown
+                            // Publisher"; edit metadata to file it properly.
+                            Image(systemName: "questionmark.circle.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(AccentColors.warning)
+                                .padding(5)
+                                .background(.ultraThinMaterial)
+                                .clipShape(Circle())
+                                .padding(Spacing.sm)
+                                .help("Publisher unknown — edit metadata to set it")
                         }
 
                         Spacer()
@@ -157,10 +168,18 @@ struct ComicCardView: View {
 
                     Spacer()
 
-                    // Bottom-left badges (reading list + favourite)
+                    // Bottom-left badges (age rating + reading list + favourite)
                     HStack(alignment: .bottom) {
                         VStack(alignment: .leading, spacing: Spacing.xs) {
                             Spacer()
+                            // Age-rating badge (print-style code near the
+                            // corner, like the label by the barcode). Hidden
+                            // for All Ages so unrated books stay clean.
+                            if comic.contentRating != .allAges {
+                                ContentRatingBadge(rating: comic.contentRating)
+                                    .padding(.leading, Spacing.sm)
+                                    .padding(.bottom, comic.isOnReadingList ? 0 : Spacing.sm)
+                            }
                             // Reading list badge
                             if comic.isOnReadingList {
                                 Image("ReadingListIcon")
@@ -241,6 +260,25 @@ struct ComicCardView: View {
                     .foregroundColor(TextColors.tertiary)
             }
         }
+    }
+}
+
+// MARK: - Content Rating Badge
+
+/// Compact age-rating badge — the print-style code publishers put near the
+/// barcode (A / T / T+ / M / E). Shared by the grid card and list row.
+struct ContentRatingBadge: View {
+    let rating: Comic.ContentRating
+
+    var body: some View {
+        Text(rating.code)
+            .font(.system(size: 10, weight: .bold, design: .rounded))
+            .foregroundColor(.white)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(rating.color)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .help("\(rating.label) — \(rating.ageGuidance)")
     }
 }
 

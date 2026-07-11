@@ -14,6 +14,9 @@ struct LibraryHeaderView: View {
     // View state
     @Binding var viewMode: LibraryViewMode
     @Binding var searchText: String
+    /// Focus for the search field, owned by LibraryView so its key shortcuts
+    /// (Space/Return open reader) can stand down while the user is typing.
+    var searchFieldFocus: FocusState<Bool>.Binding
     @Binding var sortOption: LibrarySortOption
     @Binding var filters: LibraryFilters
     @Binding var showingFilters: Bool
@@ -211,7 +214,7 @@ struct LibraryHeaderView: View {
                         }) {
                             HStack(spacing: Spacing.sm) {
                                 Image(systemName: "folder.badge.plus")
-                                Text("Add Comics")
+                                Text("Organize & Add Comics")
                                     .font(Typography.button)
                             }
                             .foregroundColor(AccentColors.primary)
@@ -258,6 +261,7 @@ struct LibraryHeaderView: View {
                 .foregroundColor(TextColors.tertiary)
 
             TextField("Search comics, series, publisher...", text: $searchText)
+                .focused(searchFieldFocus)
                 .textFieldStyle(.plain)
                 .font(Typography.body)
                 .foregroundColor(TextColors.primary)
