@@ -1019,10 +1019,14 @@ struct ComicVineMatchPicker: View {
                 Text(linkError)
                     .font(Typography.caption)
                     .foregroundColor(AccentColors.error)
+                    .fixedSize(horizontal: false, vertical: true)  // wrap, don't truncate
             }
         }
         .padding(.horizontal, Spacing.lg)
         .padding(.vertical, Spacing.md)
+        .onChange(of: linkText) { _, _ in
+            linkError = nil
+        }
     }
 
     private func candidateSubtitle(_ candidate: CVCandidate) -> String {

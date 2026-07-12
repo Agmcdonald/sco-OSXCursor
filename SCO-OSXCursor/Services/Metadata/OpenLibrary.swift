@@ -805,12 +805,12 @@ extension LibraryViewModel {
                 return .failed("Couldn't find a product ID in that Amazon link.")
             }
             let asin = String(raw[asinRange]).uppercased()
-            if asin.hasPrefix("B") {
-                return .failed(
-                    "That's a Kindle edition (ASIN \(asin)) — Kindle-only books don't carry an ISBN. Try the paperback/hardcover edition's Amazon page instead.")
-            }
+            // Amazon assigns "B…" ASINs to Kindle AND print-on-demand
+            // editions; neither is an ISBN. Older/traditional print listings
+            // use the ISBN-10 as the ASIN, which we can look up directly.
             guard let isbn = ISBNUtil.normalize(asin) else {
-                return .failed("That Amazon product ID isn't an ISBN.")
+                return .failed(
+                    "Amazon's ID for this edition (\(asin)) isn't an ISBN. On the Amazon page, check Product details for an ISBN-13 and paste that here instead.")
             }
             return await applyISBNLookup(isbn, to: comic)
         }
@@ -852,7 +852,8 @@ extension LibraryViewModel {
             AppLog.metadata.error("[GoogleBooks] ISBN link lookup failed: \(error.localizedDescription)")
         }
         if let deferredUntil { return .quotaDeferred(deferredUntil) }
-        return .failed("No book found for ISBN \(isbn) on Open Library or Google Books.")
+        return .failed(
+            "No book found for ISBN \(isbn) on Open Library or Google Books. Recently or independently published books often aren't indexed yet — fill in the fields manually and Save.")
     }
 }
 
@@ -1093,10 +1094,16 @@ struct OpenLibraryMatchPicker: View {
                 Text(linkError)
                     .font(Typography.caption)
                     .foregroundColor(AccentColors.error)
+                    .fixedSize(horizontal: false, vertical: true)  // wrap, don't truncate
             }
         }
         .padding(.horizontal, Spacing.lg)
         .padding(.vertical, Spacing.md)
+        // A stale error from the previous attempt is confusing once the
+        // user edits the link — clear it as they type.
+        .onChange(of: linkText) { _, _ in
+            linkError = nil
+        }
     }
 
     private func candidateSubtitle(_ candidate: OLCandidate) -> String {
