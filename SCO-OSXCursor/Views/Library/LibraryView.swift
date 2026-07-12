@@ -720,10 +720,14 @@ struct LibraryView: View {
                 .padding()
             }
         }
-        // ComicVine match picker for an ambiguous no-sheet fetch
+        // Match picker for an ambiguous no-sheet fetch (source by file type)
         .sheet(item: $pendingPickerComicID) { wrapper in
             if let comic = viewModel.comics.first(where: { $0.id == wrapper.id }) {
-                ComicVineMatchPicker(comic: comic, viewModel: viewModel)
+                if comic.fileType == .epub {
+                    OpenLibraryMatchPicker(comic: comic, viewModel: viewModel)
+                } else {
+                    ComicVineMatchPicker(comic: comic, viewModel: viewModel)
+                }
             }
         }
         // Batch match review queue (after a multi-book fetch)
@@ -1098,8 +1102,13 @@ struct LibraryView: View {
     }
 
     /// Context-menu fetch on a single book: fills and saves directly. If the
-    /// search is ambiguous, opens the match picker.
+    /// search is ambiguous, opens the match picker. EPUB books route to
+    /// Open Library / Google Books; everything else to ComicVine.
     private func fetchMetadataSingle(_ comic: Comic) {
+        if comic.fileType == .epub {
+            fetchBookMetadataSingle(comic)
+            return
+        }
         Task {
             let outcome = await viewModel.fetchComicVineMetadata(for: comic, force: false)
             switch outcome {
@@ -1119,6 +1128,38 @@ struct LibraryView: View {
                 flashComicVineStatus("Add a ComicVine API key in Settings first.")
             case .noMatches:
                 flashComicVineStatus("\(comic.displayTitle): no ComicVine match found.")
+            case .failed(let reason):
+                flashComicVineStatus("Fetch failed: \(reason)")
+            }
+        }
+    }
+
+    /// Context-menu fetch for an EPUB book (Open Library + Google Books).
+    private func fetchBookMetadataSingle(_ comic: Comic) {
+        Task {
+            let outcome = await viewModel.fetchOpenLibraryMetadata(for: comic, force: false)
+            switch outcome {
+            case .updated:
+                flashComicVineStatus("\(comic.displayTitle): metadata updated.")
+            case .needsChoice:
+                pendingPickerComicID = ComicID(id: comic.id)
+            case .alreadyFetched:
+                // Explicit single action → user likely wants a refresh
+                let forced = await viewModel.fetchOpenLibraryMetadata(for: comic, force: true)
+                if case .needsChoice = forced {
+                    pendingPickerComicID = ComicID(id: comic.id)
+                } else {
+                    flashComicVineStatus("\(comic.displayTitle): metadata refreshed.")
+                }
+            case .noMatches:
+                // Still useful: open the picker so the user can search manually.
+                pendingPickerComicID = ComicID(id: comic.id)
+                flashComicVineStatus("\(comic.displayTitle): no automatic match — search manually.")
+            case .notEbook:
+                flashComicVineStatus("\(comic.displayTitle): book lookup only covers EPUBs.")
+            case .quotaDeferred(let retryAfter):
+                let time = retryAfter.formatted(date: .omitted, time: .shortened)
+                flashComicVineStatus("Lookup budget reached — try again after \(time).")
             case .failed(let reason):
                 flashComicVineStatus("Fetch failed: \(reason)")
             }

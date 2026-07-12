@@ -765,32 +765,94 @@ extension LibraryViewModel {
         return metadata
     }
 
-    /// Apply a match from a pasted Open Library link (or bare work ID like
-    /// "OL450063W"). Bypasses search entirely — the work record supplies the
-    /// canonical title and description directly.
+    /// Apply a match from a pasted link or ID. Accepts, in order:
+    /// - an Open Library work link or bare ID ("OL450063W")
+    /// - an Amazon product link — the /dp/ ASIN of a PRINT edition is its
+    ///   ISBN-10, which we look up on both sources (Kindle "B0…" ASINs
+    ///   carry no ISBN and are rejected with an explanation)
+    /// - a bare ISBN-10/13, with or without hyphens
     @MainActor
     func applyOpenLibraryLink(_ raw: String, to comic: Comic) async -> OpenLibraryFetchOutcome {
-        guard let range = raw.range(of: #"OL\d+W"#, options: .regularExpression) else {
-            return .failed("That doesn't look like an Open Library work link or ID (OL…W).")
+        // 1. Open Library work link / ID
+        if let range = raw.range(of: #"OL\d+W"#, options: .regularExpression) {
+            let key = "/works/\(raw[range])"
+            do {
+                let work = try await OpenLibraryService.shared.work(key: key)
+                let doc = OLSearchDoc(
+                    key: key,
+                    title: work.title,
+                    author_name: nil,
+                    first_publish_year: nil,
+                    isbn: nil,
+                    publisher: nil
+                )
+                await apply(doc: doc, isbn: nil, to: comic)
+                return .updated
+            } catch OpenLibraryService.OLError.quotaExceeded(let retryAfter) {
+                return .quotaDeferred(retryAfter)
+            } catch {
+                return .failed(error.localizedDescription)
+            }
         }
-        let key = "/works/\(raw[range])"
+
+        // 2. Amazon product link → ASIN. Print-edition ASINs ARE ISBN-10s.
+        if raw.range(of: #"(?i)amazon\.|amzn\."#, options: .regularExpression) != nil {
+            guard
+                let asinRange = raw.range(
+                    of: #"(?i)(?<=/dp/|/gp/product/|/gp/aw/d/)[A-Z0-9]{10}"#,
+                    options: .regularExpression)
+            else {
+                return .failed("Couldn't find a product ID in that Amazon link.")
+            }
+            let asin = String(raw[asinRange]).uppercased()
+            if asin.hasPrefix("B") {
+                return .failed(
+                    "That's a Kindle edition (ASIN \(asin)) — Kindle-only books don't carry an ISBN. Try the paperback/hardcover edition's Amazon page instead.")
+            }
+            guard let isbn = ISBNUtil.normalize(asin) else {
+                return .failed("That Amazon product ID isn't an ISBN.")
+            }
+            return await applyISBNLookup(isbn, to: comic)
+        }
+
+        // 3. Bare ISBN (10/13 digits, hyphens/spaces allowed)
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.range(of: #"^[\d\-\s]{9,17}[\dXx]$"#, options: .regularExpression) != nil,
+            let isbn = ISBNUtil.normalize(trimmed)
+        {
+            return await applyISBNLookup(isbn, to: comic)
+        }
+
+        return .failed(
+            "Paste an Open Library work link (OL…W), an Amazon book link, or an ISBN.")
+    }
+
+    /// Exact-ISBN lookup against both sources, applying the first hit.
+    @MainActor
+    private func applyISBNLookup(_ isbn: String, to comic: Comic) async -> OpenLibraryFetchOutcome {
+        var deferredUntil: Date?
         do {
-            let work = try await OpenLibraryService.shared.work(key: key)
-            let doc = OLSearchDoc(
-                key: key,
-                title: work.title,
-                author_name: nil,
-                first_publish_year: nil,
-                isbn: nil,
-                publisher: nil
-            )
-            await apply(doc: doc, isbn: nil, to: comic)
-            return .updated
+            if let doc = try await OpenLibraryService.shared.lookupByISBN(isbn) {
+                await apply(doc: doc, isbn: isbn, to: comic)
+                return .updated
+            }
         } catch OpenLibraryService.OLError.quotaExceeded(let retryAfter) {
-            return .quotaDeferred(retryAfter)
+            deferredUntil = retryAfter
         } catch {
-            return .failed(error.localizedDescription)
+            AppLog.metadata.error("[OpenLibrary] ISBN link lookup failed: \(error.localizedDescription)")
         }
+        do {
+            if let info = try await GoogleBooksService.shared.lookupByISBN(isbn) {
+                apply(volume: info, isbn: isbn, to: comic)
+                return .updated
+            }
+        } catch GoogleBooksService.GBError.quotaExceeded(let retryAfter) {
+            deferredUntil = min(deferredUntil ?? retryAfter, retryAfter)
+        } catch {
+            AppLog.metadata.error("[GoogleBooks] ISBN link lookup failed: \(error.localizedDescription)")
+        }
+        if let deferredUntil { return .quotaDeferred(deferredUntil) }
+        return .failed("No book found for ISBN \(isbn) on Open Library or Google Books.")
     }
 }
 
@@ -1009,15 +1071,15 @@ struct OpenLibraryMatchPicker: View {
         }
     }
 
-    /// Manual override: paste an Open Library work link (or OL…W ID) when
-    /// search ranking didn't surface the right edition.
+    /// Manual override: paste an Open Library work link, an Amazon book
+    /// link (print-edition ASINs are ISBN-10s), or a bare ISBN.
     private var linkSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("None match? Paste an Open Library link")
+            Text("None match? Paste an Open Library link, Amazon link, or ISBN")
                 .font(Typography.caption)
                 .foregroundColor(TextColors.secondary)
             HStack(spacing: Spacing.sm) {
-                TextField("openlibrary.org/works/OL450063W/…", text: $linkText)
+                TextField("openlibrary.org/works/… · amazon.com/dp/… · 978…", text: $linkText)
                     .textFieldStyle(.roundedBorder)
                     .font(Typography.caption)
                     .disabled(isApplying)

@@ -142,15 +142,23 @@ struct ComicCellInteraction: ViewModifier {
             Label("Edit Metadata", systemImage: "pencil")
         }
 
+        // EPUB books fetch from Open Library / Google Books; comics from
+        // ComicVine. Same action — LibraryView routes by file type.
         Button(action: { actions.fetchMetadata(comic) }) {
-            Label("Fetch from ComicVine", systemImage: "network")
+            if comic.fileType == .epub {
+                Label("Fetch Book Metadata", systemImage: "books.vertical")
+            } else {
+                Label("Fetch from ComicVine", systemImage: "network")
+            }
         }
 
-        // Escape hatch for a wrong ComicVine match — only offered while a
-        // pre-fetch snapshot is stored on the record.
+        // Escape hatch for a wrong match — only offered while a pre-fetch
+        // snapshot is stored on the record.
         if comic.metadataBackup != nil {
             Button(action: { actions.revertMetadataFetch(comic) }) {
-                Label("Revert ComicVine Fetch", systemImage: "arrow.uturn.backward")
+                Label(
+                    comic.fileType == .epub ? "Revert Metadata Fetch" : "Revert ComicVine Fetch",
+                    systemImage: "arrow.uturn.backward")
             }
         }
 
