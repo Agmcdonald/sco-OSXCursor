@@ -210,7 +210,7 @@ struct ComicDetailView: View {
             HStack(spacing: Spacing.sm) {
                 Image(systemName: "books.vertical")
                     .foregroundColor(AccentColors.primary)
-                Text("Open Library Metadata")
+                Text("Book Metadata")
                     .font(Typography.h3)
                     .foregroundColor(TextColors.primary)
                 Spacer()
@@ -223,8 +223,8 @@ struct ComicDetailView: View {
 
             Text(
                 liveComic.isbn != nil
-                    ? "Matches by this book's ISBN, so results are exact. No account or API key needed."
-                    : "Looks up author, publisher, and year by the book's embedded ISBN — or by title if there isn't one. No account or API key needed."
+                    ? "Checks Open Library and Google Books by this book's ISBN, so results are exact. No account or API key needed."
+                    : "Looks up author, publisher, summary, and year on Open Library and Google Books — by the book's embedded ISBN, or by title if there isn't one. No account or API key needed."
             )
             .font(Typography.caption)
             .foregroundColor(TextColors.secondary)
@@ -240,8 +240,8 @@ struct ComicDetailView: View {
                             Image(systemName: "arrow.down.circle")
                         }
                         Text(liveComic.metadataFetchedAt != nil
-                            ? "Re-fetch from Open Library"
-                            : "Fetch from Open Library")
+                            ? "Re-fetch Book Metadata"
+                            : "Fetch Book Metadata")
                             .font(Typography.button)
                     }
                     .foregroundColor(.white)
@@ -285,15 +285,15 @@ struct ComicDetailView: View {
             switch outcome {
             case .updated:
                 resyncDrafts()
-                fetchMessage = "Metadata updated from Open Library. Review and Save to keep."
+                fetchMessage = "Metadata updated. Review and Save to keep."
             case .needsChoice:
                 showingMatchPicker = true
             case .alreadyFetched:
                 fetchMessage = "Already fetched — use Re-fetch to update."
             case .noMatches:
-                fetchMessage = "No confident Open Library match found for this book."
+                fetchMessage = "No confident match on Open Library or Google Books."
             case .notEbook:
-                fetchMessage = "Open Library only covers EPUB books."
+                fetchMessage = "Book metadata lookup only covers EPUB books."
             case .quotaDeferred(let retryAfter):
                 let time = retryAfter.formatted(date: .omitted, time: .shortened)
                 fetchMessage = "Hourly budget reached — try again after \(time)."

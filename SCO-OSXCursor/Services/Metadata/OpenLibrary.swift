@@ -165,12 +165,20 @@ struct OLWork: Decodable {
 /// JSON in `metadataCandidates` (EPUBs never show the ComicVine picker, so
 /// the field is unambiguous per file type).
 struct OLCandidate: Codable, Identifiable {
-    let id: String  // work key, e.g. "/works/OL450063W"
+    let id: String  // OL work key ("/works/OL450063W") or "gb:…" for Google Books
     let title: String
     let authors: String?
     let year: Int?
     let publisher: String?
     let isbn: String?
+    /// "googleBooks" for Google Books hits; nil/anything else = Open Library.
+    var source: String?
+    /// Google Books search results carry the description inline, so applying
+    /// one of those candidates needs no follow-up network call.
+    var summary: String?
+
+    var isGoogleBooks: Bool { source == "googleBooks" }
+    var sourceLabel: String { isGoogleBooks ? "Google Books" : "Open Library" }
 
     static func encodeList(_ list: [OLCandidate]) -> String? {
         (try? JSONEncoder().encode(list)).flatMap { String(data: $0, encoding: .utf8) }
@@ -310,11 +318,27 @@ extension LibraryViewModel {
     /// Fuzzy-match confidence a search hit must clear to be auto-applied.
     private static let openLibraryConfidenceThreshold = 0.7
 
-    /// Fetch Open Library metadata for one EPUB.
+    /// One scored hit from either book source, in a shape the shared
+    /// ranking/candidate code can handle.
+    private enum BookHit {
+        case openLibrary(OLSearchDoc, score: Double)
+        case googleBooks(GBVolumeInfo, score: Double)
+
+        var score: Double {
+            switch self {
+            case .openLibrary(_, let s), .googleBooks(_, let s): return s
+            }
+        }
+    }
+
+    /// Fetch book metadata for one EPUB — Open Library first, Google Books
+    /// as the automatic fallback (its coverage of self-published and
+    /// digital-first titles is much stronger).
     /// - ISBN first (read from the book's OPF metadata): exact match.
-    /// - Fallback: fuzzy title/author search scored against the book.
+    /// - Fallback: fuzzy title/author search against BOTH sources, ranked
+    ///   together; suggestions from both pool into the match picker.
     /// - Fields fill only when empty (user edits are never clobbered); the
-    ///   pre-fetch snapshot is stored for undo, same as a ComicVine fetch.
+    ///   canonical title replaces; the pre-fetch snapshot is stored for undo.
     @MainActor
     func fetchOpenLibraryMetadata(for comic: Comic, force: Bool) async -> OpenLibraryFetchOutcome {
         guard comic.fileType == .epub else { return .notEbook }
@@ -327,24 +351,49 @@ extension LibraryViewModel {
         let embedded = embeddedEPUBMetadata(for: comic)
         let isbn = comic.isbn ?? embedded?.isbn
 
-        do {
-            // 1. ISBN path (exact) — resolved at the work level so we get the
-            //    canonical title and the work key for the summary fetch.
-            if let isbn {
+        // When a source is over budget we note the earliest retry time and
+        // keep going with the other source; only if NOTHING produced a result
+        // does the fetch report the deferral.
+        var deferredUntil: Date?
+        func noteDeferral(_ date: Date) {
+            deferredUntil = min(deferredUntil ?? date, date)
+        }
+
+        // 1. ISBN path (exact) — Open Library, then Google Books.
+        if let isbn {
+            do {
                 if let doc = try await OpenLibraryService.shared.lookupByISBN(isbn) {
                     await apply(doc: doc, isbn: isbn, to: comic)
                     return .updated
                 }
+            } catch OpenLibraryService.OLError.quotaExceeded(let retryAfter) {
+                noteDeferral(retryAfter)
+            } catch {
+                AppLog.metadata.error("[OpenLibrary] ISBN lookup failed: \(error.localizedDescription)")
             }
+            do {
+                if let info = try await GoogleBooksService.shared.lookupByISBN(isbn) {
+                    apply(volume: info, isbn: isbn, to: comic)
+                    return .updated
+                }
+            } catch GoogleBooksService.GBError.quotaExceeded(let retryAfter) {
+                noteDeferral(retryAfter)
+            } catch {
+                AppLog.metadata.error("[GoogleBooks] ISBN lookup failed: \(error.localizedDescription)")
+            }
+        }
 
-            // 2. Fuzzy fallback by title (+ author when known).
-            let title = embedded?.title ?? comic.title ?? comic.series
-                ?? (comic.fileName as NSString).deletingPathExtension
-            let author = embedded?.writer ?? comic.writer
-            guard !title.isEmpty else { return .noMatches }
+        // 2. Fuzzy fallback by title (+ author when known), both sources.
+        let title = embedded?.title ?? comic.title ?? comic.series
+            ?? (comic.fileName as NSString).deletingPathExtension
+        let author = embedded?.writer ?? comic.writer
+        guard !title.isEmpty else { return .noMatches }
 
+        var hits: [BookHit] = []
+
+        do {
             let docs = try await OpenLibraryService.shared.search(title: title, author: author)
-            let scored = docs.compactMap { doc -> (OLSearchDoc, Double)? in
+            hits += docs.compactMap { doc -> BookHit? in
                 guard let candidate = doc.title else { return nil }
                 var score = ComicVineMatcher.nameSimilarity(title, candidate)
                 if let author, let names = doc.author_name,
@@ -352,47 +401,105 @@ extension LibraryViewModel {
                 {
                     score = min(1.0, score + 0.1)  // small boost for author agreement
                 }
-                return (doc, score)
+                return .openLibrary(doc, score: score)
             }
-            .sorted { $0.1 > $1.1 }
+        } catch OpenLibraryService.OLError.quotaExceeded(let retryAfter) {
+            noteDeferral(retryAfter)
+        } catch {
+            AppLog.metadata.error("[OpenLibrary] Search failed: \(error.localizedDescription)")
+        }
 
-            guard let best = scored.first else { return .noMatches }
-
-            if best.1 >= Self.openLibraryConfidenceThreshold {
-                await apply(doc: best.0, isbn: nil, to: comic)
-                return .updated
+        do {
+            let volumes = try await GoogleBooksService.shared.search(title: title, author: author)
+            hits += volumes.compactMap { info -> BookHit? in
+                guard let candidate = info.title else { return nil }
+                var score = ComicVineMatcher.nameSimilarity(title, candidate)
+                if let author, let names = info.authors,
+                    names.contains(where: { ComicVineMatcher.nameSimilarity(author, $0) > 0.8 })
+                {
+                    score = min(1.0, score + 0.1)
+                }
+                return .googleBooks(info, score: score)
             }
+        } catch GoogleBooksService.GBError.quotaExceeded(let retryAfter) {
+            noteDeferral(retryAfter)
+        } catch {
+            AppLog.metadata.error("[GoogleBooks] Search failed: \(error.localizedDescription)")
+        }
 
-            // Not confident enough to auto-apply — store the top hits as
-            // suggestions for the user to pick from (zero extra API cost).
-            let candidates = scored.prefix(5).compactMap { item -> OLCandidate? in
-                guard let key = item.0.key, let title = item.0.title else { return nil }
+        let ranked = hits.sorted { $0.score > $1.score }
+
+        guard let best = ranked.first else {
+            if let deferredUntil { return .quotaDeferred(deferredUntil) }
+            return .noMatches
+        }
+
+        if best.score >= Self.openLibraryConfidenceThreshold {
+            switch best {
+            case .openLibrary(let doc, _):
+                await apply(doc: doc, isbn: nil, to: comic)
+            case .googleBooks(let info, _):
+                apply(volume: info, isbn: nil, to: comic)
+            }
+            return .updated
+        }
+
+        // Not confident enough to auto-apply — store the top hits from both
+        // sources as suggestions for the user (zero extra API cost).
+        let candidates = ranked.prefix(5).compactMap { hit -> OLCandidate? in
+            switch hit {
+            case .openLibrary(let doc, _):
+                guard let key = doc.key, let title = doc.title else { return nil }
                 return OLCandidate(
                     id: key,
                     title: title,
-                    authors: item.0.author_name?.joined(separator: ", "),
-                    year: item.0.first_publish_year,
-                    publisher: item.0.publisher?.first,
-                    isbn: item.0.isbn?.first.flatMap(ISBNUtil.normalize)
+                    authors: doc.author_name?.joined(separator: ", "),
+                    year: doc.first_publish_year,
+                    publisher: doc.publisher?.first,
+                    isbn: doc.isbn?.first.flatMap(ISBNUtil.normalize)
+                )
+            case .googleBooks(let info, _):
+                guard let title = info.title else { return nil }
+                return OLCandidate(
+                    id: "gb:\(info.isbn ?? title)",
+                    title: title,
+                    authors: info.authors?.joined(separator: ", "),
+                    year: info.year,
+                    publisher: info.publisher,
+                    isbn: info.isbn,
+                    source: "googleBooks",
+                    summary: info.description
                 )
             }
-            guard !candidates.isEmpty else { return .noMatches }
-            var updated = comics.first(where: { $0.id == comic.id }) ?? comic
-            updated.metadataCandidates = OLCandidate.encodeList(Array(candidates))
-            updated.dateModified = Date()
-            updateComic(updated)
-            return .needsChoice
-        } catch OpenLibraryService.OLError.quotaExceeded(let retryAfter) {
-            return .quotaDeferred(retryAfter)
-        } catch {
-            AppLog.metadata.error("[OpenLibrary] Fetch failed: \(error.localizedDescription)")
-            return .failed(error.localizedDescription)
         }
+        guard !candidates.isEmpty else {
+            if let deferredUntil { return .quotaDeferred(deferredUntil) }
+            return .noMatches
+        }
+        var updated = comics.first(where: { $0.id == comic.id }) ?? comic
+        updated.metadataCandidates = OLCandidate.encodeList(Array(candidates))
+        updated.dateModified = Date()
+        updateComic(updated)
+        return .needsChoice
     }
 
-    /// User picked a suggestion from the Open Library match sheet.
+    /// User picked a suggestion from the match sheet (either source).
     @MainActor
     func applyOpenLibraryCandidate(_ candidate: OLCandidate, to comic: Comic) async -> OpenLibraryFetchOutcome {
+        if candidate.isGoogleBooks {
+            // Google Books candidates carry everything inline — no network.
+            let info = GBVolumeInfo(
+                title: candidate.title,
+                subtitle: nil,
+                authors: candidate.authors.map { [$0] },
+                publisher: candidate.publisher,
+                publishedDate: candidate.year.map(String.init),
+                description: candidate.summary,
+                industryIdentifiers: nil
+            )
+            apply(volume: info, isbn: candidate.isbn, to: comic)
+            return .updated
+        }
         let doc = OLSearchDoc(
             key: candidate.id,
             title: candidate.title,
@@ -506,6 +613,28 @@ extension LibraryViewModel {
             updated.isbn = doc.isbn?.first.flatMap(ISBNUtil.normalize)
         }
         updated.metadataCandidates = nil  // a pick/apply resolves any pending choice
+        finalize(&updated)
+    }
+
+    /// Applies a Google Books volume. Same rules as an Open Library match:
+    /// canonical title replaces, everything else fills only when empty, and
+    /// the description arrives inline (no follow-up call).
+    @MainActor
+    private func apply(volume info: GBVolumeInfo, isbn: String?, to comic: Comic) {
+        var updated = snapshotted(comic)
+        if let title = info.title, !title.isEmpty {
+            updated.title = title
+        }
+        fillIfEmpty(&updated.writer, with: info.authors?.joined(separator: ", "))
+        fillIfEmpty(&updated.publisher, with: info.publisher)
+        fillIfEmpty(&updated.summary, with: info.description)
+        if updated.year == nil { updated.year = info.year }
+        if let isbn {
+            updated.isbn = isbn
+        } else if updated.isbn == nil {
+            updated.isbn = info.isbn
+        }
+        updated.metadataCandidates = nil
         finalize(&updated)
     }
 
@@ -771,7 +900,8 @@ struct OpenLibraryMatchPicker: View {
         if let authors = candidate.authors, !authors.isEmpty { parts.append(authors) }
         if let year = candidate.year { parts.append(String(year)) }
         if let publisher = candidate.publisher, !publisher.isEmpty { parts.append(publisher) }
-        return parts.isEmpty ? "Open Library work \(candidate.id)" : parts.joined(separator: " • ")
+        parts.append(candidate.sourceLabel)
+        return parts.joined(separator: " • ")
     }
 
     private var selectionHint: String {
