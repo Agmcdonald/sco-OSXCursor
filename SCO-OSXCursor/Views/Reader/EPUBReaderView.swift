@@ -18,12 +18,14 @@ struct EPUBReaderView: View {
 
     @Binding var currentChapter: Int
     let totalChapters: Int
-    @Binding var fontSize: Int         // in pt (12–28)
+    @Binding var fontSize: Int         // in pt (12–56)
 
     var onClose: () -> Void
     var onShowSettings: () -> Void
     /// One-click theme cycle from the reader bar (Dark → Light → Sepia).
     var onCycleTheme: () -> Void
+    /// Toggle between Page mode (Kindle-like) and Scroll mode for this book.
+    var onTogglePageMode: () -> Void
 
     @State private var chapters: [EPUBChapter] = []
     @State private var isLoading = true
@@ -81,6 +83,7 @@ struct EPUBReaderView: View {
                     onClose: onClose,
                     onShowSettings: onShowSettings,
                     onCycleTheme: onCycleTheme,
+                    onTogglePageMode: onTogglePageMode,
                     onPreviousChapter: { navigateChapter(by: -1) },
                     onNextChapter: { navigateChapter(by: 1) },
                     onUserInteraction: { resetAutoHideTimer() }
@@ -365,6 +368,15 @@ private struct EPUBWebViewHelper {
     func loadContent(into webView: WKWebView, coordinator: EPUBWebView.Coordinator) {
         guard coordinator.lastLoadKey != loadKey else { return }
         coordinator.lastLoadKey = loadKey
+
+        #if os(iOS)
+        // Page mode: native horizontal swipes snap one page at a time —
+        // the Kindle page-turn feel. (Column width == viewport width, so
+        // UIScrollView paging lands exactly on page boundaries.)
+        let style = ReadingStyle(rawValue: readingStyle ?? "") ?? .standard
+        webView.scrollView.isPagingEnabled = (style == .standard || style == .mangaRTL)
+        #endif
+
         guard let rawHTML = try? chapter.htmlContent() else { return }
         let styledHTML = injectStyles(into: rawHTML)
         
@@ -384,7 +396,10 @@ private struct EPUBWebViewHelper {
     }
 
     private func injectStyles(into html: String) -> String {
-        let styleStr = ReadingStyle(rawValue: readingStyle ?? "") ?? .verticalScroll
+        // Books default to PAGE mode (Kindle-like: text fills the screen,
+        // edge taps turn one page). Vertical scroll remains a per-book
+        // choice via the HUD toggle.
+        let styleStr = ReadingStyle(rawValue: readingStyle ?? "") ?? .standard
         let isHorizontal = styleStr == .standard || styleStr == .mangaRTL
         
         // Margin presets (defaults reproduce the original hard-coded layout)
@@ -472,11 +487,23 @@ private struct EPUBWebViewHelper {
         """ : """
         <script>
         //<![CDATA[
+        // Vertical scroll: edge taps advance by ONE SCREENFUL (with a small
+        // overlap for reading continuity), not a whole chapter — chapters
+        // only change at the very top/bottom of the content.
         window.scoPageForward = function() {
-            window.webkit.messageHandlers.epubNavigation.postMessage('nextChapter');
+            var remaining = document.documentElement.scrollHeight - (window.scrollY + window.innerHeight);
+            if (remaining <= 10) {
+                window.webkit.messageHandlers.epubNavigation.postMessage('nextChapter');
+            } else {
+                window.scrollBy({ top: window.innerHeight * 0.9, behavior: 'smooth' });
+            }
         };
         window.scoPageBackward = function() {
-            window.webkit.messageHandlers.epubNavigation.postMessage('prevChapter');
+            if (window.scrollY <= 10) {
+                window.webkit.messageHandlers.epubNavigation.postMessage('prevChapter');
+            } else {
+                window.scrollBy({ top: -window.innerHeight * 0.9, behavior: 'smooth' });
+            }
         };
         document.addEventListener('keydown', function(e) {
             if (e.key === 'ArrowRight') {

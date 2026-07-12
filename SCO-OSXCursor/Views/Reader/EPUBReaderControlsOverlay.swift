@@ -21,13 +21,24 @@ struct EPUBReaderControlsOverlay: View {
     var onShowSettings: () -> Void
     /// One-click theme cycle: Dark → Light → Sepia → Dark.
     var onCycleTheme: () -> Void
+    /// Toggle Page mode (Kindle-like) ↔ Scroll mode for this book.
+    var onTogglePageMode: () -> Void
     var onPreviousChapter: () -> Void
     var onNextChapter: () -> Void
     var onUserInteraction: () -> Void
 
-    // Font size constraints
+    // Font size constraints — the top end is roughly double the body-text
+    // default, for large-print reading.
     private let minFont = 12
-    private let maxFont = 28
+    private let maxFont = 56
+
+    /// Steps grow with the size so reaching large-print isn't 30 taps.
+    private var fontStep: Int { fontSize >= 24 ? 2 : 1 }
+
+    /// This book's active reading style (books default to Page mode).
+    private var isPageMode: Bool {
+        (ReadingStyle(rawValue: comic.readingStyle ?? "") ?? .standard) != .verticalScroll
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -76,6 +87,7 @@ struct EPUBReaderControlsOverlay: View {
             Spacer()
 
             #if !os(macOS)
+            pageModeButton
             themeButton
             settingsButton
             tocButton
@@ -147,6 +159,28 @@ struct EPUBReaderControlsOverlay: View {
         .clipShape(Circle())
         .buttonStyle(.plain)
         .help("Reader Settings (theme, font)")
+    }
+
+    /// Page mode (Kindle-like page turns) ↔ Scroll mode (continuous
+    /// vertical). Saved per book.
+    private var pageModeButton: some View {
+        Button(action: {
+            onUserInteraction()
+            onTogglePageMode()
+        }) {
+            Image(systemName: isPageMode ? "book.pages" : "arrow.down.document")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundColor(.white)
+                .frame(width: 36, height: 36)
+                .contentShape(Circle())
+        }
+        .background(AnyShapeStyle(.ultraThinMaterial))
+        .clipShape(Circle())
+        .buttonStyle(.plain)
+        .help(
+            isPageMode
+                ? "Page mode — tap the edges (or swipe) to turn one page at a time, like a Kindle. Click to switch to continuous scrolling."
+                : "Scroll mode — swipe up and down to read; edge taps advance one screenful. Click to switch to page turns.")
     }
 
     private var tocButton: some View {
@@ -244,7 +278,9 @@ struct EPUBReaderControlsOverlay: View {
                     .frame(height: 24)
                     .background(Color.white.opacity(0.15))
 
-                // Theme cycle + Settings + ToC — relocated from the top
+                // Page mode + Theme cycle + Settings + ToC — relocated from the top
+                pageModeButton
+                    .padding(.leading, 10)
                 themeButton
                     .padding(.leading, 10)
                 settingsButton
@@ -326,7 +362,7 @@ struct EPUBReaderControlsOverlay: View {
         HStack(spacing: 10) {
             Button(action: {
                 onUserInteraction()
-                if fontSize > minFont { fontSize -= 1 }
+                fontSize = max(minFont, fontSize - fontStep)
             }) {
                 Image(systemName: "textformat.size.smaller")
                     .font(.system(size: 14))
@@ -344,7 +380,7 @@ struct EPUBReaderControlsOverlay: View {
 
             Button(action: {
                 onUserInteraction()
-                if fontSize < maxFont { fontSize += 1 }
+                fontSize = min(maxFont, fontSize + fontStep)
             }) {
                 Image(systemName: "textformat.size.larger")
                     .font(.system(size: 14))
@@ -353,7 +389,7 @@ struct EPUBReaderControlsOverlay: View {
             }
             .buttonStyle(.plain)
             .disabled(fontSize >= maxFont)
-            .help("Increase font size")
+            .help("Increase font size (up to \(maxFont)pt)")
         }
         .padding(.vertical, 6)
     }

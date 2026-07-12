@@ -45,7 +45,8 @@ struct EPUBContentView: View {
             fontSize: $fontSize,
             onClose: closeReader,
             onShowSettings: { showSettings = true },
-            onCycleTheme: cycleTheme
+            onCycleTheme: cycleTheme,
+            onTogglePageMode: togglePageMode
         )
         #if os(iOS)
         // Swipe-down drag handle pill — fades in as the user pulls down
@@ -64,8 +65,9 @@ struct EPUBContentView: View {
                 .onChanged { value in
                     // In vertical-scroll style the page itself scrolls
                     // vertically — only dismiss when the pull starts near
-                    // the top edge (same rule as the comic reader)
-                    let style = ReadingStyle(rawValue: localComic.readingStyle ?? "") ?? .verticalScroll
+                    // the top edge (same rule as the comic reader).
+                    // Books default to Page mode.
+                    let style = ReadingStyle(rawValue: localComic.readingStyle ?? "") ?? .standard
                     if style == .verticalScroll {
                         guard value.startLocation.y < 120 else { return }
                     }
@@ -160,6 +162,19 @@ struct EPUBContentView: View {
         guard let index = libraryViewModel.comics.firstIndex(where: { $0.id == localComic.id }) else { return }
         var updated = libraryViewModel.comics[index]
         updated.epubTheme = next.rawValue
+        libraryViewModel.updateComic(updated)
+    }
+
+    /// Page mode (Kindle-like) ↔ Scroll mode, saved as this book's
+    /// reading-style override (books default to Page mode).
+    private func togglePageMode() {
+        let current = ReadingStyle(rawValue: localComic.readingStyle ?? "") ?? .standard
+        let next: ReadingStyle = current == .verticalScroll ? .standard : .verticalScroll
+        localComic.readingStyle = next.rawValue
+
+        guard let index = libraryViewModel.comics.firstIndex(where: { $0.id == localComic.id }) else { return }
+        var updated = libraryViewModel.comics[index]
+        updated.readingStyle = next.rawValue
         libraryViewModel.updateComic(updated)
     }
 
