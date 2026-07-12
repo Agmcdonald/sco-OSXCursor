@@ -17,6 +17,22 @@
 import Combine
 import Foundation
 
+// MARK: - Configuration
+
+enum GoogleBooksConfig {
+    static let apiKeyDefaultsKey = "googleBooksAPIKey"
+
+    /// Optional. Anonymous requests work but share a per-IP quota that can
+    /// throttle bursts; a free key from console.cloud.google.com (enable the
+    /// Books API) raises the budget to 1,000 requests/day.
+    static var apiKey: String {
+        (UserDefaults.standard.string(forKey: apiKeyDefaultsKey) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static var hasKey: Bool { !apiKey.isEmpty }
+}
+
 // MARK: - Hourly Quota Tracker
 
 /// Rolling-hour call counter for Google Books, persisted like the others.
@@ -179,10 +195,11 @@ final class GoogleBooksService {
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             if let http = response as? HTTPURLResponse, http.statusCode != 200 {
-                // Google's own daily/anonymous limit surfaces as 429 — map it
-                // to the same deferred-quota shape so batches reschedule.
+                // Google's anonymous per-IP limit surfaces as 429, usually a
+                // short-lived burst control — map it to the deferred-quota
+                // shape with a modest retry so batches pause, not stall.
                 if http.statusCode == 429 {
-                    throw GBError.quotaExceeded(retryAfter: Date().addingTimeInterval(3600))
+                    throw GBError.quotaExceeded(retryAfter: Date().addingTimeInterval(300))
                 }
                 throw GBError.http(http.statusCode)
             }
@@ -197,11 +214,15 @@ final class GoogleBooksService {
 
     private func volumes(query: String, limit: Int) async throws -> [GBVolume] {
         var components = URLComponents(string: "https://www.googleapis.com/books/v1/volumes")!
-        components.queryItems = [
+        var items: [URLQueryItem] = [
             URLQueryItem(name: "q", value: query),
             URLQueryItem(name: "maxResults", value: String(limit)),
             URLQueryItem(name: "printType", value: "books"),
         ]
+        if GoogleBooksConfig.hasKey {
+            items.append(URLQueryItem(name: "key", value: GoogleBooksConfig.apiKey))
+        }
+        components.queryItems = items
         guard let url = components.url else { throw GBError.badURL }
         let data = try await requestData(url)
         return try JSONDecoder().decode(GBVolumesResponse.self, from: data).items ?? []

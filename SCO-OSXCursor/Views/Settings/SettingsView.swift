@@ -421,6 +421,7 @@ struct SettingsView: View {
     // MARK: - ComicVine Settings
 
     @AppStorage(ComicVineConfig.apiKeyDefaultsKey) private var comicVineAPIKey: String = ""
+    @AppStorage(GoogleBooksConfig.apiKeyDefaultsKey) private var googleBooksAPIKey: String = ""
     @AppStorage("autoApplyConfidentMatches") private var autoApplyConfidentMatches = true
     @AppStorage("singleTapConfirmMatch") private var singleTapConfirmMatch = false
     @ObservedObject private var comicVineQuota = ComicVineQuota.shared
@@ -459,6 +460,47 @@ struct SettingsView: View {
                         .font(Typography.caption)
                 }
                 .foregroundColor(comicVineAPIKey.isEmpty ? TextColors.tertiary : AccentColors.success)
+            }
+
+            Divider()
+                .background(BorderColors.subtle)
+                .padding(.vertical, Spacing.xs)
+
+            // Google Books key (optional) — EPUB book metadata works without
+            // one, but Google throttles heavy anonymous use per-IP.
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("Google Books API Key (Optional)")
+                    .font(Typography.h3)
+                    .foregroundColor(TextColors.primary)
+
+                Text("Book metadata for EPUBs works without a key, but heavy use can hit Google's shared anonymous limit. A free key from console.cloud.google.com (enable the Books API) gives you your own 1,000 requests/day.")
+                    .font(Typography.bodySmall)
+                    .foregroundColor(TextColors.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                SecureField("Paste your Google Books API key", text: $googleBooksAPIKey)
+                    .textFieldStyle(.plain)
+                    .font(Typography.body)
+                    .foregroundColor(TextColors.primary)
+                    .padding(Spacing.md)
+                    .background(BackgroundColors.secondary)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(BorderColors.subtle, lineWidth: 1)
+                    )
+                    #if os(iOS)
+                    .autocorrectionDisabled(true)
+                    .textInputAutocapitalization(.never)
+                    #endif
+
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: googleBooksAPIKey.isEmpty ? "info.circle" : "checkmark.circle.fill")
+                        .font(.system(size: 11))
+                    Text(googleBooksAPIKey.isEmpty ? "No key — using the shared anonymous limit" : "Key saved")
+                        .font(Typography.caption)
+                }
+                .foregroundColor(googleBooksAPIKey.isEmpty ? TextColors.tertiary : AccentColors.success)
             }
 
             Divider()

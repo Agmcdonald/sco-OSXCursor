@@ -38,6 +38,22 @@ enum ISBNUtil {
     }
 }
 
+enum BookSearchTitle {
+    /// Filename-derived titles carry junk that poisons title search —
+    /// "The Dead Planet Hard Science Fiction (Marchenko Logfiles 4)
+    /// (Brandon Q. Morris) (z-library.sk, 1lib.sk, z-lib.sk)" — so strip
+    /// every parenthetical/bracketed group and collapse the whitespace.
+    static func clean(_ raw: String) -> String {
+        let stripped = raw
+            .replacingOccurrences(
+                of: #"\s*[\(\[][^\)\]]*[\)\]]"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        // If stripping ate everything (title was ALL parentheses), keep the raw.
+        return stripped.isEmpty ? raw : stripped
+    }
+}
+
 // MARK: - Hourly Quota Tracker
 
 /// Rolling-hour call counter for Open Library, persisted like ComicVine's.
@@ -384,8 +400,10 @@ extension LibraryViewModel {
         }
 
         // 2. Fuzzy fallback by title (+ author when known), both sources.
-        let title = embedded?.title ?? comic.title ?? comic.series
-            ?? (comic.fileName as NSString).deletingPathExtension
+        // Clean parenthetical junk out of filename-derived titles first.
+        let title = BookSearchTitle.clean(
+            embedded?.title ?? comic.title ?? comic.series
+                ?? (comic.fileName as NSString).deletingPathExtension)
         let author = embedded?.writer ?? comic.writer
         guard !title.isEmpty else { return .noMatches }
 
