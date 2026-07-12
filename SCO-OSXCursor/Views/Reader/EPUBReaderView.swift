@@ -454,18 +454,28 @@ private struct EPUBWebViewHelper {
         let js = isHorizontal ? """
         <script>
         //<![CDATA[
+        // Page mode: taps/keys turn ONE page, always landing on an exact
+        // page boundary (Math.round keeps us aligned even if a native swipe
+        // left the scroll position mid-snap). Taps never change chapters —
+        // at the first/last page they raise the controls instead, where the
+        // Previous/Next buttons live.
         window.scoPageForward = function() {
-            if (window.scrollX + window.innerWidth >= document.documentElement.scrollWidth - 10) {
-                window.webkit.messageHandlers.epubNavigation.postMessage('nextChapter');
+            var w = window.innerWidth;
+            var maxX = document.documentElement.scrollWidth - w;
+            var target = (Math.round(window.scrollX / w) + 1) * w;
+            if (target > maxX + 10) {
+                window.webkit.messageHandlers.epubNavigation.postMessage('toggleControls');
             } else {
-                window.scrollBy({ left: window.innerWidth, behavior: 'smooth' });
+                window.scrollTo({ left: target, behavior: 'smooth' });
             }
         };
         window.scoPageBackward = function() {
-            if (window.scrollX <= 0) {
-                window.webkit.messageHandlers.epubNavigation.postMessage('prevChapter');
+            var w = window.innerWidth;
+            var page = Math.round(window.scrollX / w);
+            if (page <= 0) {
+                window.webkit.messageHandlers.epubNavigation.postMessage('toggleControls');
             } else {
-                window.scrollBy({ left: -window.innerWidth, behavior: 'smooth' });
+                window.scrollTo({ left: (page - 1) * w, behavior: 'smooth' });
             }
         };
         document.addEventListener('keydown', function(e) {

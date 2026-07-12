@@ -419,7 +419,7 @@ struct UserManualView: View {
                             icon: "book.pages",
                             title: "Books: Page Mode & Scroll Mode",
                             description:
-                                "EPUB books open in Page mode by default — text fills the screen and tapping the right or left edge (or swiping, or the arrow keys) turns exactly one page, like a Kindle. Prefer to scroll? The page/scroll button in the reader bar switches this book to continuous scrolling, where edge taps advance one screenful instead. Font size goes up to 56pt for large-print reading, and the choice is remembered per book."
+                                "EPUB books open in Page mode by default — text fills the screen and tapping the right or left edge (or swiping, or the arrow keys) turns exactly one page, like a Kindle. Taps never skip chapters: at a chapter's first or last page, a tap brings up the reader bar, where Previous/Next change chapters. Prefer to scroll? The page/scroll button in the reader bar switches this book to continuous scrolling, where edge taps advance one screenful instead. Font size goes up to 56pt for large-print reading, and the choice is remembered per book."
                         )
 
                         FeatureRow(
