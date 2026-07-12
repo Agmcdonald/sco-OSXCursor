@@ -114,7 +114,17 @@ extension Comic {
             rating: mergedRating,
             isFavorite: mergedFavorite,
             preferredTransition: mergedPreferredTransition,
-            
+
+            // A rescan re-reads the file, not the reader. The chapter index is
+            // already carried over above; the passage within that chapter has
+            // to come with it, or a rescan silently throws the reader back to
+            // the top of the chapter they were in.
+            epubChapterIndex: existing.epubChapterIndex,
+            epubChapterProgress: existing.epubChapterProgress,
+            epubLocatorFragment: existing.epubLocatorFragment,
+            epubLocatorElement: existing.epubLocatorElement,
+            epubLocatorProgress: existing.epubLocatorProgress,
+
             fileSize: extracted.fileSize,
             fileType: extracted.fileType,
             

@@ -68,6 +68,11 @@ struct Comic: Identifiable, Codable {
     var readingStyle: String?         // Per-book reading style override (ReadingStyle.rawValue)
     var epubFontSize: Int?            // Per-book EPUB font size (pt), nil = default (16pt)
     var epubTheme: String?            // Per-book EPUB theme (EPUBTheme.rawValue)
+    var epubChapterIndex: Int?        // Per-book EPUB spine/chapter index
+    var epubChapterProgress: Double?  // Per-book EPUB intra-chapter progress (0...1)
+    var epubLocatorFragment: String?  // Optional EPUB fragment/id locator
+    var epubLocatorElement: String?   // Optional future element locator
+    var epubLocatorProgress: Double?  // Optional EPUB locator/overall progression (0...1)
     var zoomScale: Double?            // Per-book remembered zoom, nil = 1× (no zoom)
     var thumbnailBarPosition: String? // Per-book thumbnail bar position override (ThumbnailBarPosition.rawValue)
     var contentRating: ContentRating
@@ -137,6 +142,11 @@ struct Comic: Identifiable, Codable {
         readingStyle: String? = nil,
         epubFontSize: Int? = nil,
         epubTheme: String? = nil,
+        epubChapterIndex: Int? = nil,
+        epubChapterProgress: Double? = nil,
+        epubLocatorFragment: String? = nil,
+        epubLocatorElement: String? = nil,
+        epubLocatorProgress: Double? = nil,
         zoomScale: Double? = nil,
         thumbnailBarPosition: String? = nil,
         comicVineVolumeID: Int? = nil,
@@ -185,6 +195,11 @@ struct Comic: Identifiable, Codable {
         self.readingStyle = readingStyle
         self.epubFontSize = epubFontSize
         self.epubTheme = epubTheme
+        self.epubChapterIndex = epubChapterIndex
+        self.epubChapterProgress = epubChapterProgress
+        self.epubLocatorFragment = epubLocatorFragment
+        self.epubLocatorElement = epubLocatorElement
+        self.epubLocatorProgress = epubLocatorProgress
         self.zoomScale = zoomScale
         self.thumbnailBarPosition = thumbnailBarPosition
         self.comicVineVolumeID = comicVineVolumeID
@@ -739,6 +754,11 @@ extension Comic: FetchableRecord, PersistableRecord {
         static let readingStyle = Column("reading_style")
         static let epubFontSize = Column("epub_font_size")
         static let epubTheme = Column("epub_theme")
+        static let epubChapterIndex = Column("epub_chapter_index")
+        static let epubChapterProgress = Column("epub_chapter_progress")
+        static let epubLocatorFragment = Column("epub_locator_fragment")
+        static let epubLocatorElement = Column("epub_locator_element")
+        static let epubLocatorProgress = Column("epub_locator_progress")
         static let zoomScale = Column("zoom_scale")
         static let thumbnailBarPosition = Column("thumbnail_bar_position")
         static let comicVineVolumeID = Column("comicvine_volume_id")
@@ -790,6 +810,11 @@ extension Comic: FetchableRecord, PersistableRecord {
         container[Columns.readingStyle] = readingStyle
         container[Columns.epubFontSize] = epubFontSize
         container[Columns.epubTheme] = epubTheme
+        container[Columns.epubChapterIndex] = epubChapterIndex
+        container[Columns.epubChapterProgress] = epubChapterProgress
+        container[Columns.epubLocatorFragment] = epubLocatorFragment
+        container[Columns.epubLocatorElement] = epubLocatorElement
+        container[Columns.epubLocatorProgress] = epubLocatorProgress
         container[Columns.zoomScale] = zoomScale
         container[Columns.thumbnailBarPosition] = thumbnailBarPosition
         container[Columns.comicVineVolumeID] = comicVineVolumeID
@@ -872,6 +897,11 @@ extension Comic: FetchableRecord, PersistableRecord {
             readingStyle: row["reading_style"],
             epubFontSize: row["epub_font_size"],
             epubTheme: row["epub_theme"],
+            epubChapterIndex: row["epub_chapter_index"],
+            epubChapterProgress: row["epub_chapter_progress"],
+            epubLocatorFragment: row["epub_locator_fragment"],
+            epubLocatorElement: row["epub_locator_element"],
+            epubLocatorProgress: row["epub_locator_progress"],
             zoomScale: row["zoom_scale"],
             thumbnailBarPosition: row["thumbnail_bar_position"],
             comicVineVolumeID: row["comicvine_volume_id"],

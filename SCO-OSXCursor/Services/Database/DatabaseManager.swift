@@ -601,6 +601,30 @@ final class DatabaseManager {
             AppLog.database.info("[DatabaseManager] ✅ Migration v25_metadata_source complete")
         }
 
+        migrator.registerMigration("v26_epub_locator") { db in
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v26_epub_locator")
+            if try db.tableExists("comics") {
+                let columns: [(String, Database.ColumnType)] = [
+                    ("epub_chapter_index", .integer),
+                    ("epub_chapter_progress", .double),
+                    ("epub_locator_fragment", .text),
+                    ("epub_locator_element", .text),
+                    ("epub_locator_progress", .double),
+                ]
+                for (name, type) in columns {
+                    do {
+                        try db.alter(table: "comics") { t in
+                            t.add(column: name, type)
+                        }
+                        AppLog.database.info("[DatabaseManager] ✅ Added \(name) column")
+                    } catch {
+                        AppLog.database.error("[DatabaseManager] ℹ️ \(name) column may already exist: \(error.localizedDescription)")
+                    }
+                }
+            }
+            AppLog.database.info("[DatabaseManager] ✅ Migration v26_epub_locator complete")
+        }
+
         return migrator
     }
 

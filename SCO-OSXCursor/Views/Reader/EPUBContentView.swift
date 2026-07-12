@@ -21,6 +21,9 @@ struct EPUBContentView: View {
     // Chapter state (mirrors currentPage/totalPages in the Comic record)
     @State private var currentChapter: Int
     @State private var totalChapters: Int
+    @State private var chapterProgress: Double
+    @State private var lastPersistedChapter: Int
+    @State private var lastPersistedProgress: Double
     @State private var fontSize: Int
 
     #if os(iOS)
@@ -34,6 +37,9 @@ struct EPUBContentView: View {
         _localComic = State(initialValue: comic)
         _currentChapter = State(initialValue: comic.currentPage)
         _totalChapters = State(initialValue: max(comic.totalPages, 1))
+        _chapterProgress = State(initialValue: comic.epubChapterIndex == comic.currentPage ? (comic.epubChapterProgress ?? 0) : 0)
+        _lastPersistedChapter = State(initialValue: comic.epubChapterIndex ?? comic.currentPage)
+        _lastPersistedProgress = State(initialValue: comic.epubChapterProgress ?? 0)
         _fontSize = State(initialValue: comic.epubFontSize ?? 17)
     }
 
@@ -42,6 +48,7 @@ struct EPUBContentView: View {
             comic: localComic,
             currentChapter: $currentChapter,
             totalChapters: totalChapters,
+            chapterProgress: $chapterProgress,
             fontSize: $fontSize,
             onClose: closeReader,
             onShowSettings: { showSettings = true },
@@ -110,7 +117,10 @@ struct EPUBContentView: View {
             )
         }
         .onChange(of: currentChapter) { _, newChapter in
-            persistProgress(chapter: newChapter)
+            persistProgress(chapter: newChapter, progress: chapterProgress, force: true)
+        }
+        .onChange(of: chapterProgress) { _, newProgress in
+            persistProgress(chapter: currentChapter, progress: newProgress)
         }
         .onChange(of: fontSize) { _, newSize in
             persistFontSize(newSize)
@@ -121,7 +131,7 @@ struct EPUBContentView: View {
 
     private func closeReader() {
         // Final progress sync
-        persistProgress(chapter: currentChapter)
+        persistProgress(chapter: currentChapter, progress: chapterProgress, force: true)
         persistFontSize(fontSize)
         libraryViewModel.readingComic = nil
         #if os(iOS)
@@ -131,21 +141,40 @@ struct EPUBContentView: View {
 
     // MARK: - Persistence
 
-    private func persistProgress(chapter: Int) {
+    private func persistProgress(chapter: Int, progress: Double, force: Bool = false) {
         guard let index = libraryViewModel.comics.firstIndex(where: { $0.id == localComic.id }) else { return }
+        let clampedProgress = min(max(progress, 0), 1)
+        let shouldPersist = force
+            || chapter != lastPersistedChapter
+            || abs(clampedProgress - lastPersistedProgress) >= 0.01
+            || clampedProgress >= 0.995
+        guard shouldPersist else { return }
+
         var updated = libraryViewModel.comics[index]
         updated.currentPage = chapter
+        updated.epubChapterIndex = chapter
+        updated.epubChapterProgress = clampedProgress
+        updated.epubLocatorProgress = overallProgress(chapter: chapter, progress: updated.epubChapterProgress ?? 0)
         updated.lastReadDate = Date()
 
         if totalChapters > 0 {
-            if chapter >= totalChapters - 1 {
+            if chapter >= totalChapters - 1 && progress >= 0.995 {
                 updated.status = .completed
-            } else if chapter > 0 {
+            } else if chapter > 0 || progress > 0.001 {
                 updated.status = .reading
             }
         }
 
+        localComic = updated
+        lastPersistedChapter = chapter
+        lastPersistedProgress = clampedProgress
         libraryViewModel.updateComic(updated)
+    }
+
+    private func overallProgress(chapter: Int, progress: Double) -> Double {
+        guard totalChapters > 0 else { return 0 }
+        let clampedProgress = min(max(progress, 0), 1)
+        return min(max((Double(chapter) + clampedProgress) / Double(totalChapters), 0), 1)
     }
 
     // MARK: - Theme
