@@ -49,6 +49,9 @@ struct ComicDetailView: View {
     @State private var showingSaveConfirmation = false
     @State private var saveError: String?
 
+    /// EPUB layout: whether the optional comic-specific fields are expanded.
+    @State private var showComicFields = false
+
     // ComicVine fetch state
     @State private var isFetchingMetadata = false
     @State private var showingMatchPicker = false
@@ -129,8 +132,13 @@ struct ComicDetailView: View {
                     Divider()
                         .background(BorderColors.subtle)
 
-                    // Metadata Fields
-                    metadataFields
+                    // Metadata Fields — EPUB books lead with Title/Author/
+                    // Publisher/Summary; comic-specific fields are optional.
+                    if editedComic.fileType == .epub {
+                        bookMetadataFields
+                    } else {
+                        metadataFields
+                    }
 
                     // Save Button
                     saveButton
@@ -183,10 +191,15 @@ struct ComicDetailView: View {
             // open drafts so it's visible and survives Save.
             resyncDrafts()
             if liveComic.metadataFetchedAt != nil {
-                fetchMessage = "Metadata updated from ComicVine. Review and Save to keep."
+                fetchMessage =
+                    "Metadata updated from \(editedComic.fileType == .epub ? "Open Library" : "ComicVine"). Review and Save to keep."
             }
         }) {
-            ComicVineMatchPicker(comic: liveComic, viewModel: libraryViewModel)
+            if editedComic.fileType == .epub {
+                OpenLibraryMatchPicker(comic: liveComic, viewModel: libraryViewModel)
+            } else {
+                ComicVineMatchPicker(comic: liveComic, viewModel: libraryViewModel)
+            }
         }
     }
 
@@ -239,6 +252,18 @@ struct ComicDetailView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(isFetchingMetadata)
+
+                // Offer the picker whenever ambiguous suggestions are pending
+                if !OLCandidate.decodeList(liveComic.metadataCandidates).isEmpty {
+                    Button {
+                        showingMatchPicker = true
+                    } label: {
+                        Label("Choose Match…", systemImage: "questionmark.circle")
+                            .font(Typography.button)
+                            .foregroundColor(AccentColors.primary)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
 
             if let message = fetchMessage {
@@ -261,6 +286,8 @@ struct ComicDetailView: View {
             case .updated:
                 resyncDrafts()
                 fetchMessage = "Metadata updated from Open Library. Review and Save to keep."
+            case .needsChoice:
+                showingMatchPicker = true
             case .alreadyFetched:
                 fetchMessage = "Already fetched — use Re-fetch to update."
             case .noMatches:
@@ -471,6 +498,152 @@ struct ComicDetailView: View {
     }
 
     // MARK: - Metadata Fields
+
+    /// EPUB books: Author, Publisher, and Summary are what matter; series,
+    /// issue numbers, and art credits only apply when the EPUB is actually a
+    /// comic or graphic novel, so they live behind a disclosure.
+    private var bookMetadataFields: some View {
+        VStack(alignment: .leading, spacing: Spacing.xl) {
+            metadataSection(title: "Book Information", icon: "book.closed") {
+                metadataField(label: "Title", text: $draftTitle, field: .title)
+                metadataField(
+                    label: "Author", text: $draftWriter, field: .writer,
+                    knowledgeType: .writer)
+                metadataField(
+                    label: "Publisher", text: $draftPublisher, field: .publisher,
+                    isPublisher: true, knowledgeType: .publisher)
+                metadataNumericField(label: "Year", value: $draftYear, field: .year)
+
+                if let isbn = liveComic.isbn {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Text("ISBN")
+                            .font(Typography.bodySmall)
+                            .foregroundColor(TextColors.secondary)
+                        Text(isbn)
+                            .font(Typography.body)
+                            .foregroundColor(TextColors.primary)
+                            .textSelection(.enabled)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text("Content Rating")
+                        .font(Typography.bodySmall)
+                        .foregroundColor(TextColors.secondary)
+
+                    Picker("Content Rating", selection: $draftContentRating) {
+                        ForEach(Comic.ContentRating.allCases, id: \.self) { rating in
+                            Text(rating.code).tag(rating)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.top, Spacing.xs)
+
+                    Text("\(draftContentRating.label) — \(draftContentRating.ageGuidance)")
+                        .font(Typography.caption)
+                        .foregroundColor(TextColors.tertiary)
+                }
+
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text("User Rating")
+                        .font(Typography.bodySmall)
+                        .foregroundColor(TextColors.secondary)
+
+                    HStack(spacing: Spacing.sm) {
+                        ForEach(1...5, id: \.self) { star in
+                            Button(action: {
+                                draftRating = (draftRating == star) ? 0 : star
+                            }) {
+                                Image(systemName: star <= draftRating ? "star.fill" : "star")
+                                    .foregroundColor(
+                                        star <= draftRating
+                                            ? AccentColors.warning : TextColors.tertiary
+                                    )
+                                    .font(.system(size: 20))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.top, Spacing.xs)
+                }
+            }
+
+            // Summary — front and center for books
+            metadataSection(title: "Summary", icon: "text.alignleft") {
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    TextEditor(text: $draftSummary)
+                        .focused($focusedField, equals: .summary)
+                        .font(Typography.body)
+                        .foregroundColor(TextColors.primary)
+                        .frame(minHeight: 120)
+                        .padding(Spacing.sm)
+                        .background(BackgroundColors.secondary)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(BorderColors.subtle, lineWidth: 1)
+                        )
+                }
+            }
+
+            // Comic-specific fields — optional, for graphic-novel EPUBs
+            metadataSection(title: "Comic Details", icon: "square.grid.3x1.below.line.grid.1x2") {
+                VStack(alignment: .leading, spacing: Spacing.md) {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            showComicFields.toggle()
+                        }
+                    } label: {
+                        HStack(spacing: Spacing.xs) {
+                            Image(systemName: showComicFields ? "chevron.down" : "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text(showComicFields ? "Hide comic fields" : "Show comic fields")
+                                .font(Typography.bodySmall)
+                        }
+                        .foregroundColor(AccentColors.primary)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+
+                    Text("Only needed if this EPUB is a comic or graphic novel — series, issue number, and art credits.")
+                        .font(Typography.caption)
+                        .foregroundColor(TextColors.tertiary)
+
+                    if showComicFields {
+                        metadataField(
+                            label: "Series", text: $draftSeries, field: .series,
+                            knowledgeType: .series)
+                        metadataField(
+                            label: "Issue Number", text: $draftIssueNumber, field: .issue)
+                        metadataNumericField(label: "Volume", value: $draftVolume, field: .volume)
+                        metadataField(
+                            label: "Artist", text: $draftArtist, field: .artist,
+                            knowledgeType: .artist)
+                        metadataField(
+                            label: "Cover Artist", text: $draftCoverArtist, field: .coverArtist,
+                            knowledgeType: .coverArtist)
+                        metadataField(
+                            label: "Colorist", text: $draftColorist, field: .colorist,
+                            knowledgeType: .colorist)
+                        metadataField(
+                            label: "Inker", text: $draftInker, field: .inker,
+                            knowledgeType: .inker)
+                        metadataField(
+                            label: "Editor", text: $draftEditor, field: .editor,
+                            knowledgeType: .editor)
+                    }
+                }
+            }
+        }
+        .onAppear {
+            // Auto-expand when comic fields already hold data.
+            if !draftSeries.isEmpty || !draftIssueNumber.isEmpty || !draftArtist.isEmpty
+                || !draftInker.isEmpty || !draftColorist.isEmpty
+            {
+                showComicFields = true
+            }
+        }
+    }
 
     private var metadataFields: some View {
         VStack(alignment: .leading, spacing: Spacing.xl) {

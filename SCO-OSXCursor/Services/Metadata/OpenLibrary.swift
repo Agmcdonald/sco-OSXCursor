@@ -16,6 +16,7 @@
 
 import Combine
 import Foundation
+import SwiftUI
 
 // MARK: - ISBN helpers
 
@@ -121,26 +122,64 @@ actor OLThrottle {
 
 // MARK: - DTOs
 
-struct OLBookData: Decodable {
-    let title: String?
-    let subtitle: String?
-    let authors: [OLNamed]?
-    let publishers: [OLNamed]?
-    let publish_date: String?
-    let number_of_pages: Int?
-}
-
-struct OLNamed: Decodable { let name: String? }
-
 struct OLSearchResponse: Decodable { let docs: [OLSearchDoc] }
 
+/// A work-level search hit. `title` is Open Library's canonical work title
+/// ("Frankenstein or The Modern Prometheus"), which is what we apply —
+/// much cleaner than filename-derived titles.
 struct OLSearchDoc: Decodable {
-    let key: String?
+    let key: String?  // e.g. "/works/OL450063W"
     let title: String?
     let author_name: [String]?
     let first_publish_year: Int?
     let isbn: [String]?
     let publisher: [String]?
+}
+
+/// Work record — fetched for the description (search results don't carry one).
+struct OLWork: Decodable {
+    let title: String?
+    let description: String?
+
+    private enum CodingKeys: String, CodingKey { case title, description }
+    private struct TypedText: Decodable { let value: String? }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        title = try? container.decode(String.self, forKey: .title)
+        // description is either a bare string or {"type": …, "value": …}
+        if let plain = try? container.decode(String.self, forKey: .description) {
+            description = plain
+        } else if let typed = try? container.decode(TypedText.self, forKey: .description) {
+            description = typed.value
+        } else {
+            description = nil
+        }
+    }
+}
+
+// MARK: - Match candidates (suggestions picker)
+
+/// A stored Open Library suggestion, offered when no match clears the
+/// confidence bar — same pattern as ComicVine's CVCandidate. Persisted as
+/// JSON in `metadataCandidates` (EPUBs never show the ComicVine picker, so
+/// the field is unambiguous per file type).
+struct OLCandidate: Codable, Identifiable {
+    let id: String  // work key, e.g. "/works/OL450063W"
+    let title: String
+    let authors: String?
+    let year: Int?
+    let publisher: String?
+    let isbn: String?
+
+    static func encodeList(_ list: [OLCandidate]) -> String? {
+        (try? JSONEncoder().encode(list)).flatMap { String(data: $0, encoding: .utf8) }
+    }
+
+    static func decodeList(_ json: String?) -> [OLCandidate] {
+        guard let json = json, let data = json.data(using: .utf8) else { return [] }
+        return (try? JSONDecoder().decode([OLCandidate].self, from: data)) ?? []
+    }
 }
 
 // MARK: - API Client
@@ -201,18 +240,20 @@ final class OpenLibraryService {
         }
     }
 
-    /// Exact ISBN lookup. One call returns flattened author/publisher names.
-    func lookupByISBN(_ isbn: String) async throws -> OLBookData? {
-        var components = URLComponents(string: "https://openlibrary.org/api/books")!
+    private static let searchFields = "key,title,author_name,first_publish_year,isbn,publisher"
+
+    /// Exact ISBN lookup, resolved at the WORK level so the title comes back
+    /// canonical and the work key is available for the description fetch.
+    func lookupByISBN(_ isbn: String) async throws -> OLSearchDoc? {
+        var components = URLComponents(string: "https://openlibrary.org/search.json")!
         components.queryItems = [
-            URLQueryItem(name: "bibkeys", value: "ISBN:\(isbn)"),
-            URLQueryItem(name: "jscmd", value: "data"),
-            URLQueryItem(name: "format", value: "json"),
+            URLQueryItem(name: "q", value: "isbn:\(isbn)"),
+            URLQueryItem(name: "fields", value: Self.searchFields),
+            URLQueryItem(name: "limit", value: "1"),
         ]
         guard let url = components.url else { throw OLError.badURL }
         let data = try await requestData(url)
-        let decoded = try JSONDecoder().decode([String: OLBookData].self, from: data)
-        return decoded["ISBN:\(isbn)"]
+        return try JSONDecoder().decode(OLSearchResponse.self, from: data).docs.first
     }
 
     /// Fuzzy title (+ optional author) search. Returns the top candidates.
@@ -220,9 +261,7 @@ final class OpenLibraryService {
         var components = URLComponents(string: "https://openlibrary.org/search.json")!
         var items: [URLQueryItem] = [
             URLQueryItem(name: "title", value: title),
-            URLQueryItem(
-                name: "fields",
-                value: "key,title,author_name,first_publish_year,isbn,publisher"),
+            URLQueryItem(name: "fields", value: Self.searchFields),
             URLQueryItem(name: "limit", value: "5"),
         ]
         if let author, !author.isEmpty {
@@ -232,6 +271,16 @@ final class OpenLibraryService {
         guard let url = components.url else { throw OLError.badURL }
         let data = try await requestData(url)
         return try JSONDecoder().decode(OLSearchResponse.self, from: data).docs
+    }
+
+    /// Work record fetch — carries the description/summary that search
+    /// results omit. `key` is a work key like "/works/OL450063W".
+    func work(key: String) async throws -> OLWork {
+        guard key.hasPrefix("/works/"),
+            let url = URL(string: "https://openlibrary.org\(key).json")
+        else { throw OLError.badURL }
+        let data = try await requestData(url)
+        return try JSONDecoder().decode(OLWork.self, from: data)
     }
 
     /// Pulls a 4-digit year out of strings like "2003", "March 2003", "c1998".
@@ -248,6 +297,7 @@ final class OpenLibraryService {
 
 enum OpenLibraryFetchOutcome {
     case updated
+    case needsChoice
     case alreadyFetched
     case noMatches
     case notEbook
@@ -269,16 +319,20 @@ extension LibraryViewModel {
     func fetchOpenLibraryMetadata(for comic: Comic, force: Bool) async -> OpenLibraryFetchOutcome {
         guard comic.fileType == .epub else { return .notEbook }
         if !force, comic.metadataFetchedAt != nil { return .alreadyFetched }
+        if !force, !OLCandidate.decodeList(comic.metadataCandidates).isEmpty {
+            return .needsChoice
+        }
 
         // Identity from the file's own OPF metadata — best available signal.
         let embedded = embeddedEPUBMetadata(for: comic)
         let isbn = comic.isbn ?? embedded?.isbn
 
         do {
-            // 1. ISBN path (exact).
+            // 1. ISBN path (exact) — resolved at the work level so we get the
+            //    canonical title and the work key for the summary fetch.
             if let isbn {
-                if let book = try await OpenLibraryService.shared.lookupByISBN(isbn) {
-                    apply(book: book, isbn: isbn, to: comic)
+                if let doc = try await OpenLibraryService.shared.lookupByISBN(isbn) {
+                    await apply(doc: doc, isbn: isbn, to: comic)
                     return .updated
                 }
             }
@@ -300,13 +354,34 @@ extension LibraryViewModel {
                 }
                 return (doc, score)
             }
-            guard let best = scored.max(by: { $0.1 < $1.1 }),
-                best.1 >= Self.openLibraryConfidenceThreshold
-            else {
-                return .noMatches
+            .sorted { $0.1 > $1.1 }
+
+            guard let best = scored.first else { return .noMatches }
+
+            if best.1 >= Self.openLibraryConfidenceThreshold {
+                await apply(doc: best.0, isbn: nil, to: comic)
+                return .updated
             }
-            apply(doc: best.0, to: comic)
-            return .updated
+
+            // Not confident enough to auto-apply — store the top hits as
+            // suggestions for the user to pick from (zero extra API cost).
+            let candidates = scored.prefix(5).compactMap { item -> OLCandidate? in
+                guard let key = item.0.key, let title = item.0.title else { return nil }
+                return OLCandidate(
+                    id: key,
+                    title: title,
+                    authors: item.0.author_name?.joined(separator: ", "),
+                    year: item.0.first_publish_year,
+                    publisher: item.0.publisher?.first,
+                    isbn: item.0.isbn?.first.flatMap(ISBNUtil.normalize)
+                )
+            }
+            guard !candidates.isEmpty else { return .noMatches }
+            var updated = comics.first(where: { $0.id == comic.id }) ?? comic
+            updated.metadataCandidates = OLCandidate.encodeList(Array(candidates))
+            updated.dateModified = Date()
+            updateComic(updated)
+            return .needsChoice
         } catch OpenLibraryService.OLError.quotaExceeded(let retryAfter) {
             return .quotaDeferred(retryAfter)
         } catch {
@@ -315,10 +390,35 @@ extension LibraryViewModel {
         }
     }
 
+    /// User picked a suggestion from the Open Library match sheet.
+    @MainActor
+    func applyOpenLibraryCandidate(_ candidate: OLCandidate, to comic: Comic) async -> OpenLibraryFetchOutcome {
+        let doc = OLSearchDoc(
+            key: candidate.id,
+            title: candidate.title,
+            author_name: candidate.authors.map { [$0] },
+            first_publish_year: candidate.year,
+            isbn: candidate.isbn.map { [$0] },
+            publisher: candidate.publisher.map { [$0] }
+        )
+        await apply(doc: doc, isbn: nil, to: comic)
+        return .updated
+    }
+
+    /// User rejected all Open Library suggestions — clear them.
+    @MainActor
+    func clearOpenLibraryCandidates(for comic: Comic) {
+        var updated = comics.first(where: { $0.id == comic.id }) ?? comic
+        updated.metadataCandidates = nil
+        updated.dateModified = Date()
+        updateComic(updated)
+    }
+
     // MARK: Batch (defer-over-drop)
 
     struct OpenLibraryBatchResult {
         var updated = 0
+        var needChoice = 0
         var noMatch = 0
         var skipped = 0
         var failed = 0
@@ -327,6 +427,7 @@ extension LibraryViewModel {
         var summary: String {
             var parts: [String] = []
             if updated > 0 { parts.append("\(updated) updated") }
+            if needChoice > 0 { parts.append("\(needChoice) to review") }
             if noMatch > 0 { parts.append("\(noMatch) no match") }
             if skipped > 0 { parts.append("\(skipped) already fetched") }
             if failed > 0 { parts.append("\(failed) failed") }
@@ -356,6 +457,7 @@ extension LibraryViewModel {
             let outcome = await fetchOpenLibraryMetadata(for: latest, force: false)
             switch outcome {
             case .updated: result.updated += 1
+            case .needsChoice: result.needChoice += 1
             case .noMatches: result.noMatch += 1
             case .alreadyFetched, .notEbook: result.skipped += 1
             case .failed: result.failed += 1
@@ -377,26 +479,33 @@ extension LibraryViewModel {
 
     // MARK: Apply + helpers
 
-    /// ISBN hit: exact match, so the title may also fill (when empty).
+    /// Applies a matched work to the book. The Open Library work title is
+    /// canonical, so it REPLACES the (usually filename-derived) title — the
+    /// pre-fetch snapshot still makes this fully undoable. Everything else
+    /// fills only when empty. A second call fetches the work's description
+    /// for the summary (non-fatal when missing or over budget).
     @MainActor
-    private func apply(book: OLBookData, isbn: String, to comic: Comic) {
-        var updated = snapshotted(comic)
-        fillIfEmpty(&updated.title, with: book.title)
-        fillIfEmpty(&updated.writer, with: book.authors?.compactMap(\.name).joined(separator: ", "))
-        fillIfEmpty(&updated.publisher, with: book.publishers?.compactMap(\.name).first)
-        if updated.year == nil { updated.year = OpenLibraryService.year(from: book.publish_date) }
-        updated.isbn = isbn
-        finalize(&updated)
-    }
+    private func apply(doc: OLSearchDoc, isbn: String?, to comic: Comic) async {
+        // Summary lives on the work record, not in search results.
+        var workDescription: String?
+        if (comic.summary ?? "").isEmpty, let key = doc.key {
+            workDescription = (try? await OpenLibraryService.shared.work(key: key))?.description
+        }
 
-    @MainActor
-    private func apply(doc: OLSearchDoc, to comic: Comic) {
         var updated = snapshotted(comic)
-        fillIfEmpty(&updated.title, with: doc.title)
+        if let title = doc.title, !title.isEmpty {
+            updated.title = title  // canonical work title replaces filename junk
+        }
         fillIfEmpty(&updated.writer, with: doc.author_name?.joined(separator: ", "))
         fillIfEmpty(&updated.publisher, with: doc.publisher?.first)
+        fillIfEmpty(&updated.summary, with: workDescription)
         if updated.year == nil { updated.year = doc.first_publish_year }
-        if updated.isbn == nil { updated.isbn = doc.isbn?.first.flatMap(ISBNUtil.normalize) }
+        if let isbn {
+            updated.isbn = isbn
+        } else if updated.isbn == nil {
+            updated.isbn = doc.isbn?.first.flatMap(ISBNUtil.normalize)
+        }
+        updated.metadataCandidates = nil  // a pick/apply resolves any pending choice
         finalize(&updated)
     }
 
@@ -464,5 +573,254 @@ extension LibraryViewModel {
             updateComic(updated)
         }
         return metadata
+    }
+
+    /// Apply a match from a pasted Open Library link (or bare work ID like
+    /// "OL450063W"). Bypasses search entirely — the work record supplies the
+    /// canonical title and description directly.
+    @MainActor
+    func applyOpenLibraryLink(_ raw: String, to comic: Comic) async -> OpenLibraryFetchOutcome {
+        guard let range = raw.range(of: #"OL\d+W"#, options: .regularExpression) else {
+            return .failed("That doesn't look like an Open Library work link or ID (OL…W).")
+        }
+        let key = "/works/\(raw[range])"
+        do {
+            let work = try await OpenLibraryService.shared.work(key: key)
+            let doc = OLSearchDoc(
+                key: key,
+                title: work.title,
+                author_name: nil,
+                first_publish_year: nil,
+                isbn: nil,
+                publisher: nil
+            )
+            await apply(doc: doc, isbn: nil, to: comic)
+            return .updated
+        } catch OpenLibraryService.OLError.quotaExceeded(let retryAfter) {
+            return .quotaDeferred(retryAfter)
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+}
+
+// MARK: - Match Picker (suggestions sheet)
+
+/// Suggestion sheet for EPUB books whose Open Library search wasn't confident
+/// enough to auto-apply — the ebook counterpart of ComicVineMatchPicker.
+struct OpenLibraryMatchPicker: View {
+    let comic: Comic
+    @ObservedObject var viewModel: LibraryViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var isApplying = false
+    @State private var linkText = ""
+    @State private var linkError: String?
+    /// Which candidate is highlighted but not yet confirmed (two-step select).
+    @State private var selectedCandidateID: OLCandidate.ID?
+
+    /// Same behaviour setting the ComicVine picker honours.
+    @AppStorage("singleTapConfirmMatch") private var singleTapConfirm = false
+
+    private var candidates: [OLCandidate] {
+        OLCandidate.decodeList(comic.metadataCandidates)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Choose the Right Match")
+                        .font(Typography.h3)
+                        .foregroundColor(TextColors.primary)
+                    Text(comic.displayTitle)
+                        .font(Typography.caption)
+                        .foregroundColor(TextColors.secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding(Spacing.lg)
+
+            Divider()
+
+            if candidates.isEmpty {
+                VStack(spacing: Spacing.md) {
+                    Image(systemName: "questionmark.circle")
+                        .font(.system(size: 40))
+                        .foregroundColor(TextColors.tertiary)
+                    Text("No pending matches for this book.")
+                        .font(Typography.body)
+                        .foregroundColor(TextColors.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                if !singleTapConfirm {
+                    HStack(spacing: Spacing.xs) {
+                        Image(systemName: "hand.tap")
+                            .font(.system(size: 12))
+                        Text(selectionHint)
+                            .font(Typography.caption)
+                    }
+                    .foregroundColor(TextColors.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Spacing.lg)
+                    .padding(.top, Spacing.sm)
+                }
+
+                List {
+                    ForEach(candidates) { candidate in
+                        let isSelected = selectedCandidateID == candidate.id
+                        Button {
+                            handleTap(candidate)
+                        } label: {
+                            HStack(spacing: Spacing.md) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(candidate.title)
+                                        .font(Typography.body)
+                                        .foregroundColor(TextColors.primary)
+                                    Text(candidateSubtitle(candidate))
+                                        .font(Typography.caption)
+                                        .foregroundColor(TextColors.secondary)
+                                }
+                                Spacer(minLength: 0)
+                                if isSelected && !singleTapConfirm {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.system(size: 18))
+                                        .foregroundColor(AccentColors.primary)
+                                        .transition(.scale.combined(with: .opacity))
+                                }
+                            }
+                            .padding(.vertical, 4)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isApplying)
+                        .listRowBackground(
+                            isSelected && !singleTapConfirm
+                                ? AccentColors.primary.opacity(0.15)
+                                : Color.clear
+                        )
+                    }
+                }
+                .animation(.easeInOut(duration: 0.15), value: selectedCandidateID)
+                #if os(macOS)
+                    .listStyle(.inset)
+                #else
+                    .listStyle(.insetGrouped)
+                #endif
+            }
+
+            Divider()
+
+            linkSection
+
+            Divider()
+
+            HStack {
+                Button("None of These") {
+                    viewModel.clearOpenLibraryCandidates(for: comic)
+                    dismiss()
+                }
+                .foregroundColor(AccentColors.error)
+                Spacer()
+                if isApplying {
+                    ProgressView().scaleEffect(0.7)
+                    Text("Fetching details…")
+                        .font(Typography.caption)
+                        .foregroundColor(TextColors.secondary)
+                }
+            }
+            .padding(Spacing.lg)
+        }
+        .frame(minWidth: 420, minHeight: 380)
+    }
+
+    /// Manual override: paste an Open Library work link (or OL…W ID) when
+    /// search ranking didn't surface the right edition.
+    private var linkSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("None match? Paste an Open Library link")
+                .font(Typography.caption)
+                .foregroundColor(TextColors.secondary)
+            HStack(spacing: Spacing.sm) {
+                TextField("openlibrary.org/works/OL450063W/…", text: $linkText)
+                    .textFieldStyle(.roundedBorder)
+                    .font(Typography.caption)
+                    .disabled(isApplying)
+                    .onSubmit { applyLink() }
+                Button("Use Link", action: applyLink)
+                    .disabled(
+                        isApplying
+                            || linkText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            if let linkError {
+                Text(linkError)
+                    .font(Typography.caption)
+                    .foregroundColor(AccentColors.error)
+            }
+        }
+        .padding(.horizontal, Spacing.lg)
+        .padding(.vertical, Spacing.md)
+    }
+
+    private func candidateSubtitle(_ candidate: OLCandidate) -> String {
+        var parts: [String] = []
+        if let authors = candidate.authors, !authors.isEmpty { parts.append(authors) }
+        if let year = candidate.year { parts.append(String(year)) }
+        if let publisher = candidate.publisher, !publisher.isEmpty { parts.append(publisher) }
+        return parts.isEmpty ? "Open Library work \(candidate.id)" : parts.joined(separator: " • ")
+    }
+
+    private var selectionHint: String {
+        if let id = selectedCandidateID,
+            let selected = candidates.first(where: { $0.id == id })
+        {
+            return "Tap “\(selected.title)” again to confirm, or pick another."
+        }
+        return "Tap to select a match, then tap again to confirm."
+    }
+
+    private func handleTap(_ candidate: OLCandidate) {
+        guard !isApplying else { return }
+        if singleTapConfirm || selectedCandidateID == candidate.id {
+            apply(candidate)
+        } else {
+            selectedCandidateID = candidate.id
+        }
+    }
+
+    private func apply(_ candidate: OLCandidate) {
+        guard !isApplying else { return }
+        isApplying = true
+        Task {
+            _ = await viewModel.applyOpenLibraryCandidate(candidate, to: comic)
+            isApplying = false
+            dismiss()
+        }
+    }
+
+    private func applyLink() {
+        let raw = linkText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !isApplying, !raw.isEmpty else { return }
+        linkError = nil
+        isApplying = true
+        Task {
+            let outcome = await viewModel.applyOpenLibraryLink(raw, to: comic)
+            isApplying = false
+            switch outcome {
+            case .updated:
+                dismiss()
+            case .failed(let message):
+                linkError = message
+            case .quotaDeferred(let retryAfter):
+                let time = retryAfter.formatted(date: .omitted, time: .shortened)
+                linkError = "Hourly budget reached — try again after \(time)."
+            default:
+                dismiss()
+            }
+        }
     }
 }
