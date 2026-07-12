@@ -378,7 +378,7 @@ extension LibraryViewModel {
     ///   canonical title replaces; the pre-fetch snapshot is stored for undo.
     @MainActor
     func fetchOpenLibraryMetadata(for comic: Comic, force: Bool) async -> OpenLibraryFetchOutcome {
-        guard comic.fileType == .epub else { return .notEbook }
+        guard comic.isEbook else { return .notEbook }
         if !force, comic.metadataFetchedAt != nil { return .alreadyFetched }
         if !force, !OLCandidate.decodeList(comic.metadataCandidates).isEmpty {
             return .needsChoice
@@ -685,7 +685,7 @@ extension LibraryViewModel {
         onProgress: @MainActor (String) -> Void = { _ in }
     ) async -> OpenLibraryBatchResult {
         var result = OpenLibraryBatchResult()
-        var queue = comics.filter { $0.fileType == .epub }
+        var queue = comics.filter { $0.isEbook }
         let total = queue.count
         var done = 0
 
@@ -814,8 +814,10 @@ extension LibraryViewModel {
     /// Reads the EPUB's own OPF metadata (title/author/ISBN), resolving the
     /// security-scoped bookmark the same way cover regeneration does.
     /// Also persists a newly discovered ISBN onto the record.
+    /// Non-EPUB books (e.g. reclassified PDFs) have no OPF — returns nil.
     @MainActor
     private func embeddedEPUBMetadata(for comic: Comic) -> ComicMetadata? {
+        guard comic.fileType == .epub else { return nil }
         var fileURL = comic.filePath
         var didStartAccess = false
         if let bookmarkData = comic.bookmarkData {

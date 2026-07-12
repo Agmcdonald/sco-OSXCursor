@@ -17,11 +17,12 @@ struct LibraryFilterBadgesRow: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: Spacing.sm) {
-                if let status = filters.status {
+                // One badge per selected value — filters are multi-select.
+                ForEach(Comic.Status.allCases.filter { filters.statuses.contains($0) }, id: \.self) { status in
                     FilterBadge(
                         title: "Status: \(status.displayLabel)",
                         icon: status.icon,
-                        onRemove: { filters.status = nil }
+                        onRemove: { filters.statuses.remove(status) }
                     )
                 }
 
@@ -33,43 +34,43 @@ struct LibraryFilterBadgesRow: View {
                     )
                 }
 
-                if let publisher = filters.publisher {
+                ForEach(filters.publishers.sorted(), id: \.self) { publisher in
                     FilterBadge(
                         title: "Publisher: \(publisher)",
                         icon: "building.2",
-                        onRemove: { filters.publisher = nil }
+                        onRemove: { filters.publishers.remove(publisher) }
                     )
                 }
 
-                if let series = filters.series {
+                ForEach(filters.series.sorted(), id: \.self) { series in
                     FilterBadge(
                         title: "Series: \(series)",
                         icon: "books.vertical",
-                        onRemove: { filters.series = nil }
+                        onRemove: { filters.series.remove(series) }
                     )
                 }
 
-                if let year = filters.year {
+                ForEach(filters.years.sorted(by: >), id: \.self) { year in
                     FilterBadge(
                         title: "Year: \(String(year))",
                         icon: "calendar",
-                        onRemove: { filters.year = nil }
+                        onRemove: { filters.years.remove(year) }
                     )
                 }
 
-                if let contentRating = filters.contentRating {
+                ForEach(Comic.ContentRating.allCases.filter { filters.contentRatings.contains($0) }, id: \.self) { rating in
                     FilterBadge(
-                        title: "Rating: \(contentRating.label)",
+                        title: "Rating: \(rating.label)",
                         icon: "shield.lefthalf.filled",
-                        onRemove: { filters.contentRating = nil }
+                        onRemove: { filters.contentRatings.remove(rating) }
                     )
                 }
 
-                if let fileType = filters.fileType {
+                ForEach(Comic.FileType.allCases.filter { filters.fileTypes.contains($0) }, id: \.self) { fileType in
                     FilterBadge(
                         title: "Type: \(fileType.displayName)",
                         icon: fileType.icon,
-                        onRemove: { filters.fileType = nil }
+                        onRemove: { filters.fileTypes.remove(fileType) }
                     )
                 }
 
@@ -105,11 +106,16 @@ struct LibraryFilterPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            Text("Filters")
-                .font(Typography.h3)
-                .foregroundColor(TextColors.primary)
+            HStack(spacing: Spacing.sm) {
+                Text("Filters")
+                    .font(Typography.h3)
+                    .foregroundColor(TextColors.primary)
+                Text("Tap to toggle — combine as many as you like.")
+                    .font(Typography.caption)
+                    .foregroundColor(TextColors.tertiary)
+            }
 
-            // Status filter
+            // Status filter (multi-select; "All" clears the group)
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 Text("Status")
                     .font(Typography.bodySmall)
@@ -118,9 +124,9 @@ struct LibraryFilterPanel: View {
                 HStack(spacing: Spacing.sm) {
                     FilterChip(
                         title: "All",
-                        isSelected: filters.status == nil && !filters.readingList,
+                        isSelected: filters.statuses.isEmpty && !filters.readingList,
                         action: {
-                            filters.status = nil
+                            filters.statuses = []
                             filters.readingList = false
                         }
                     )
@@ -130,24 +136,18 @@ struct LibraryFilterPanel: View {
                             title: status.displayLabel,
                             icon: status.icon,
                             color: status.color,
-                            isSelected: filters.status == status,
-                            action: {
-                                filters.status = status
-                                filters.readingList = false
-                            }
+                            isSelected: filters.statuses.contains(status),
+                            action: { filters.toggle(status, in: \.statuses) }
                         )
                     }
 
-                    // Reading list chip
+                    // Reading list chip (independent toggle)
                     FilterChip(
                         title: "Want to Read",
                         icon: "bookmark.fill",
                         color: AccentColors.primary,
                         isSelected: filters.readingList,
-                        action: {
-                            filters.readingList = true
-                            filters.status = nil
-                        }
+                        action: { filters.readingList.toggle() }
                     )
                 }
             }
@@ -162,15 +162,15 @@ struct LibraryFilterPanel: View {
                     HStack(spacing: Spacing.sm) {
                         FilterChip(
                             title: "All",
-                            isSelected: filters.publisher == nil,
-                            action: { filters.publisher = nil }
+                            isSelected: filters.publishers.isEmpty,
+                            action: { filters.publishers = [] }
                         )
 
                         ForEach(publishers, id: \.self) { publisher in
                             FilterChip(
                                 title: publisher,
-                                isSelected: filters.publisher == publisher,
-                                action: { filters.publisher = publisher }
+                                isSelected: filters.publishers.contains(publisher),
+                                action: { filters.toggle(publisher, in: \.publishers) }
                             )
                         }
                     }
@@ -188,15 +188,15 @@ struct LibraryFilterPanel: View {
                         HStack(spacing: Spacing.sm) {
                             FilterChip(
                                 title: "All",
-                                isSelected: filters.series == nil,
-                                action: { filters.series = nil }
+                                isSelected: filters.series.isEmpty,
+                                action: { filters.series = [] }
                             )
 
                             ForEach(series, id: \.self) { seriesName in
                                 FilterChip(
                                     title: seriesName,
-                                    isSelected: filters.series == seriesName,
-                                    action: { filters.series = seriesName }
+                                    isSelected: filters.series.contains(seriesName),
+                                    action: { filters.toggle(seriesName, in: \.series) }
                                 )
                             }
                         }
@@ -215,15 +215,15 @@ struct LibraryFilterPanel: View {
                         HStack(spacing: Spacing.sm) {
                             FilterChip(
                                 title: "All",
-                                isSelected: filters.year == nil,
-                                action: { filters.year = nil }
+                                isSelected: filters.years.isEmpty,
+                                action: { filters.years = [] }
                             )
 
                             ForEach(years, id: \.self) { year in
                                 FilterChip(
                                     title: String(year),
-                                    isSelected: filters.year == year,
-                                    action: { filters.year = year }
+                                    isSelected: filters.years.contains(year),
+                                    action: { filters.toggle(year, in: \.years) }
                                 )
                             }
                         }
@@ -241,15 +241,15 @@ struct LibraryFilterPanel: View {
                     HStack(spacing: Spacing.sm) {
                         FilterChip(
                             title: "All",
-                            isSelected: filters.contentRating == nil,
-                            action: { filters.contentRating = nil }
+                            isSelected: filters.contentRatings.isEmpty,
+                            action: { filters.contentRatings = [] }
                         )
 
                         ForEach(Comic.ContentRating.allCases, id: \.self) { rating in
                             FilterChip(
                                 title: rating.label,
-                                isSelected: filters.contentRating == rating,
-                                action: { filters.contentRating = rating }
+                                isSelected: filters.contentRatings.contains(rating),
+                                action: { filters.toggle(rating, in: \.contentRatings) }
                             )
                             .help(rating.ageGuidance)
                         }
@@ -266,16 +266,16 @@ struct LibraryFilterPanel: View {
                 HStack(spacing: Spacing.sm) {
                     FilterChip(
                         title: "All",
-                        isSelected: filters.fileType == nil,
-                        action: { filters.fileType = nil }
+                        isSelected: filters.fileTypes.isEmpty,
+                        action: { filters.fileTypes = [] }
                     )
 
                     ForEach(Comic.FileType.allCases, id: \.self) { fileType in
                         FilterChip(
                             title: fileType.displayName,
                             icon: fileType.icon,
-                            isSelected: filters.fileType == fileType,
-                            action: { filters.fileType = fileType }
+                            isSelected: filters.fileTypes.contains(fileType),
+                            action: { filters.toggle(fileType, in: \.fileTypes) }
                         )
                     }
                 }

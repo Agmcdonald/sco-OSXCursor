@@ -297,12 +297,10 @@ struct LibraryView: View {
     private var emptyState: LibraryEmptyStateView {
         LibraryEmptyStateView(
             isLibraryEmpty: viewModel.comics.isEmpty,
-            canClearFilters: filters.status != nil || filters.publisher != nil
-                || !searchText.isEmpty,
+            canClearFilters: filters.hasActive || !searchText.isEmpty,
             onAddComics: { showingFilePicker = true },
             onClearFilters: {
-                filters.status = nil
-                filters.publisher = nil
+                filters.clear()
                 searchText = ""
             }
         )
@@ -723,7 +721,7 @@ struct LibraryView: View {
         // Match picker for an ambiguous no-sheet fetch (source by file type)
         .sheet(item: $pendingPickerComicID) { wrapper in
             if let comic = viewModel.comics.first(where: { $0.id == wrapper.id }) {
-                if comic.fileType == .epub {
+                if comic.isEbook {
                     OpenLibraryMatchPicker(comic: comic, viewModel: viewModel)
                 } else {
                     ComicVineMatchPicker(comic: comic, viewModel: viewModel)
@@ -1105,7 +1103,7 @@ struct LibraryView: View {
     /// search is ambiguous, opens the match picker. EPUB books route to
     /// Open Library / Google Books; everything else to ComicVine.
     private func fetchMetadataSingle(_ comic: Comic) {
-        if comic.fileType == .epub {
+        if comic.isEbook {
             fetchBookMetadataSingle(comic)
             return
         }
@@ -1156,7 +1154,7 @@ struct LibraryView: View {
                 pendingPickerComicID = ComicID(id: comic.id)
                 flashComicVineStatus("\(comic.displayTitle): no automatic match — search manually.")
             case .notEbook:
-                flashComicVineStatus("\(comic.displayTitle): book lookup only covers EPUBs.")
+                flashComicVineStatus("\(comic.displayTitle): book lookup only covers items classified as books.")
             case .quotaDeferred(let retryAfter):
                 let time = retryAfter.formatted(date: .omitted, time: .shortened)
                 flashComicVineStatus("Lookup budget reached — try again after \(time).")
@@ -1181,8 +1179,8 @@ struct LibraryView: View {
     private func fetchMetadataForSelected() {
         guard !selectedComics.isEmpty, !isBatchFetching else { return }
         let comics = viewModel.comics.filter { selectedComics.contains($0.id) }
-        let epubs = comics.filter { $0.fileType == .epub }
-        let issues = comics.filter { $0.fileType != .epub }
+        let epubs = comics.filter { $0.isEbook }
+        let issues = comics.filter { !$0.isEbook }
         isBatchFetching = true
         let total = comics.count
         flashComicVineStatus("Fetching metadata for \(total) book\(total == 1 ? "" : "s")…")

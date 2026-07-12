@@ -360,6 +360,15 @@ extension Comic {
 
 // MARK: - Computed Properties
 extension Comic {
+    /// True when this item should be treated as a prose BOOK rather than a
+    /// comic: every EPUB, plus any file (e.g. a PDF picture book) the user
+    /// reclassified via Edit Metadata → Item Type. Drives which metadata
+    /// provider fetches use (Open Library/Google Books/Hardcover vs
+    /// ComicVine) and which edit layout is shown.
+    var isEbook: Bool {
+        fileType == .epub || bookFormat == .ebook
+    }
+
     /// Display name shown on library cards and used as the alphabetical sort
     /// key. Comics use the SERIES so the grid stays grouped by series and
     /// sorts predictably — the per-issue storyline title (e.g. ComicVine's
@@ -368,7 +377,7 @@ extension Comic {
     /// storyline "Future Shock"). eBooks/novels prefer their title, since they
     /// often have no distinct series.
     var displayName: String {
-        if fileType != .epub, let series = series, !series.isEmpty {
+        if !isEbook, let series = series, !series.isEmpty {
             return series
         }
         if let title = title, !title.isEmpty {
@@ -382,7 +391,7 @@ extension Comic {
 
     /// Human-readable label for the item type (comic vs book)
     var mediaTypeLabel: String {
-        fileType == .epub ? "Book" : "Comic"
+        isEbook ? "Book" : "Comic"
     }
 
     /// Full display title with issue number and year

@@ -52,6 +52,11 @@ struct ComicDetailView: View {
     /// EPUB layout: whether the optional comic-specific fields are expanded.
     @State private var showComicFields = false
 
+    /// Item type (comic vs book). Applied IMMEDIATELY on change (it's a
+    /// classification, not content metadata) so fetch routing and layout
+    /// stay in sync without waiting for Save. EPUBs are always books.
+    @State private var draftIsBook: Bool
+
     // ComicVine fetch state
     @State private var isFetchingMetadata = false
     @State private var showingMatchPicker = false
@@ -94,6 +99,7 @@ struct ComicDetailView: View {
         _draftEditor = State(initialValue: comic.editor ?? "")
         _draftSummary = State(initialValue: comic.summary ?? "")
         _draftRating = State(initialValue: comic.rating ?? 0)
+        _draftIsBook = State(initialValue: comic.isEbook)
     }
 
     // MARK: - hasChanges
@@ -121,20 +127,28 @@ struct ComicDetailView: View {
                     Divider()
                         .background(BorderColors.subtle)
 
-                    // Metadata fetch: EPUB books use Open Library (no key
-                    // needed); comic issues use ComicVine.
-                    if editedComic.fileType == .epub {
+                    // Metadata fetch: books use Open Library / Google Books /
+                    // Hardcover; comic issues use ComicVine.
+                    if draftIsBook {
                         openLibrarySection
                     } else {
                         comicVineSection
                     }
 
+                    // Item type: PDFs (and CBZ/CBR) can be reclassified as
+                    // books — e.g. children's books or novels imported as
+                    // PDFs — which switches the fetch sources and layout.
+                    // EPUBs are always books.
+                    if editedComic.fileType != .epub {
+                        itemTypeSection
+                    }
+
                     Divider()
                         .background(BorderColors.subtle)
 
-                    // Metadata Fields — EPUB books lead with Title/Author/
+                    // Metadata Fields — books lead with Title/Author/
                     // Publisher/Summary; comic-specific fields are optional.
-                    if editedComic.fileType == .epub {
+                    if draftIsBook {
                         bookMetadataFields
                     } else {
                         metadataFields
@@ -192,14 +206,61 @@ struct ComicDetailView: View {
             resyncDrafts()
             if liveComic.metadataFetchedAt != nil {
                 fetchMessage =
-                    "Metadata updated from \(editedComic.fileType == .epub ? "Open Library" : "ComicVine"). Review and Save to keep."
+                    "Metadata updated from \(draftIsBook ? "the book sources" : "ComicVine"). Review and Save to keep."
             }
         }) {
-            if editedComic.fileType == .epub {
+            if draftIsBook {
                 OpenLibraryMatchPicker(comic: liveComic, viewModel: libraryViewModel)
             } else {
                 ComicVineMatchPicker(comic: liveComic, viewModel: libraryViewModel)
             }
+        }
+    }
+
+    // MARK: - Item Type (reclassification)
+
+    /// Comic ↔ Book toggle for non-EPUB files. Applies immediately: it
+    /// changes which metadata sources the fetch buttons use.
+    private var itemTypeSection: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(spacing: Spacing.sm) {
+                Image(systemName: "arrow.left.arrow.right.square")
+                    .foregroundColor(AccentColors.primary)
+                Text("Item Type")
+                    .font(Typography.h3)
+                    .foregroundColor(TextColors.primary)
+            }
+
+            Picker("Item Type", selection: $draftIsBook) {
+                Text("Comic").tag(false)
+                Text("Book").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 260)
+
+            Text(
+                draftIsBook
+                    ? "Treated as a book — metadata comes from \(Self.bookSourceList). Applied immediately."
+                    : "Treated as a comic — metadata comes from ComicVine. Applied immediately."
+            )
+            .font(Typography.caption)
+            .foregroundColor(TextColors.tertiary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .onChange(of: draftIsBook) { _, isBook in
+            guard editedComic.fileType != .epub else { return }
+            var updated = liveComic
+            updated.bookFormat =
+                isBook
+                ? .ebook
+                : .detect(
+                    issueNumber: draftIssueNumber.nilIfEmpty,
+                    volume: Int(draftVolume),
+                    fileType: updated.fileType)
+            updated.dateModified = Date()
+            libraryViewModel.updateComic(updated)
+            editedComic.bookFormat = updated.bookFormat
+            fetchMessage = nil
         }
     }
 
@@ -311,7 +372,7 @@ struct ComicDetailView: View {
                 fetchMessage =
                     "No confident match on \(Self.bookSourceList) — try Search Matches, or the book may not be indexed yet."
             case .notEbook:
-                fetchMessage = "Book metadata lookup only covers EPUB books."
+                fetchMessage = "Book metadata lookup only covers items classified as books."
             case .quotaDeferred(let retryAfter):
                 let time = retryAfter.formatted(date: .omitted, time: .shortened)
                 fetchMessage = "Hourly budget reached — try again after \(time)."

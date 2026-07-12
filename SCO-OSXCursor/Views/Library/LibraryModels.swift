@@ -65,23 +65,37 @@ enum LibrarySortOption: String, CaseIterable {
 
 // MARK: - Filters
 
-/// All library filters in one value — one binding instead of five.
+/// All library filters in one value — one binding instead of several.
+/// Every group is MULTI-SELECT: an empty set means "All" for that group;
+/// values within a group combine with OR (PDF + EPUB shows both), and
+/// groups combine with AND (2015 + Marvel = Marvel books from 2015).
 struct LibraryFilters: Equatable {
-    var status: Comic.Status? = nil
-    var publisher: String? = nil
-    var series: String? = nil
-    var year: Int? = nil
-    var contentRating: Comic.ContentRating? = nil
-    var fileType: Comic.FileType? = nil
+    var statuses: Set<Comic.Status> = []
+    var publishers: Set<String> = []
+    var series: Set<String> = []
+    var years: Set<Int> = []
+    var contentRatings: Set<Comic.ContentRating> = []
+    var fileTypes: Set<Comic.FileType> = []
     var readingList: Bool = false
 
     var hasActive: Bool {
-        status != nil || publisher != nil || series != nil || year != nil
-            || contentRating != nil || fileType != nil || readingList
+        !statuses.isEmpty || !publishers.isEmpty || !series.isEmpty || !years.isEmpty
+            || !contentRatings.isEmpty || !fileTypes.isEmpty || readingList
     }
 
     mutating func clear() {
         self = LibraryFilters()
+    }
+
+    /// Toggle chip helper: insert if absent, remove if present.
+    mutating func toggle<T: Hashable>(
+        _ value: T, in keyPath: WritableKeyPath<LibraryFilters, Set<T>>
+    ) {
+        if self[keyPath: keyPath].contains(value) {
+            self[keyPath: keyPath].remove(value)
+        } else {
+            self[keyPath: keyPath].insert(value)
+        }
     }
 }
 
@@ -157,26 +171,36 @@ enum LibraryQuery {
             }
         }
 
-        if let status = filters.status {
-            result = result.filter { $0.status == status }
+        // Multi-select groups: empty set = "All"; values OR within a group.
+        if !filters.statuses.isEmpty {
+            result = result.filter { filters.statuses.contains($0.status) }
         }
         if filters.readingList {
             result = result.filter { $0.isOnReadingList }
         }
-        if let publisher = filters.publisher {
-            result = result.filter { $0.publisher == publisher }
+        if !filters.publishers.isEmpty {
+            result = result.filter {
+                guard let publisher = $0.publisher else { return false }
+                return filters.publishers.contains(publisher)
+            }
         }
-        if let series = filters.series {
-            result = result.filter { $0.series == series }
+        if !filters.series.isEmpty {
+            result = result.filter {
+                guard let series = $0.series else { return false }
+                return filters.series.contains(series)
+            }
         }
-        if let year = filters.year {
-            result = result.filter { $0.year == year }
+        if !filters.years.isEmpty {
+            result = result.filter {
+                guard let year = $0.year else { return false }
+                return filters.years.contains(year)
+            }
         }
-        if let contentRating = filters.contentRating {
-            result = result.filter { $0.contentRating == contentRating }
+        if !filters.contentRatings.isEmpty {
+            result = result.filter { filters.contentRatings.contains($0.contentRating) }
         }
-        if let fileType = filters.fileType {
-            result = result.filter { $0.fileType == fileType }
+        if !filters.fileTypes.isEmpty {
+            result = result.filter { filters.fileTypes.contains($0.fileType) }
         }
 
         switch sort {

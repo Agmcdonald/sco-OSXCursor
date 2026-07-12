@@ -145,7 +145,7 @@ struct ComicCellInteraction: ViewModifier {
         // EPUB books fetch from Open Library / Google Books; comics from
         // ComicVine. Same action — LibraryView routes by file type.
         Button(action: { actions.fetchMetadata(comic) }) {
-            if comic.fileType == .epub {
+            if comic.isEbook {
                 Label("Fetch Book Metadata", systemImage: "books.vertical")
             } else {
                 Label("Fetch from ComicVine", systemImage: "network")
@@ -157,7 +157,7 @@ struct ComicCellInteraction: ViewModifier {
         if comic.metadataBackup != nil {
             Button(action: { actions.revertMetadataFetch(comic) }) {
                 Label(
-                    comic.fileType == .epub ? "Revert Metadata Fetch" : "Revert ComicVine Fetch",
+                    comic.isEbook ? "Revert Metadata Fetch" : "Revert ComicVine Fetch",
                     systemImage: "arrow.uturn.backward")
             }
         }
