@@ -198,14 +198,22 @@ struct OLCandidate: Codable, Identifiable {
     let year: Int?
     let publisher: String?
     let isbn: String?
-    /// "googleBooks" for Google Books hits; nil/anything else = Open Library.
+    /// "googleBooks" / "hardcover" for those sources; nil = Open Library.
     var source: String?
-    /// Google Books search results carry the description inline, so applying
-    /// one of those candidates needs no follow-up network call.
+    /// Google Books and Hardcover search results carry the description
+    /// inline, so applying those candidates needs no follow-up call.
     var summary: String?
 
-    var isGoogleBooks: Bool { source == "googleBooks" }
-    var sourceLabel: String { isGoogleBooks ? "Google Books" : "Open Library" }
+    /// Inline sources carry every field on the candidate itself.
+    var isInlineSource: Bool { source != nil }
+
+    var sourceLabel: String {
+        switch source {
+        case "googleBooks": return "Google Books"
+        case "hardcover": return "Hardcover"
+        default: return "Open Library"
+        }
+    }
 
     static func encodeList(_ list: [OLCandidate]) -> String? {
         (try? JSONEncoder().encode(list)).flatMap { String(data: $0, encoding: .utf8) }
@@ -350,10 +358,12 @@ extension LibraryViewModel {
     private enum BookHit {
         case openLibrary(OLSearchDoc, score: Double)
         case googleBooks(GBVolumeInfo, score: Double)
+        case hardcover(HCBookDoc, score: Double)
 
         var score: Double {
             switch self {
-            case .openLibrary(_, let s), .googleBooks(_, let s): return s
+            case .openLibrary(_, let s), .googleBooks(_, let s), .hardcover(_, let s):
+                return s
             }
         }
     }
@@ -408,6 +418,25 @@ extension LibraryViewModel {
             } catch {
                 AppLog.metadata.error("[GoogleBooks] ISBN lookup failed: \(error.localizedDescription)")
             }
+            if HardcoverConfig.hasToken {
+                do {
+                    if let doc = try await HardcoverService.shared.lookupByISBN(isbn) {
+                        applyInline(
+                            title: doc.title,
+                            authors: doc.authorNames.joined(separator: ", "),
+                            publisher: nil,
+                            summary: doc.description,
+                            year: doc.releaseYear,
+                            isbn: isbn,
+                            to: comic)
+                        return .updated
+                    }
+                } catch HardcoverService.HCError.quotaExceeded(let retryAfter) {
+                    noteDeferral(retryAfter)
+                } catch {
+                    AppLog.metadata.error("[Hardcover] ISBN lookup failed: \(error.localizedDescription)")
+                }
+            }
         }
 
         // 2. Fuzzy fallback by title (+ author when known), both sources.
@@ -433,6 +462,15 @@ extension LibraryViewModel {
                 await apply(doc: doc, isbn: nil, to: comic)
             case .googleBooks(let info, _):
                 apply(volume: info, isbn: nil, to: comic)
+            case .hardcover(let doc, _):
+                applyInline(
+                    title: doc.title,
+                    authors: doc.authorNames.joined(separator: ", "),
+                    publisher: nil,
+                    summary: doc.description,
+                    year: doc.releaseYear,
+                    isbn: doc.isbn,
+                    to: comic)
             }
             return .updated
         }
@@ -497,6 +535,28 @@ extension LibraryViewModel {
             AppLog.metadata.error("[GoogleBooks] Search failed: \(error.localizedDescription)")
         }
 
+        if HardcoverConfig.hasToken {
+            do {
+                let docs = try await HardcoverService.shared.search(title: title, author: author)
+                hits += docs.compactMap { doc -> BookHit? in
+                    guard let candidate = doc.title else { return nil }
+                    var score = ComicVineMatcher.nameSimilarity(title, candidate)
+                    if let author,
+                        doc.authorNames.contains(where: {
+                            ComicVineMatcher.nameSimilarity(author, $0) > 0.8
+                        })
+                    {
+                        score = min(1.0, score + 0.1)
+                    }
+                    return .hardcover(doc, score: score)
+                }
+            } catch HardcoverService.HCError.quotaExceeded(let retryAfter) {
+                deferredUntil = min(deferredUntil ?? retryAfter, retryAfter)
+            } catch {
+                AppLog.metadata.error("[Hardcover] Search failed: \(error.localizedDescription)")
+            }
+        }
+
         return (hits, deferredUntil)
     }
 
@@ -525,6 +585,19 @@ extension LibraryViewModel {
                 source: "googleBooks",
                 summary: info.description
             )
+        case .hardcover(let doc, _):
+            guard let title = doc.title else { return nil }
+            return OLCandidate(
+                id: "hc:\(doc.id)",
+                title: title,
+                authors: doc.authorNames.isEmpty
+                    ? nil : doc.authorNames.joined(separator: ", "),
+                year: doc.releaseYear,
+                publisher: nil,
+                isbn: doc.isbn,
+                source: "hardcover",
+                summary: doc.description
+            )
         }
     }
 
@@ -544,21 +617,19 @@ extension LibraryViewModel {
             .compactMap(candidate(from:))
     }
 
-    /// User picked a suggestion from the match sheet (either source).
+    /// User picked a suggestion from the match sheet (any source).
     @MainActor
     func applyOpenLibraryCandidate(_ candidate: OLCandidate, to comic: Comic) async -> OpenLibraryFetchOutcome {
-        if candidate.isGoogleBooks {
-            // Google Books candidates carry everything inline — no network.
-            let info = GBVolumeInfo(
+        if candidate.isInlineSource {
+            // Google Books / Hardcover candidates carry everything inline.
+            applyInline(
                 title: candidate.title,
-                subtitle: nil,
-                authors: candidate.authors.map { [$0] },
+                authors: candidate.authors,
                 publisher: candidate.publisher,
-                publishedDate: candidate.year.map(String.init),
-                description: candidate.summary,
-                industryIdentifiers: nil
-            )
-            apply(volume: info, isbn: candidate.isbn, to: comic)
+                summary: candidate.summary,
+                year: candidate.year,
+                isbn: candidate.isbn,
+                to: comic)
             return .updated
         }
         let doc = OLSearchDoc(
@@ -677,23 +748,42 @@ extension LibraryViewModel {
         finalize(&updated)
     }
 
-    /// Applies a Google Books volume. Same rules as an Open Library match:
-    /// canonical title replaces, everything else fills only when empty, and
-    /// the description arrives inline (no follow-up call).
+    /// Applies a Google Books volume via the shared inline path.
     @MainActor
     private func apply(volume info: GBVolumeInfo, isbn: String?, to comic: Comic) {
+        applyInline(
+            title: info.title,
+            authors: info.authors?.joined(separator: ", "),
+            publisher: info.publisher,
+            summary: info.description,
+            year: info.year,
+            isbn: isbn ?? info.isbn,
+            to: comic)
+    }
+
+    /// Applies a match whose fields arrived inline (Google Books, Hardcover,
+    /// or a stored candidate). Same rules as an Open Library match: the
+    /// canonical title replaces, everything else fills only when empty.
+    @MainActor
+    private func applyInline(
+        title: String?,
+        authors: String?,
+        publisher: String?,
+        summary: String?,
+        year: Int?,
+        isbn: String?,
+        to comic: Comic
+    ) {
         var updated = snapshotted(comic)
-        if let title = info.title, !title.isEmpty {
+        if let title, !title.isEmpty {
             updated.title = title
         }
-        fillIfEmpty(&updated.writer, with: info.authors?.joined(separator: ", "))
-        fillIfEmpty(&updated.publisher, with: info.publisher)
-        fillIfEmpty(&updated.summary, with: info.description)
-        if updated.year == nil { updated.year = info.year }
-        if let isbn {
-            updated.isbn = isbn
-        } else if updated.isbn == nil {
-            updated.isbn = info.isbn
+        fillIfEmpty(&updated.writer, with: authors)
+        fillIfEmpty(&updated.publisher, with: publisher)
+        fillIfEmpty(&updated.summary, with: summary)
+        if updated.year == nil { updated.year = year }
+        if updated.isbn == nil || isbn != nil {
+            updated.isbn = isbn ?? updated.isbn
         }
         updated.metadataCandidates = nil
         finalize(&updated)
@@ -1027,9 +1117,13 @@ struct OpenLibraryMatchPicker: View {
     /// Prefilled with the book's cleaned title so one click usually works.
     private var searchSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Search Open Library and Google Books")
-                .font(Typography.caption)
-                .foregroundColor(TextColors.secondary)
+            Text(
+                HardcoverConfig.hasToken
+                    ? "Search Open Library, Google Books, and Hardcover"
+                    : "Search Open Library and Google Books"
+            )
+            .font(Typography.caption)
+            .foregroundColor(TextColors.secondary)
             HStack(spacing: Spacing.sm) {
                 TextField("Title", text: $searchTitle)
                     .textFieldStyle(.roundedBorder)

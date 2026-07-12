@@ -422,6 +422,7 @@ struct SettingsView: View {
 
     @AppStorage(ComicVineConfig.apiKeyDefaultsKey) private var comicVineAPIKey: String = ""
     @AppStorage(GoogleBooksConfig.apiKeyDefaultsKey) private var googleBooksAPIKey: String = ""
+    @AppStorage(HardcoverConfig.tokenDefaultsKey) private var hardcoverAPIToken: String = ""
     @AppStorage("autoApplyConfidentMatches") private var autoApplyConfidentMatches = true
     @AppStorage("singleTapConfirmMatch") private var singleTapConfirmMatch = false
     @ObservedObject private var comicVineQuota = ComicVineQuota.shared
@@ -521,6 +522,57 @@ struct SettingsView: View {
                         .font(Typography.caption)
                 }
                 .foregroundColor(googleBooksAPIKey.isEmpty ? TextColors.tertiary : AccentColors.success)
+            }
+
+            Divider()
+                .background(BorderColors.subtle)
+                .padding(.vertical, Spacing.xs)
+
+            // Hardcover token (optional) — community catalog with strong
+            // indie / digital-first coverage, added as a third book source.
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("Hardcover API Token (Optional)")
+                    .font(Typography.h3)
+                    .foregroundColor(TextColors.primary)
+
+                Text("Adds Hardcover.app as a third book-metadata source. Its community catalog often has indie and digital-first books that Open Library and Google Books miss. Free account; the token is personal — don't share it.")
+                    .font(Typography.bodySmall)
+                    .foregroundColor(TextColors.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Link(destination: URL(string: "https://hardcover.app/account/api")!) {
+                    HStack(spacing: Spacing.xs) {
+                        Image(systemName: "arrow.up.right.square")
+                            .font(.system(size: 12))
+                        Text("Get your Hardcover API token")
+                            .font(Typography.bodySmall)
+                    }
+                    .foregroundColor(AccentColors.primary)
+                }
+
+                SecureField("Paste your Hardcover API token", text: $hardcoverAPIToken)
+                    .textFieldStyle(.plain)
+                    .font(Typography.body)
+                    .foregroundColor(TextColors.primary)
+                    .padding(Spacing.md)
+                    .background(BackgroundColors.secondary)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(BorderColors.subtle, lineWidth: 1)
+                    )
+                    #if os(iOS)
+                    .autocorrectionDisabled(true)
+                    .textInputAutocapitalization(.never)
+                    #endif
+
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: hardcoverAPIToken.isEmpty ? "info.circle" : "checkmark.circle.fill")
+                        .font(.system(size: 11))
+                    Text(hardcoverAPIToken.isEmpty ? "No token — Hardcover not used" : "Token saved (expires each January 1st)")
+                        .font(Typography.caption)
+                }
+                .foregroundColor(hardcoverAPIToken.isEmpty ? TextColors.tertiary : AccentColors.success)
             }
 
             Divider()

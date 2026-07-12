@@ -205,6 +205,13 @@ struct ComicDetailView: View {
 
     // MARK: - Open Library Section (EPUB books)
 
+    /// Human list of the active book-metadata sources.
+    private static var bookSourceList: String {
+        HardcoverConfig.hasToken
+            ? "Open Library, Google Books, and Hardcover"
+            : "Open Library and Google Books"
+    }
+
     private var openLibrarySection: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             HStack(spacing: Spacing.sm) {
@@ -223,11 +230,16 @@ struct ComicDetailView: View {
 
             Text(
                 liveComic.isbn != nil
-                    ? "Checks Open Library and Google Books by this book's ISBN, so results are exact. No account or API key needed."
-                    : "Looks up author, publisher, summary, and year on Open Library and Google Books — by the book's embedded ISBN, or by title if there isn't one. No account or API key needed."
+                    ? "Checks \(Self.bookSourceList) by this book's ISBN, so results are exact."
+                    : "Looks up author, publisher, summary, and year on \(Self.bookSourceList) — by the book's embedded ISBN, or by title if there isn't one."
             )
             .font(Typography.caption)
             .foregroundColor(TextColors.secondary)
+
+            Text("Recently or independently published books may not be in these databases yet — Search Matches, an Amazon/Open Library link, or manual entry always works.")
+                .font(Typography.caption)
+                .foregroundColor(TextColors.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: Spacing.md) {
                 Button {
@@ -297,7 +309,7 @@ struct ComicDetailView: View {
                 fetchMessage = "Already fetched — use Re-fetch to update."
             case .noMatches:
                 fetchMessage =
-                    "No confident match on Open Library or Google Books — try Search Matches."
+                    "No confident match on \(Self.bookSourceList) — try Search Matches, or the book may not be indexed yet."
             case .notEbook:
                 fetchMessage = "Book metadata lookup only covers EPUB books."
             case .quotaDeferred(let retryAfter):
