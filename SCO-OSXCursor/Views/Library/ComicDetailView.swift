@@ -56,6 +56,10 @@ struct ComicDetailView: View {
     /// classification, not content metadata) so fetch routing and layout
     /// stay in sync without waiting for Save. EPUBs are always books.
     @State private var draftIsBook: Bool
+    /// Comic format (Issue / One-Shot / Volume), shown when Item Type is
+    /// Comic. Also applied immediately — it drives file naming and Ready
+    /// rules (one-shots don't need an issue number).
+    @State private var draftComicFormat: Comic.BookFormat
 
     // ComicVine fetch state
     @State private var isFetchingMetadata = false
@@ -100,6 +104,11 @@ struct ComicDetailView: View {
         _draftSummary = State(initialValue: comic.summary ?? "")
         _draftRating = State(initialValue: comic.rating ?? 0)
         _draftIsBook = State(initialValue: comic.isEbook)
+        _draftComicFormat = State(
+            initialValue: comic.bookFormat == .ebook
+                ? .detect(
+                    issueNumber: comic.issueNumber, volume: comic.volume, fileType: nil)
+                : comic.bookFormat)
     }
 
     // MARK: - hasChanges
@@ -237,11 +246,25 @@ struct ComicDetailView: View {
             }
             .pickerStyle(.segmented)
             .frame(maxWidth: 260)
+            .help("Books fetch metadata from \(Self.bookSourceList); comics fetch from ComicVine. Changing this applies immediately.")
+
+            // Comic format — one-shots and graphic novels don't need an
+            // issue number; volumes are collected editions/manga.
+            if !draftIsBook {
+                Picker("Format", selection: $draftComicFormat) {
+                    Text("Issue").tag(Comic.BookFormat.issue)
+                    Text("One-Shot").tag(Comic.BookFormat.oneShot)
+                    Text("Volume").tag(Comic.BookFormat.volume)
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 320)
+                .help("Issues carry an issue number; one-shots and graphic novels don't; Volumes are collected editions and manga. Changing this applies immediately.")
+            }
 
             Text(
                 draftIsBook
                     ? "Treated as a book — metadata comes from \(Self.bookSourceList). Applied immediately."
-                    : "Treated as a comic — metadata comes from ComicVine. Applied immediately."
+                    : "Treated as a \(draftComicFormat.displayName.lowercased()) comic — metadata comes from ComicVine. Applied immediately."
             )
             .font(Typography.caption)
             .foregroundColor(TextColors.tertiary)
@@ -249,19 +272,22 @@ struct ComicDetailView: View {
         }
         .onChange(of: draftIsBook) { _, isBook in
             guard editedComic.fileType != .epub else { return }
-            var updated = liveComic
-            updated.bookFormat =
-                isBook
-                ? .ebook
-                : .detect(
-                    issueNumber: draftIssueNumber.nilIfEmpty,
-                    volume: Int(draftVolume),
-                    fileType: updated.fileType)
-            updated.dateModified = Date()
-            libraryViewModel.updateComic(updated)
-            editedComic.bookFormat = updated.bookFormat
-            fetchMessage = nil
+            applyClassification(isBook ? .ebook : draftComicFormat)
         }
+        .onChange(of: draftComicFormat) { _, format in
+            guard !draftIsBook, editedComic.fileType != .epub else { return }
+            applyClassification(format)
+        }
+    }
+
+    /// Instant-apply a bookFormat change (item type or comic format).
+    private func applyClassification(_ format: Comic.BookFormat) {
+        var updated = liveComic
+        updated.bookFormat = format
+        updated.dateModified = Date()
+        libraryViewModel.updateComic(updated)
+        editedComic.bookFormat = format
+        fetchMessage = nil
     }
 
     // MARK: - Open Library Section (EPUB books)
@@ -325,6 +351,7 @@ struct ComicDetailView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(isFetchingMetadata)
+                .help("Looks this book up on \(Self.bookSourceList) — by its embedded ISBN when available, otherwise by title.")
 
                 // Always available: pick from pending suggestions, or search
                 // both sources manually when automatic matching came up dry.
@@ -342,6 +369,7 @@ struct ComicDetailView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(isFetchingMetadata)
+                .help("Search the book sources manually, pick from pending suggestions, or paste an Open Library/Amazon link or ISBN.")
             }
 
             if let message = fetchMessage {

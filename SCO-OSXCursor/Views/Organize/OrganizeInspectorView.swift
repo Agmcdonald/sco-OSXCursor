@@ -318,6 +318,10 @@ struct OrganizeInspectorView: View {
                         }
                     }
                     .disabled(isFetchingCV)
+                    .help(
+                        bookFormat == .ebook
+                            ? "Looks this book up on Open Library, Google Books, and Hardcover — no API key needed."
+                            : "Looks this comic up on ComicVine (API key required, set in Settings).")
 
                     Button("Import to Library") {
                         Task {

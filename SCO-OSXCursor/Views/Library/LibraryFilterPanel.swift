@@ -277,6 +277,7 @@ struct LibraryFilterPanel: View {
                             isSelected: filters.fileTypes.contains(fileType),
                             action: { filters.toggle(fileType, in: \.fileTypes) }
                         )
+                        .help("Show \(fileType.displayName) files — toggle several types to see them together.")
                     }
                 }
             }

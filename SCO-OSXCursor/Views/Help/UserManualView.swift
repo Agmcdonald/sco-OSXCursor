@@ -17,7 +17,10 @@ struct UserManualView: View {
         ("Show Controls", "↑"),
         ("Hide Controls", "↓"),
         ("Toggle Controls", "Space"),
-        ("Close/Exit", "Esc")
+        ("Close/Exit", "Esc"),
+        ("Open Highlighted Book (Library)", "Space / Return"),
+        ("Edit Metadata (Library)", "⌘E"),
+        ("Show Info (Library)", "⌘I")
     ]
     
     var filteredShortcuts: [(String, String)] {
@@ -70,9 +73,9 @@ struct UserManualView: View {
 
                         FeatureRow(
                             icon: "folder.badge.plus",
-                            title: "Organize & Add Comics: Review First (Mac)",
+                            title: "Organize & Add Books: Review First (Mac)",
                             description:
-                                "The Organize & Add Comics button routes to the Organize tab, which stages files BEFORE they enter your library. You review what was detected for each book, correct anything that's wrong, fetch ComicVine metadata, and optionally group the batch into a folder — then press Apply to import. Best for big batches or messy filenames you want to verify first."
+                                "The Organize & Add Books button routes to the Organize tab, which stages files BEFORE they enter your library. You review what was detected for each book, correct anything that's wrong, fetch metadata (comics from ComicVine, eBooks from the book sources), and optionally group the batch into a folder — then press Apply to import. Best for big batches or messy filenames you want to verify first."
                         )
 
                         FeatureRow(
@@ -95,7 +98,7 @@ struct UserManualView: View {
                             icon: "magnifyingglass",
                             title: "Smart Search & Filtering",
                             description:
-                                "Find comics instantly using the search bar, filter by Publisher, Series, and Year, or isolate books you 'Want to Read'. Use the View options to switch between Grid, List, and Publisher workflows."
+                                "Find comics instantly using the search bar, then combine filters freely — every chip is a toggle, so you can select multiple statuses, publishers, series, years, content ratings, and file types at once (e.g. PDF + EPUB from Marvel + DC in 2015 + 2016). Within a group selections broaden the results; across groups they narrow them. 'All' clears a group, and each active selection shows as a removable badge. Use the View options to switch between Grid, List, and Publisher workflows."
                         )
 
                         FeatureRow(
@@ -323,7 +326,7 @@ struct UserManualView: View {
                             icon: "number",
                             title: "Book Formats: Issue, One-Shot, Volume",
                             description:
-                                "Every book has a format. Issues need an issue number ('Series #012 (1994)'). One-shots and graphic novels don't — they're named 'Series (Year)'. Collected editions and manga become Volumes ('Series Vol. 03 (Year)'). The format is auto-detected and can be changed with the picker in Organize's File Details."
+                                "Every book has a format. Issues need an issue number ('Series #012 (1994)'). One-shots and graphic novels don't — they're named 'Series (Year)'. Collected editions and manga become Volumes ('Series Vol. 03 (Year)'). The format is auto-detected and can be changed with the picker in Organize's File Details — or any time after import from Edit Metadata → Item Type."
                         )
 
                         FeatureRow(
@@ -446,14 +449,21 @@ struct UserManualView: View {
                             icon: "info.circle",
                             title: "Viewing a Book's Info",
                             description:
-                                "To see everything known about a book without editing it, choose 'Show Info' from its right-click/long-press menu — on Mac you can also use the ⓘ button in the toolbar after selecting a book. The Info panel shows the cover, all filled-in metadata (series, creators, summary, tags, rating), where the metadata came from (ComicVine or entered manually), and file details. On iPad it slides up as a sheet you can drag to full height."
+                                "To see everything known about a book without editing it, choose 'Show Info' from its right-click/long-press menu, press ⌘I with the book highlighted, or use the ⓘ button in the toolbar (Mac). The Info panel shows the cover, all filled-in metadata (series, creators, summary, tags, rating), which source supplied the metadata (ComicVine, Open Library, Google Books, Hardcover, or entered manually), and file details. On iPad it slides up as a sheet you can drag to full height."
                         )
 
                         FeatureRow(
                             icon: "pencil",
                             title: "Editing Metadata",
                             description:
-                                "Right-click (or long-press) a comic and select 'Edit Metadata'. Changes are kept as a 'draft' until you press Save. This updates the internal database and renames the file if Auto-Organize is on."
+                                "Right-click (or long-press) a comic and select 'Edit Metadata', or press ⌘E with the book highlighted. Changes are kept as a 'draft' until you press Save. This updates the internal database and renames the file if Auto-Organize is on."
+                        )
+
+                        FeatureRow(
+                            icon: "arrow.left.arrow.right.square",
+                            title: "Item Type & Format: Comic vs Book",
+                            description:
+                                "The edit sheet's Item Type picker reclassifies any non-EPUB file. Mark a PDF picture book or novel as a Book and it gets the book layout and fetches from the book sources; comics can also switch format between Issue, One-Shot, and Volume (one-shots like Bingo Love don't need an issue number). These changes apply immediately — no Save needed."
                         )
 
                         FeatureRow(
@@ -461,6 +471,20 @@ struct UserManualView: View {
                             title: "Fetching from ComicVine",
                             description:
                                 "Add a ComicVine API key in Settings, then right-click a book (or select several and use 'Fetch Metadata') to pull publisher, creators, summary, and cover dates automatically."
+                        )
+
+                        FeatureRow(
+                            icon: "books.vertical",
+                            title: "Book Metadata: Open Library, Google Books & Hardcover",
+                            description:
+                                "EPUBs and anything classified as a Book fetch from up to three book databases instead of ComicVine — no account needed for Open Library and Google Books; add a free Hardcover token in Settings for a third source with strong indie coverage. Matching is exact by the book's embedded ISBN when it has one, otherwise by title and author. Recently or independently published books may not be indexed anywhere yet — that's the database, not the app."
+                        )
+
+                        FeatureRow(
+                            icon: "magnifyingglass",
+                            title: "Search Matches & Links",
+                            description:
+                                "When an automatic book match misses, open Search Matches in the edit sheet: adjust the title or author and pick from ranked results across all sources (each labeled with where it came from). You can also paste an Open Library work link, an Amazon book page link, or a bare ISBN to match directly."
                         )
 
                         FeatureRow(

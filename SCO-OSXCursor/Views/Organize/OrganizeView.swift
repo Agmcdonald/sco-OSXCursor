@@ -378,6 +378,7 @@ struct OrganizeView: View {
                     }
                 }
                 .disabled(viewModel.checkedComicIDs.isEmpty || viewModel.isBatchFetchingCV)
+                .help("Fills metadata for every checked file — eBooks from Open Library, Google Books, and Hardcover; comics from ComicVine.")
 
                 if let summary = viewModel.batchCVSummary, !viewModel.isBatchFetchingCV {
                     Text(summary)
