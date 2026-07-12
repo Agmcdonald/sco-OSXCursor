@@ -59,6 +59,7 @@ struct ComicMetadata: Codable {
     var languageISO: String?
     var format: String?
     var ageRating: String?
+    var isbn: String?  // Ebooks: from EPUB OPF dc:identifier (digits only)
 
     // Dates
     var year: Int?

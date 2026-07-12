@@ -169,6 +169,13 @@ final class EPUBReader: ComicReaderProtocol {
         let tempDir = try extractEPUB(at: url)
         return try parseChapters(from: tempDir)
     }
+
+    /// Reads just the OPF metadata (title, author, ISBN…) for a given epub
+    /// URL. Used by metadata enrichment (Open Library) — no page extraction.
+    func extractMetadata(from url: URL) throws -> ComicMetadata {
+        let tempDir = try extractEPUB(at: url)
+        return try parseOPFMetadata(from: tempDir)
+    }
 }
 
 // MARK: - Container XML Parser
@@ -226,6 +233,8 @@ private final class OPFParser: NSObject, XMLParserDelegate {
     private var dcDate: String?
     private var dcDescription: String?
     private var dcLanguage: String?
+    // All dc:identifier values (EPUBs carry UUIDs, URLs, and ISBNs here)
+    private var dcIdentifiers: [String] = []
 
     private var currentElement: String = ""
     private var currentText: String = ""
@@ -267,6 +276,13 @@ private final class OPFParser: NSObject, XMLParserDelegate {
         meta.year = yearInt
         meta.summary = dcDescription
         meta.languageISO = dcLanguage
+        // ISBN: prefer identifiers that say so ("urn:isbn:978…"), then fall
+        // back to anything that normalizes to a valid 10/13-digit ISBN.
+        let isbnTagged = dcIdentifiers.first {
+            $0.range(of: "isbn", options: .caseInsensitive) != nil
+        }
+        meta.isbn = isbnTagged.flatMap(ISBNUtil.normalize)
+            ?? dcIdentifiers.compactMap(ISBNUtil.normalize).first
         return meta
     }
 
@@ -355,6 +371,8 @@ private final class OPFParser: NSObject, XMLParserDelegate {
         case "dc:date": dcDate = text
         case "dc:description": dcDescription = text
         case "dc:language": dcLanguage = text
+        case "dc:identifier":
+            if !text.isEmpty { dcIdentifiers.append(text) }
         default: break
         }
         currentText = ""

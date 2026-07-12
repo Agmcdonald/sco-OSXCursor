@@ -563,6 +563,21 @@ final class DatabaseManager {
             AppLog.database.info("[DatabaseManager] ✅ Migration v23_story_arcs complete")
         }
 
+        migrator.registerMigration("v24_isbn") { db in
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v24_isbn")
+            if try db.tableExists("comics") {
+                do {
+                    try db.alter(table: "comics") { t in
+                        t.add(column: "isbn", .text)  // Ebooks only (Open Library)
+                    }
+                    AppLog.database.info("[DatabaseManager] ✅ Added isbn column")
+                } catch {
+                    AppLog.database.error("[DatabaseManager] ℹ️ isbn column may already exist: \(error.localizedDescription)")
+                }
+            }
+            AppLog.database.info("[DatabaseManager] ✅ Migration v24_isbn complete")
+        }
+
         return migrator
     }
 

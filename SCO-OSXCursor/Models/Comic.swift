@@ -87,6 +87,10 @@ struct Comic: Identifiable, Codable {
     /// Story arcs / events this issue belongs to (from ComicVine
     /// story_arc_credits), e.g. ["Civil War"]. Searchable alongside tags.
     var storyArcs: [String]
+    /// ISBN-10 or ISBN-13 (digits only, no hyphens). Read from the EPUB's
+    /// OPF metadata (dc:identifier) or confirmed by an Open Library match.
+    /// Ebooks only — comic issues don't carry ISBNs.
+    var isbn: String?
 
     // MARK: - File Info
     var fileSize: Int64  // in bytes
@@ -138,6 +142,7 @@ struct Comic: Identifiable, Codable {
         metadataCandidates: String? = nil,
         metadataBackup: String? = nil,
         storyArcs: [String] = [],
+        isbn: String? = nil,
         contentRating: ContentRating = .allAges,
         fileSize: Int64 = 0,
         fileType: FileType = .cbz,
@@ -184,6 +189,7 @@ struct Comic: Identifiable, Codable {
         self.metadataCandidates = metadataCandidates
         self.metadataBackup = metadataBackup
         self.storyArcs = storyArcs
+        self.isbn = isbn
         self.contentRating = contentRating
         self.fileSize = fileSize
         self.fileType = fileType
@@ -727,6 +733,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         static let metadataCandidates = Column("metadata_candidates")
         static let metadataBackup = Column("metadata_backup")
         static let storyArcs = Column("story_arcs")
+        static let isbn = Column("isbn")
         static let contentRating = Column("content_rating")
         static let fileSize = Column("file_size")
         static let fileType = Column("file_type")
@@ -776,6 +783,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         container[Columns.metadataCandidates] = metadataCandidates
         container[Columns.metadataBackup] = metadataBackup
         container[Columns.storyArcs] = try? JSONEncoder().encode(storyArcs)  // Store as JSON
+        container[Columns.isbn] = isbn
         container[Columns.contentRating] = contentRating.rawValue
         container[Columns.fileSize] = fileSize
         container[Columns.fileType] = fileType.rawValue
@@ -856,6 +864,7 @@ extension Comic: FetchableRecord, PersistableRecord {
             metadataCandidates: row["metadata_candidates"],
             metadataBackup: row["metadata_backup"],
             storyArcs: decodedStoryArcs,
+            isbn: row["isbn"],
             contentRating: ContentRating(rawValue: row["content_rating"] ?? 0) ?? .allAges,
             fileSize: fileSize,
             fileType: fileType,

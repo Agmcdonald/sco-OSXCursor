@@ -1134,24 +1134,43 @@ struct LibraryView: View {
         }
     }
 
-    /// Selection-bar batch fetch across every selected book.
+    /// Selection-bar batch fetch across every selected book. Routes each
+    /// file to the provider that supports it: EPUB books go to Open Library
+    /// (no key needed), everything else to ComicVine.
     private func fetchMetadataForSelected() {
         guard !selectedComics.isEmpty, !isBatchFetching else { return }
         let comics = viewModel.comics.filter { selectedComics.contains($0.id) }
+        let epubs = comics.filter { $0.fileType == .epub }
+        let issues = comics.filter { $0.fileType != .epub }
         isBatchFetching = true
         let total = comics.count
         flashComicVineStatus("Fetching metadata for \(total) book\(total == 1 ? "" : "s")…")
         Task {
-            let result = await viewModel.fetchComicVineMetadataBatch(for: comics) { done, total in
-                comicVineStatus = "Fetching metadata… \(done) of \(total)"
+            var summaries: [String] = []
+
+            if !issues.isEmpty {
+                let result = await viewModel.fetchComicVineMetadataBatch(for: issues) { done, total in
+                    comicVineStatus = "Fetching comic metadata… \(done) of \(total)"
+                }
+                summaries.append(
+                    epubs.isEmpty ? result.summary : "Comics: \(result.summary)")
+                // Surface the review queue for any books that need a decision.
+                if !result.pendingReviewIDs.isEmpty {
+                    batchReviewIDs = result.pendingReviewIDs
+                    showingBatchReview = true
+                }
             }
+
+            if !epubs.isEmpty {
+                let result = await viewModel.fetchOpenLibraryMetadataBatch(for: epubs) { message in
+                    comicVineStatus = message
+                }
+                summaries.append(
+                    issues.isEmpty ? result.summary : "Books: \(result.summary)")
+            }
+
             isBatchFetching = false
-            flashComicVineStatus(result.summary)
-            // Surface the review queue for any books that need a decision.
-            if !result.pendingReviewIDs.isEmpty {
-                batchReviewIDs = result.pendingReviewIDs
-                showingBatchReview = true
-            }
+            flashComicVineStatus(summaries.joined(separator: " "))
         }
     }
 

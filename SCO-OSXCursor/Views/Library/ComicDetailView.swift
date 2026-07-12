@@ -118,8 +118,13 @@ struct ComicDetailView: View {
                     Divider()
                         .background(BorderColors.subtle)
 
-                    // ComicVine metadata fetch
-                    comicVineSection
+                    // Metadata fetch: EPUB books use Open Library (no key
+                    // needed); comic issues use ComicVine.
+                    if editedComic.fileType == .epub {
+                        openLibrarySection
+                    } else {
+                        comicVineSection
+                    }
 
                     Divider()
                         .background(BorderColors.subtle)
@@ -182,6 +187,92 @@ struct ComicDetailView: View {
             }
         }) {
             ComicVineMatchPicker(comic: liveComic, viewModel: libraryViewModel)
+        }
+    }
+
+    // MARK: - Open Library Section (EPUB books)
+
+    private var openLibrarySection: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(spacing: Spacing.sm) {
+                Image(systemName: "books.vertical")
+                    .foregroundColor(AccentColors.primary)
+                Text("Open Library Metadata")
+                    .font(Typography.h3)
+                    .foregroundColor(TextColors.primary)
+                Spacer()
+                if let fetchedAt = liveComic.metadataFetchedAt {
+                    Text("Fetched \(fetchedAt.formatted(date: .abbreviated, time: .omitted))")
+                        .font(Typography.caption)
+                        .foregroundColor(TextColors.tertiary)
+                }
+            }
+
+            Text(
+                liveComic.isbn != nil
+                    ? "Matches by this book's ISBN, so results are exact. No account or API key needed."
+                    : "Looks up author, publisher, and year by the book's embedded ISBN — or by title if there isn't one. No account or API key needed."
+            )
+            .font(Typography.caption)
+            .foregroundColor(TextColors.secondary)
+
+            HStack(spacing: Spacing.md) {
+                Button {
+                    runOpenLibraryFetch(force: liveComic.metadataFetchedAt != nil)
+                } label: {
+                    HStack(spacing: Spacing.xs) {
+                        if isFetchingMetadata {
+                            ProgressView().scaleEffect(0.7)
+                        } else {
+                            Image(systemName: "arrow.down.circle")
+                        }
+                        Text(liveComic.metadataFetchedAt != nil
+                            ? "Re-fetch from Open Library"
+                            : "Fetch from Open Library")
+                            .font(Typography.button)
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.sm)
+                    .background(AccentColors.primary)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+                .disabled(isFetchingMetadata)
+            }
+
+            if let message = fetchMessage {
+                Text(message)
+                    .font(Typography.caption)
+                    .foregroundColor(TextColors.secondary)
+            }
+        }
+    }
+
+    private func runOpenLibraryFetch(force: Bool) {
+        guard !isFetchingMetadata else { return }
+        isFetchingMetadata = true
+        fetchMessage = nil
+        Task {
+            let outcome = await libraryViewModel.fetchOpenLibraryMetadata(
+                for: liveComic, force: force)
+            isFetchingMetadata = false
+            switch outcome {
+            case .updated:
+                resyncDrafts()
+                fetchMessage = "Metadata updated from Open Library. Review and Save to keep."
+            case .alreadyFetched:
+                fetchMessage = "Already fetched — use Re-fetch to update."
+            case .noMatches:
+                fetchMessage = "No confident Open Library match found for this book."
+            case .notEbook:
+                fetchMessage = "Open Library only covers EPUB books."
+            case .quotaDeferred(let retryAfter):
+                let time = retryAfter.formatted(date: .omitted, time: .shortened)
+                fetchMessage = "Hourly budget reached — try again after \(time)."
+            case .failed(let reason):
+                fetchMessage = "Fetch failed: \(reason)"
+            }
         }
     }
 
