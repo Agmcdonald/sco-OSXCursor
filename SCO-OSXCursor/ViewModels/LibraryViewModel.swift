@@ -819,9 +819,36 @@ final class LibraryViewModel: ObservableObject {
 
     // MARK: - Bundle Import
 
+    /// Sample books that used to ship with the app but have been retired.
+    /// Their library records are removed on launch so users aren't left
+    /// with entries pointing at files that no longer exist in the bundle.
+    /// (Lowercased filenames; user copies outside the bundle are untouched.)
+    private static let retiredSampleFiles: Set<String> = [
+        "x-men infinity comic 011 (2026) (digital) (marika-empire).cbz",
+        "the_avenger_01 (1955).cbr",
+    ]
+
     /// Scans the app bundle for comic files and imports them if not already present
     func importBundledComics() async {
         AppLog.library.debug("[LibraryViewModel] 📦 Scanning for bundled comics...")
+
+        // Clean up retired samples first: records whose filename matches a
+        // retired bundle sample AND whose file is gone (or still points into
+        // an app bundle) are deleted outright.
+        let retired = comics.filter { comic in
+            guard Self.retiredSampleFiles.contains(comic.fileName.lowercased()) else {
+                return false
+            }
+            let inBundle = comic.filePath.path.contains(".app/")
+            let fileGone = !FileManager.default.fileExists(atPath: comic.filePath.path)
+            return inBundle || fileGone
+        }
+        if !retired.isEmpty {
+            AppLog.library.info(
+                "[LibraryViewModel] 🗑️ Removing \(retired.count) retired sample book(s): \(retired.map(\.fileName))"
+            )
+            await deleteComicsFromApp(retired)
+        }
 
         let extensions = ["cbz", "pdf", "cbr", "epub"]
         var bundledURLs: [URL] = []
