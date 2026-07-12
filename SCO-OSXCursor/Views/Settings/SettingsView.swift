@@ -428,9 +428,19 @@ struct SettingsView: View {
 
     private var comicVineSettings: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            Text("Pull publisher, creators, summary, and cover dates for your comics from ComicVine. Free for personal use — get a key by signing in at comicvine.gamespot.com/api.")
+            Text("Pull publisher, creators, summary, and cover dates for your comics from ComicVine. Free for personal use.")
                 .font(Typography.bodySmall)
                 .foregroundColor(TextColors.secondary)
+
+            Link(destination: URL(string: "https://comicvine.gamespot.com/api/")!) {
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: "arrow.up.right.square")
+                        .font(.system(size: 12))
+                    Text("Get a free ComicVine API key")
+                        .font(Typography.bodySmall)
+                }
+                .foregroundColor(AccentColors.primary)
+            }
 
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text("API Key")
@@ -473,10 +483,20 @@ struct SettingsView: View {
                     .font(Typography.h3)
                     .foregroundColor(TextColors.primary)
 
-                Text("Book metadata for EPUBs works without a key, but heavy use can hit Google's shared anonymous limit. A free key from console.cloud.google.com (enable the Books API) gives you your own 1,000 requests/day.")
+                Text("Book metadata for EPUBs works without a key, but heavy use can hit Google's shared anonymous limit. A free key gives you your own 1,000 requests/day — enable the Books API on your Google Cloud project, then create an API key under Credentials.")
                     .font(Typography.bodySmall)
                     .foregroundColor(TextColors.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+
+                Link(destination: URL(string: "https://console.cloud.google.com/apis/library/books.googleapis.com")!) {
+                    HStack(spacing: Spacing.xs) {
+                        Image(systemName: "arrow.up.right.square")
+                            .font(.system(size: 12))
+                        Text("Get a free Google Books API key")
+                            .font(Typography.bodySmall)
+                    }
+                    .foregroundColor(AccentColors.primary)
+                }
 
                 SecureField("Paste your Google Books API key", text: $googleBooksAPIKey)
                     .textFieldStyle(.plain)
