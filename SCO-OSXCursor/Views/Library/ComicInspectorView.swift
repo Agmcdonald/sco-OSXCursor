@@ -4,16 +4,23 @@ struct ComicInspectorView: View {
     let comic: Comic
     var onDismiss: (() -> Void)? = nil
 
-    /// True when metadata came from a ComicVine lookup.
-    private var sourceIsComicVine: Bool {
-        comic.metadataFetchedAt != nil || comic.comicVineVolumeID != nil
+    /// True when metadata came from a provider lookup.
+    private var sourceIsFetched: Bool {
+        comic.metadataSource != nil || comic.metadataFetchedAt != nil
+            || comic.comicVineVolumeID != nil
+    }
+
+    /// Provider name of the last applied fetch. Falls back to ComicVine for
+    /// records fetched before per-source attribution existed.
+    private var sourceName: String {
+        comic.metadataSource ?? "ComicVine"
     }
 
     private var sourceLabel: String {
         if let date = comic.metadataFetchedAt {
-            return "ComicVine • " + date.formatted(date: .abbreviated, time: .omitted)
+            return sourceName + " • " + date.formatted(date: .abbreviated, time: .omitted)
         }
-        return sourceIsComicVine ? "ComicVine" : "Entered manually"
+        return sourceIsFetched ? sourceName : "Entered manually"
     }
 
     private var hasAnyCredit: Bool {
@@ -123,7 +130,7 @@ struct ComicInspectorView: View {
                             .font(Typography.label)
                             .foregroundColor(TextColors.tertiary)
                         HStack(spacing: Spacing.xs) {
-                            Image(systemName: sourceIsComicVine ? "network" : "pencil")
+                            Image(systemName: sourceIsFetched ? "network" : "pencil")
                                 .font(.system(size: 12))
                             Text(sourceLabel)
                         }

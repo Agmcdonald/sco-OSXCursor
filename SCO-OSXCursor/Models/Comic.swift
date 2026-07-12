@@ -91,6 +91,9 @@ struct Comic: Identifiable, Codable {
     /// OPF metadata (dc:identifier) or confirmed by an Open Library match.
     /// Ebooks only — comic issues don't carry ISBNs.
     var isbn: String?
+    /// Which provider supplied the last applied fetch ("ComicVine",
+    /// "Open Library", "Google Books", "Hardcover"). Nil = never fetched.
+    var metadataSource: String?
 
     // MARK: - File Info
     var fileSize: Int64  // in bytes
@@ -143,6 +146,7 @@ struct Comic: Identifiable, Codable {
         metadataBackup: String? = nil,
         storyArcs: [String] = [],
         isbn: String? = nil,
+        metadataSource: String? = nil,
         contentRating: ContentRating = .allAges,
         fileSize: Int64 = 0,
         fileType: FileType = .cbz,
@@ -190,6 +194,7 @@ struct Comic: Identifiable, Codable {
         self.metadataBackup = metadataBackup
         self.storyArcs = storyArcs
         self.isbn = isbn
+        self.metadataSource = metadataSource
         self.contentRating = contentRating
         self.fileSize = fileSize
         self.fileType = fileType
@@ -743,6 +748,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         static let metadataBackup = Column("metadata_backup")
         static let storyArcs = Column("story_arcs")
         static let isbn = Column("isbn")
+        static let metadataSource = Column("metadata_source")
         static let contentRating = Column("content_rating")
         static let fileSize = Column("file_size")
         static let fileType = Column("file_type")
@@ -793,6 +799,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         container[Columns.metadataBackup] = metadataBackup
         container[Columns.storyArcs] = try? JSONEncoder().encode(storyArcs)  // Store as JSON
         container[Columns.isbn] = isbn
+        container[Columns.metadataSource] = metadataSource
         container[Columns.contentRating] = contentRating.rawValue
         container[Columns.fileSize] = fileSize
         container[Columns.fileType] = fileType.rawValue
@@ -874,6 +881,7 @@ extension Comic: FetchableRecord, PersistableRecord {
             metadataBackup: row["metadata_backup"],
             storyArcs: decodedStoryArcs,
             isbn: row["isbn"],
+            metadataSource: row["metadata_source"],
             contentRating: ContentRating(rawValue: row["content_rating"] ?? 0) ?? .allAges,
             fileSize: fileSize,
             fileType: fileType,

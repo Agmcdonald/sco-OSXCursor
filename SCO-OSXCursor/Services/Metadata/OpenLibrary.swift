@@ -428,6 +428,7 @@ extension LibraryViewModel {
                             summary: doc.description,
                             year: doc.releaseYear,
                             isbn: isbn,
+                            source: "Hardcover",
                             to: comic)
                         return .updated
                     }
@@ -470,6 +471,7 @@ extension LibraryViewModel {
                     summary: doc.description,
                     year: doc.releaseYear,
                     isbn: doc.isbn,
+                    source: "Hardcover",
                     to: comic)
             }
             return .updated
@@ -629,6 +631,7 @@ extension LibraryViewModel {
                 summary: candidate.summary,
                 year: candidate.year,
                 isbn: candidate.isbn,
+                source: candidate.sourceLabel,
                 to: comic)
             return .updated
         }
@@ -744,6 +747,7 @@ extension LibraryViewModel {
         } else if updated.isbn == nil {
             updated.isbn = doc.isbn?.first.flatMap(ISBNUtil.normalize)
         }
+        updated.metadataSource = "Open Library"
         updated.metadataCandidates = nil  // a pick/apply resolves any pending choice
         finalize(&updated)
     }
@@ -758,6 +762,7 @@ extension LibraryViewModel {
             summary: info.description,
             year: info.year,
             isbn: isbn ?? info.isbn,
+            source: "Google Books",
             to: comic)
     }
 
@@ -772,6 +777,7 @@ extension LibraryViewModel {
         summary: String?,
         year: Int?,
         isbn: String?,
+        source: String,
         to comic: Comic
     ) {
         var updated = snapshotted(comic)
@@ -785,6 +791,7 @@ extension LibraryViewModel {
         if updated.isbn == nil || isbn != nil {
             updated.isbn = isbn ?? updated.isbn
         }
+        updated.metadataSource = source
         updated.metadataCandidates = nil
         finalize(&updated)
     }

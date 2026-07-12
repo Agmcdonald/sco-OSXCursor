@@ -578,6 +578,29 @@ final class DatabaseManager {
             AppLog.database.info("[DatabaseManager] ✅ Migration v24_isbn complete")
         }
 
+        migrator.registerMigration("v25_metadata_source") { db in
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v25_metadata_source")
+            if try db.tableExists("comics") {
+                do {
+                    try db.alter(table: "comics") { t in
+                        t.add(column: "metadata_source", .text)
+                    }
+                    // Everything fetched before this migration came from
+                    // ComicVine (the only provider that existed).
+                    try db.execute(
+                        sql: """
+                            UPDATE comics SET metadata_source = 'ComicVine'
+                            WHERE metadata_fetched_at IS NOT NULL
+                               OR comicvine_volume_id IS NOT NULL
+                            """)
+                    AppLog.database.info("[DatabaseManager] ✅ Added metadata_source column")
+                } catch {
+                    AppLog.database.error("[DatabaseManager] ℹ️ metadata_source column may already exist: \(error.localizedDescription)")
+                }
+            }
+            AppLog.database.info("[DatabaseManager] ✅ Migration v25_metadata_source complete")
+        }
+
         return migrator
     }
 

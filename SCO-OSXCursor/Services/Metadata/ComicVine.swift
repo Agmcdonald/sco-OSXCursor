@@ -201,6 +201,7 @@ struct CVMetadataSnapshot: Codable {
     var summary: String?
     var storyArcs: [String]?  // Optional so pre-v23 snapshots still decode
     var isbn: String?  // Optional so pre-v24 snapshots still decode (Open Library)
+    var metadataSource: String?  // Optional so pre-v25 snapshots still decode
     var comicVineVolumeID: Int?
     var comicVineIssueID: Int?
     var metadataFetchedAt: Date?
@@ -220,6 +221,7 @@ struct CVMetadataSnapshot: Codable {
         summary = comic.summary
         storyArcs = comic.storyArcs
         isbn = comic.isbn
+        metadataSource = comic.metadataSource
         comicVineVolumeID = comic.comicVineVolumeID
         comicVineIssueID = comic.comicVineIssueID
         metadataFetchedAt = comic.metadataFetchedAt
@@ -241,6 +243,7 @@ struct CVMetadataSnapshot: Codable {
         comic.summary = summary
         comic.storyArcs = storyArcs ?? []
         comic.isbn = isbn
+        comic.metadataSource = metadataSource
         comic.comicVineVolumeID = comicVineVolumeID
         comic.comicVineIssueID = comicVineIssueID
         comic.metadataFetchedAt = metadataFetchedAt
@@ -613,6 +616,7 @@ extension LibraryViewModel {
         let snapshot = CVMetadataSnapshot(of: current)
         var updated = await ComicVineFetcher.fill(current, from: volume)
         updated.metadataBackup = snapshot.encoded()
+        updated.metadataSource = "ComicVine"
         updated.dateModified = Date()
         updateComic(updated)
         return .updated
