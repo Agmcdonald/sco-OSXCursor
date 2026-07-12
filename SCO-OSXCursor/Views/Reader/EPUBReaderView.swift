@@ -369,6 +369,17 @@ private struct EPUBWebViewHelper {
         guard coordinator.lastLoadKey != loadKey else { return }
         coordinator.lastLoadKey = loadKey
 
+        // Same chapter, different rendering (font size, theme, margins…):
+        // restore the reader's place after the re-render, like iBooks.
+        // A different chapter starts at the top.
+        if coordinator.lastChapterPath == chapter.fileURL.path {
+            coordinator.pendingRestoreFraction = coordinator.lastScrollFraction
+        } else {
+            coordinator.pendingRestoreFraction = nil
+            coordinator.lastScrollFraction = 0
+        }
+        coordinator.lastChapterPath = chapter.fileURL.path
+
         #if os(iOS)
         // Page mode: the scroll view is LOCKED — pages change as instant
         // jumps (no sliding), driven by taps and by swipe gestures the
@@ -428,7 +439,7 @@ private struct EPUBWebViewHelper {
         }
         img {
             max-width: 100% !important;
-            max-height: 100vh !important;
+            max-height: calc(100vh - \(hPad * 2)px) !important;
             object-fit: contain !important;
         }
         """ : """
@@ -512,6 +523,14 @@ private struct EPUBWebViewHelper {
         });
         // Auto-focus body so keys are caught immediately
         window.onload = function() { window.focus(); document.body.focus(); };
+        // Report reading position (fraction of chapter) so font/theme
+        // re-renders can restore the reader's place, like iBooks.
+        window.addEventListener('scroll', function() {
+            var w = document.documentElement.scrollWidth;
+            if (w > 0) {
+                window.webkit.messageHandlers.epubNavigation.postMessage('frac:' + (window.scrollX / w));
+            }
+        }, { passive: true });
         //]]>
         </script>
         """ : """
@@ -548,6 +567,12 @@ private struct EPUBWebViewHelper {
             }
         });
         window.onload = function() { window.focus(); document.body.focus(); };
+        window.addEventListener('scroll', function() {
+            var h = document.documentElement.scrollHeight;
+            if (h > 0) {
+                window.webkit.messageHandlers.epubNavigation.postMessage('frac:' + (window.scrollY / h));
+            }
+        }, { passive: true });
         //]]>
         </script>
         """
@@ -591,6 +616,15 @@ private struct EPUBWebViewHelper {
         </script>
         """
 
+        // Without a viewport meta, iOS lays the page out at DESKTOP width
+        // and scales it down — fonts render far smaller than their pt size,
+        // and 100vh/100vw columns don't match the real screen (enlarged
+        // text overflowed the column bottom instead of flowing to the next
+        // page). device-width + text-size-adjust:100% fixes both.
+        let viewportMeta = """
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+        """
+
         let css = """
         <style>
         :root { color-scheme: \(theme == .dark ? "dark" : "light"); }
@@ -601,6 +635,7 @@ private struct EPUBWebViewHelper {
             font-family: \(fontFamily.cssFontFamily) !important;
             font-size: \(fontSize)px !important;
             line-height: \(lineSpacing.value) !important;
+            -webkit-text-size-adjust: 100% !important;
         }
         \(layoutCSS)
         p, li, div, span, td, th { font-size: inherit !important; color: \(colors.text) !important; }
@@ -617,7 +652,7 @@ private struct EPUBWebViewHelper {
         </style>
         """
         
-        let headInjection = "\(css)\n\(js)\n\(tapZonesJS)\n\(stripInlineColorsJS)"
+        let headInjection = "\(viewportMeta)\n\(css)\n\(js)\n\(tapZonesJS)\n\(stripInlineColorsJS)"
         
         if let range = html.range(of: "</head>", options: .caseInsensitive) {
             return html.replacingCharacters(in: range, with: "\(headInjection)</head>")
@@ -659,6 +694,14 @@ struct EPUBWebView {
         /// What's currently loaded — lets updateNSView/updateUIView skip
         /// reloads when nothing the page depends on actually changed.
         var lastLoadKey: String?
+        /// Reading position within the current chapter (0…1), reported by
+        /// the injected scroll listener.
+        var lastScrollFraction: Double = 0
+        /// Which chapter the fraction belongs to.
+        var lastChapterPath: String?
+        /// Set before a same-chapter re-render (font size/theme change);
+        /// consumed in didFinish to put the reader back where they were.
+        var pendingRestoreFraction: Double?
 
         init(
             onTap: @escaping () -> Void,
@@ -683,6 +726,8 @@ struct EPUBWebView {
                     onEscape()
                 } else if action == "toggleControls" {
                     onTap()
+                } else if action.hasPrefix("frac:"), let value = Double(action.dropFirst(5)) {
+                    lastScrollFraction = value
                 }
             }
         }
@@ -742,6 +787,25 @@ struct EPUBWebView {
                 webView.window?.makeFirstResponder(webView)
             }
             #endif
+
+            // Same-chapter re-render (font size/theme change) — put the
+            // reader back where they were, page-aligned in page mode.
+            if let fraction = pendingRestoreFraction, fraction > 0.001 {
+                pendingRestoreFraction = nil
+                let js = """
+                requestAnimationFrame(function() {
+                    var doc = document.documentElement;
+                    if (doc.scrollWidth > window.innerWidth + 10) {
+                        var w = window.innerWidth;
+                        var target = Math.round((\(fraction) * doc.scrollWidth) / w) * w;
+                        window.scrollTo(Math.min(target, doc.scrollWidth - w), 0);
+                    } else {
+                        window.scrollTo(0, \(fraction) * doc.scrollHeight);
+                    }
+                });
+                """
+                webView.evaluateJavaScript(js, completionHandler: nil)
+            }
         }
     }
 }
