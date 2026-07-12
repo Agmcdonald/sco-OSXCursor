@@ -370,11 +370,14 @@ private struct EPUBWebViewHelper {
         coordinator.lastLoadKey = loadKey
 
         #if os(iOS)
-        // Page mode: native horizontal swipes snap one page at a time —
-        // the Kindle page-turn feel. (Column width == viewport width, so
-        // UIScrollView paging lands exactly on page boundaries.)
+        // Page mode: the scroll view is LOCKED — pages change as instant
+        // jumps (no sliding), driven by taps and by swipe gestures the
+        // injected JS detects. This mirrors the comic reader's
+        // "no transition" feel and keeps pages perfectly aligned.
         let style = ReadingStyle(rawValue: readingStyle ?? "") ?? .standard
-        webView.scrollView.isPagingEnabled = (style == .standard || style == .mangaRTL)
+        let paged = (style == .standard || style == .mangaRTL)
+        webView.scrollView.isPagingEnabled = false
+        webView.scrollView.isScrollEnabled = !paged
         #endif
 
         guard let rawHTML = try? chapter.htmlContent() else { return }
@@ -454,11 +457,10 @@ private struct EPUBWebViewHelper {
         let js = isHorizontal ? """
         <script>
         //<![CDATA[
-        // Page mode: taps/keys turn ONE page, always landing on an exact
-        // page boundary (Math.round keeps us aligned even if a native swipe
-        // left the scroll position mid-snap). Taps never change chapters —
-        // at the first/last page they raise the controls instead, where the
-        // Previous/Next buttons live.
+        // Page mode: taps, swipes, and keys turn ONE page as an INSTANT
+        // jump (like the comic reader's "no transition") — no sliding.
+        // Taps never change chapters — at the first/last page they raise
+        // the controls instead, where the Previous/Next buttons live.
         window.scoPageForward = function() {
             var w = window.innerWidth;
             var maxX = document.documentElement.scrollWidth - w;
@@ -466,7 +468,7 @@ private struct EPUBWebViewHelper {
             if (target > maxX + 10) {
                 window.webkit.messageHandlers.epubNavigation.postMessage('toggleControls');
             } else {
-                window.scrollTo({ left: target, behavior: 'smooth' });
+                window.scrollTo(target, 0);
             }
         };
         window.scoPageBackward = function() {
@@ -475,9 +477,27 @@ private struct EPUBWebViewHelper {
             if (page <= 0) {
                 window.webkit.messageHandlers.epubNavigation.postMessage('toggleControls');
             } else {
-                window.scrollTo({ left: (page - 1) * w, behavior: 'smooth' });
+                window.scrollTo((page - 1) * w, 0);
             }
         };
+        // Swipe gestures (the scroll view itself is locked): a clear
+        // horizontal swipe jumps a page, same as an edge tap.
+        var scoTouchX = null, scoTouchY = null;
+        document.addEventListener('touchstart', function(e) {
+            if (e.touches.length === 1) {
+                scoTouchX = e.touches[0].clientX;
+                scoTouchY = e.touches[0].clientY;
+            }
+        }, { passive: true });
+        document.addEventListener('touchend', function(e) {
+            if (scoTouchX === null) { return; }
+            var dx = e.changedTouches[0].clientX - scoTouchX;
+            var dy = e.changedTouches[0].clientY - scoTouchY;
+            scoTouchX = null;
+            if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+                if (dx < 0) { window.scoPageForward(); } else { window.scoPageBackward(); }
+            }
+        }, { passive: true });
         document.addEventListener('keydown', function(e) {
             if (e.key === 'ArrowRight') {
                 window.scoPageForward();
