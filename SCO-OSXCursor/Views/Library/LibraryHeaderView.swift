@@ -11,6 +11,12 @@
 import SwiftUI
 
 struct LibraryHeaderView: View {
+    #if os(iOS)
+    /// iPhone (compact width) can't fit every toolbar control — the cover
+    /// slider is dropped there and Cover Size presets live in the More menu.
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
+
     // View state
     @Binding var viewMode: LibraryViewMode
     @Binding var searchText: String
@@ -124,7 +130,11 @@ struct LibraryHeaderView: View {
                         compactFiltersButton
                     }
                     moreMenu
-                    if viewMode == .grid || viewMode == .publisher || viewMode == .folders {
+                    // iPhone: the row can't fit the slider — Cover Size
+                    // presets live in the More menu there. iPad keeps it.
+                    if horizontalSizeClass != .compact,
+                        viewMode == .grid || viewMode == .publisher || viewMode == .folders
+                    {
                         coverSizeSlider
                             .frame(width: 120)
                     }
@@ -488,6 +498,31 @@ struct LibraryHeaderView: View {
                     }
                 }
             }
+
+            // iPhone: the toolbar has no room for the cover slider, so the
+            // size presets live here instead.
+            #if os(iOS)
+            if horizontalSizeClass == .compact,
+                viewMode == .grid || viewMode == .publisher || viewMode == .folders
+            {
+                Section("Cover Size") {
+                    ForEach(
+                        [
+                            ("Small", LibraryCoverSize.minimum),
+                            ("Medium", (LibraryCoverSize.minimum + LibraryCoverSize.maximum) / 2),
+                            ("Large", LibraryCoverSize.maximum),
+                        ], id: \.0
+                    ) { name, size in
+                        Button(action: { coverSize = size }) {
+                            Label(
+                                name,
+                                systemImage: abs(coverSize - size) < 1
+                                    ? "checkmark" : "square.grid.2x2")
+                        }
+                    }
+                }
+            }
+            #endif
         } label: {
             Image(systemName: "ellipsis.circle")
                 .font(.system(size: 20))
