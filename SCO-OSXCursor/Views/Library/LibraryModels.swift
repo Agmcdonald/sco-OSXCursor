@@ -72,11 +72,12 @@ struct LibraryFilters: Equatable {
     var series: String? = nil
     var year: Int? = nil
     var contentRating: Comic.ContentRating? = nil
+    var fileType: Comic.FileType? = nil
     var readingList: Bool = false
 
     var hasActive: Bool {
         status != nil || publisher != nil || series != nil || year != nil
-            || contentRating != nil || readingList
+            || contentRating != nil || fileType != nil || readingList
     }
 
     mutating func clear() {
@@ -173,6 +174,9 @@ enum LibraryQuery {
         }
         if let contentRating = filters.contentRating {
             result = result.filter { $0.contentRating == contentRating }
+        }
+        if let fileType = filters.fileType {
+            result = result.filter { $0.fileType == fileType }
         }
 
         switch sort {

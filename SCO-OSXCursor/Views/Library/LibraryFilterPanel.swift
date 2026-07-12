@@ -65,6 +65,14 @@ struct LibraryFilterBadgesRow: View {
                     )
                 }
 
+                if let fileType = filters.fileType {
+                    FilterBadge(
+                        title: "Type: \(fileType.displayName)",
+                        icon: fileType.icon,
+                        onRemove: { filters.fileType = nil }
+                    )
+                }
+
                 // Clear all button
                 Button(action: { filters.clear() }) {
                     HStack(spacing: Spacing.xs) {
@@ -245,6 +253,30 @@ struct LibraryFilterPanel: View {
                             )
                             .help(rating.ageGuidance)
                         }
+                    }
+                }
+            }
+
+            // File type filter
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                Text("File Type")
+                    .font(Typography.bodySmall)
+                    .foregroundColor(TextColors.secondary)
+
+                HStack(spacing: Spacing.sm) {
+                    FilterChip(
+                        title: "All",
+                        isSelected: filters.fileType == nil,
+                        action: { filters.fileType = nil }
+                    )
+
+                    ForEach(Comic.FileType.allCases, id: \.self) { fileType in
+                        FilterChip(
+                            title: fileType.displayName,
+                            icon: fileType.icon,
+                            isSelected: filters.fileType == fileType,
+                            action: { filters.fileType = fileType }
+                        )
                     }
                 }
             }
