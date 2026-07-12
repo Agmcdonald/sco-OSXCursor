@@ -253,17 +253,22 @@ struct ComicDetailView: View {
                 .buttonStyle(.plain)
                 .disabled(isFetchingMetadata)
 
-                // Offer the picker whenever ambiguous suggestions are pending
-                if !OLCandidate.decodeList(liveComic.metadataCandidates).isEmpty {
-                    Button {
-                        showingMatchPicker = true
-                    } label: {
-                        Label("Choose Match…", systemImage: "questionmark.circle")
-                            .font(Typography.button)
-                            .foregroundColor(AccentColors.primary)
-                    }
-                    .buttonStyle(.plain)
+                // Always available: pick from pending suggestions, or search
+                // both sources manually when automatic matching came up dry.
+                Button {
+                    showingMatchPicker = true
+                } label: {
+                    Label(
+                        OLCandidate.decodeList(liveComic.metadataCandidates).isEmpty
+                            ? "Search Matches…" : "Choose Match…",
+                        systemImage: OLCandidate.decodeList(liveComic.metadataCandidates).isEmpty
+                            ? "magnifyingglass" : "questionmark.circle"
+                    )
+                    .font(Typography.button)
+                    .foregroundColor(AccentColors.primary)
                 }
+                .buttonStyle(.plain)
+                .disabled(isFetchingMetadata)
             }
 
             if let message = fetchMessage {
@@ -291,7 +296,8 @@ struct ComicDetailView: View {
             case .alreadyFetched:
                 fetchMessage = "Already fetched — use Re-fetch to update."
             case .noMatches:
-                fetchMessage = "No confident match on Open Library or Google Books."
+                fetchMessage =
+                    "No confident match on Open Library or Google Books — try Search Matches."
             case .notEbook:
                 fetchMessage = "Book metadata lookup only covers EPUB books."
             case .quotaDeferred(let retryAfter):

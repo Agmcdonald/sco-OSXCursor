@@ -233,12 +233,19 @@ final class GoogleBooksService {
         try await volumes(query: "isbn:\(isbn)", limit: 1).first?.volumeInfo
     }
 
-    /// Fuzzy title (+ optional author) search.
+    /// Fuzzy title (+ optional author) search. Tries a strict intitle phrase
+    /// first; when that finds nothing (filename-derived titles often carry a
+    /// stray word), retries as a relaxed keyword query.
     func search(title: String, author: String?) async throws -> [GBVolumeInfo] {
-        var query = "intitle:\"\(title)\""
+        var strict = "intitle:\"\(title)\""
         if let author, !author.isEmpty {
-            query += " inauthor:\"\(author)\""
+            strict += " inauthor:\"\(author)\""
         }
-        return try await volumes(query: query, limit: 5).compactMap(\.volumeInfo)
+        let strictHits = try await volumes(query: strict, limit: 5).compactMap(\.volumeInfo)
+        if !strictHits.isEmpty { return strictHits }
+
+        var relaxed = title
+        if let author, !author.isEmpty { relaxed += " \(author)" }
+        return try await volumes(query: relaxed, limit: 5).compactMap(\.volumeInfo)
     }
 }

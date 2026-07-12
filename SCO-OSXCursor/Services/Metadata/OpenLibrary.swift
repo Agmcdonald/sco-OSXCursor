@@ -40,17 +40,28 @@ enum ISBNUtil {
 
 enum BookSearchTitle {
     /// Filename-derived titles carry junk that poisons title search —
-    /// "The Dead Planet Hard Science Fiction (Marchenko Logfiles 4)
-    /// (Brandon Q. Morris) (z-library.sk, 1lib.sk, z-lib.sk)" — so strip
-    /// every parenthetical/bracketed group and collapse the whitespace.
+    /// "The Sixth Faction{Veronica Roth}{115848639} libgen.li.epub" or
+    /// "The Dead Planet … (Brandon Q. Morris) (z-library.sk, 1lib.sk)".
+    /// Strip file extensions, every (…)/[…]/{…} group, pirate-site domain
+    /// tokens, and collapse the leftovers.
     static func clean(_ raw: String) -> String {
-        let stripped = raw
-            .replacingOccurrences(
-                of: #"\s*[\(\[][^\)\]]*[\)\]]"#, with: "", options: .regularExpression)
-            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        // If stripping ate everything (title was ALL parentheses), keep the raw.
-        return stripped.isEmpty ? raw : stripped
+        var s = raw
+        // File extensions anywhere in the string (".epub.epub" happens)
+        s = s.replacingOccurrences(
+            of: #"(?i)\.(epub|cbz|cbr|pdf|mobi|azw3?)\b"#, with: "",
+            options: .regularExpression)
+        // Parenthetical / bracketed / curly groups
+        s = s.replacingOccurrences(
+            of: #"\s*[\(\[\{][^\)\]\}]*[\)\]\}]"#, with: "",
+            options: .regularExpression)
+        // Domain-ish tokens (libgen.li, z-lib.sk, 1lib.sk, annas-archive.org…)
+        s = s.replacingOccurrences(
+            of: #"(?i)\b[\w\-]+\.(?:li|sk|is|rs|se|org|com|net|info|io|cc)\b"#, with: "",
+            options: .regularExpression)
+        s = s.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: " \t\n-–—_.,"))
+        // If stripping ate everything, keep the raw input.
+        return s.isEmpty ? raw : s
     }
 }
 
@@ -400,51 +411,15 @@ extension LibraryViewModel {
         }
 
         // 2. Fuzzy fallback by title (+ author when known), both sources.
-        // Clean parenthetical junk out of filename-derived titles first.
+        // Clean filename junk (extensions, {…}(…)[…] groups, domains) first.
         let title = BookSearchTitle.clean(
             embedded?.title ?? comic.title ?? comic.series
                 ?? (comic.fileName as NSString).deletingPathExtension)
         let author = embedded?.writer ?? comic.writer
         guard !title.isEmpty else { return .noMatches }
 
-        var hits: [BookHit] = []
-
-        do {
-            let docs = try await OpenLibraryService.shared.search(title: title, author: author)
-            hits += docs.compactMap { doc -> BookHit? in
-                guard let candidate = doc.title else { return nil }
-                var score = ComicVineMatcher.nameSimilarity(title, candidate)
-                if let author, let names = doc.author_name,
-                    names.contains(where: { ComicVineMatcher.nameSimilarity(author, $0) > 0.8 })
-                {
-                    score = min(1.0, score + 0.1)  // small boost for author agreement
-                }
-                return .openLibrary(doc, score: score)
-            }
-        } catch OpenLibraryService.OLError.quotaExceeded(let retryAfter) {
-            noteDeferral(retryAfter)
-        } catch {
-            AppLog.metadata.error("[OpenLibrary] Search failed: \(error.localizedDescription)")
-        }
-
-        do {
-            let volumes = try await GoogleBooksService.shared.search(title: title, author: author)
-            hits += volumes.compactMap { info -> BookHit? in
-                guard let candidate = info.title else { return nil }
-                var score = ComicVineMatcher.nameSimilarity(title, candidate)
-                if let author, let names = info.authors,
-                    names.contains(where: { ComicVineMatcher.nameSimilarity(author, $0) > 0.8 })
-                {
-                    score = min(1.0, score + 0.1)
-                }
-                return .googleBooks(info, score: score)
-            }
-        } catch GoogleBooksService.GBError.quotaExceeded(let retryAfter) {
-            noteDeferral(retryAfter)
-        } catch {
-            AppLog.metadata.error("[GoogleBooks] Search failed: \(error.localizedDescription)")
-        }
-
+        let (hits, searchDeferral) = await searchBookSources(title: title, author: author)
+        if let searchDeferral { noteDeferral(searchDeferral) }
         let ranked = hits.sorted { $0.score > $1.score }
 
         guard let best = ranked.first else {
@@ -464,32 +439,7 @@ extension LibraryViewModel {
 
         // Not confident enough to auto-apply — store the top hits from both
         // sources as suggestions for the user (zero extra API cost).
-        let candidates = ranked.prefix(5).compactMap { hit -> OLCandidate? in
-            switch hit {
-            case .openLibrary(let doc, _):
-                guard let key = doc.key, let title = doc.title else { return nil }
-                return OLCandidate(
-                    id: key,
-                    title: title,
-                    authors: doc.author_name?.joined(separator: ", "),
-                    year: doc.first_publish_year,
-                    publisher: doc.publisher?.first,
-                    isbn: doc.isbn?.first.flatMap(ISBNUtil.normalize)
-                )
-            case .googleBooks(let info, _):
-                guard let title = info.title else { return nil }
-                return OLCandidate(
-                    id: "gb:\(info.isbn ?? title)",
-                    title: title,
-                    authors: info.authors?.joined(separator: ", "),
-                    year: info.year,
-                    publisher: info.publisher,
-                    isbn: info.isbn,
-                    source: "googleBooks",
-                    summary: info.description
-                )
-            }
-        }
+        let candidates = ranked.prefix(5).compactMap(candidate(from:))
         guard !candidates.isEmpty else {
             if let deferredUntil { return .quotaDeferred(deferredUntil) }
             return .noMatches
@@ -499,6 +449,99 @@ extension LibraryViewModel {
         updated.dateModified = Date()
         updateComic(updated)
         return .needsChoice
+    }
+
+    /// Fuzzy title/author search against Open Library AND Google Books,
+    /// scored against the given title. A source that's over budget or errors
+    /// is skipped; the earliest retry time (if any) is returned alongside.
+    @MainActor
+    private func searchBookSources(
+        title: String, author: String?
+    ) async -> (hits: [BookHit], deferredUntil: Date?) {
+        var hits: [BookHit] = []
+        var deferredUntil: Date?
+
+        do {
+            let docs = try await OpenLibraryService.shared.search(title: title, author: author)
+            hits += docs.compactMap { doc -> BookHit? in
+                guard let candidate = doc.title else { return nil }
+                var score = ComicVineMatcher.nameSimilarity(title, candidate)
+                if let author, let names = doc.author_name,
+                    names.contains(where: { ComicVineMatcher.nameSimilarity(author, $0) > 0.8 })
+                {
+                    score = min(1.0, score + 0.1)  // small boost for author agreement
+                }
+                return .openLibrary(doc, score: score)
+            }
+        } catch OpenLibraryService.OLError.quotaExceeded(let retryAfter) {
+            deferredUntil = retryAfter
+        } catch {
+            AppLog.metadata.error("[OpenLibrary] Search failed: \(error.localizedDescription)")
+        }
+
+        do {
+            let volumes = try await GoogleBooksService.shared.search(title: title, author: author)
+            hits += volumes.compactMap { info -> BookHit? in
+                guard let candidate = info.title else { return nil }
+                var score = ComicVineMatcher.nameSimilarity(title, candidate)
+                if let author, let names = info.authors,
+                    names.contains(where: { ComicVineMatcher.nameSimilarity(author, $0) > 0.8 })
+                {
+                    score = min(1.0, score + 0.1)
+                }
+                return .googleBooks(info, score: score)
+            }
+        } catch GoogleBooksService.GBError.quotaExceeded(let retryAfter) {
+            deferredUntil = min(deferredUntil ?? retryAfter, retryAfter)
+        } catch {
+            AppLog.metadata.error("[GoogleBooks] Search failed: \(error.localizedDescription)")
+        }
+
+        return (hits, deferredUntil)
+    }
+
+    /// Maps a scored hit to a storable/pickable candidate.
+    private func candidate(from hit: BookHit) -> OLCandidate? {
+        switch hit {
+        case .openLibrary(let doc, _):
+            guard let key = doc.key, let title = doc.title else { return nil }
+            return OLCandidate(
+                id: key,
+                title: title,
+                authors: doc.author_name?.joined(separator: ", "),
+                year: doc.first_publish_year,
+                publisher: doc.publisher?.first,
+                isbn: doc.isbn?.first.flatMap(ISBNUtil.normalize)
+            )
+        case .googleBooks(let info, _):
+            guard let title = info.title else { return nil }
+            return OLCandidate(
+                id: "gb:\(info.isbn ?? title)",
+                title: title,
+                authors: info.authors?.joined(separator: ", "),
+                year: info.year,
+                publisher: info.publisher,
+                isbn: info.isbn,
+                source: "googleBooks",
+                summary: info.description
+            )
+        }
+    }
+
+    /// Manual search from the match picker: the user types a title (and
+    /// optionally an author) and picks from the ranked results of both
+    /// sources. Returns up to 8 candidates, best first.
+    @MainActor
+    func searchBookMatches(title: String, author: String?) async -> [OLCandidate] {
+        let cleanTitle = BookSearchTitle.clean(title)
+        guard !cleanTitle.isEmpty else { return [] }
+        let trimmedAuthor = author?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let (hits, _) = await searchBookSources(
+            title: cleanTitle,
+            author: (trimmedAuthor?.isEmpty == false) ? trimmedAuthor : nil)
+        return hits.sorted { $0.score > $1.score }
+            .prefix(8)
+            .compactMap(candidate(from:))
     }
 
     /// User picked a suggestion from the match sheet (either source).
@@ -766,11 +809,33 @@ struct OpenLibraryMatchPicker: View {
     /// Which candidate is highlighted but not yet confirmed (two-step select).
     @State private var selectedCandidateID: OLCandidate.ID?
 
+    // Manual search (ComicVine-style helper for books search can't place)
+    @State private var searchTitle: String
+    @State private var searchAuthor: String
+    @State private var isSearching = false
+    /// nil until the user runs a search; then it replaces the stored list.
+    @State private var searchResults: [OLCandidate]?
+
     /// Same behaviour setting the ComicVine picker honours.
     @AppStorage("singleTapConfirmMatch") private var singleTapConfirm = false
 
-    private var candidates: [OLCandidate] {
+    init(comic: Comic, viewModel: LibraryViewModel) {
+        self.comic = comic
+        self._viewModel = ObservedObject(wrappedValue: viewModel)
+        self._searchTitle = State(
+            initialValue: BookSearchTitle.clean(
+                comic.title ?? (comic.fileName as NSString).deletingPathExtension))
+        self._searchAuthor = State(initialValue: comic.writer ?? "")
+    }
+
+    private var storedCandidates: [OLCandidate] {
         OLCandidate.decodeList(comic.metadataCandidates)
+    }
+
+    /// What the list shows: manual search results once a search has run,
+    /// otherwise whatever the last fetch stored.
+    private var candidates: [OLCandidate] {
+        searchResults ?? storedCandidates
     }
 
     var body: some View {
@@ -793,14 +858,24 @@ struct OpenLibraryMatchPicker: View {
 
             Divider()
 
+            searchSection
+
+            Divider()
+
             if candidates.isEmpty {
                 VStack(spacing: Spacing.md) {
-                    Image(systemName: "questionmark.circle")
+                    Image(systemName: isSearching ? "hourglass" : "questionmark.circle")
                         .font(.system(size: 40))
                         .foregroundColor(TextColors.tertiary)
-                    Text("No pending matches for this book.")
-                        .font(Typography.body)
-                        .foregroundColor(TextColors.secondary)
+                    Text(
+                        isSearching
+                            ? "Searching Open Library and Google Books…"
+                            : (searchResults != nil
+                                ? "No results — try fewer words, or just the title."
+                                : "No pending matches — search for the book above.")
+                    )
+                    .font(Typography.body)
+                    .foregroundColor(TextColors.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -883,6 +958,55 @@ struct OpenLibraryMatchPicker: View {
             .padding(Spacing.lg)
         }
         .frame(minWidth: 420, minHeight: 380)
+    }
+
+    /// Manual search: edit the title/author and search both sources.
+    /// Prefilled with the book's cleaned title so one click usually works.
+    private var searchSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Search Open Library and Google Books")
+                .font(Typography.caption)
+                .foregroundColor(TextColors.secondary)
+            HStack(spacing: Spacing.sm) {
+                TextField("Title", text: $searchTitle)
+                    .textFieldStyle(.roundedBorder)
+                    .font(Typography.caption)
+                    .disabled(isSearching || isApplying)
+                    .onSubmit { runSearch() }
+                TextField("Author (optional)", text: $searchAuthor)
+                    .textFieldStyle(.roundedBorder)
+                    .font(Typography.caption)
+                    .frame(maxWidth: 180)
+                    .disabled(isSearching || isApplying)
+                    .onSubmit { runSearch() }
+                Button {
+                    runSearch()
+                } label: {
+                    if isSearching {
+                        ProgressView().scaleEffect(0.6)
+                    } else {
+                        Text("Search")
+                    }
+                }
+                .disabled(
+                    isSearching || isApplying
+                        || searchTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(.horizontal, Spacing.lg)
+        .padding(.vertical, Spacing.md)
+    }
+
+    private func runSearch() {
+        let title = searchTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !isSearching, !isApplying, !title.isEmpty else { return }
+        isSearching = true
+        selectedCandidateID = nil
+        Task {
+            let results = await viewModel.searchBookMatches(title: title, author: searchAuthor)
+            searchResults = results
+            isSearching = false
+        }
     }
 
     /// Manual override: paste an Open Library work link (or OL…W ID) when
