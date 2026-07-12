@@ -117,7 +117,12 @@ struct LibraryHeaderView: View {
                     }
                     viewModeToggle
                 #else
-                    // iPad/iOS: Compact "More" menu
+                    // iPad/iOS: Filters get their own always-visible button —
+                    // burying them in the "…" menu made a two-tap trip out of
+                    // the most-used control. The rest stays in the More menu.
+                    if viewMode != .folders {
+                        compactFiltersButton
+                    }
                     moreMenu
                     if viewMode == .grid || viewMode == .publisher || viewMode == .folders {
                         coverSizeSlider
@@ -437,6 +442,31 @@ struct LibraryHeaderView: View {
         }
     }
 
+    /// iPad/iOS: one-tap filter toggle (was buried in the More menu).
+    /// Fills and tints while the panel is open or any filter is active.
+    private var compactFiltersButton: some View {
+        Button(action: { withAnimation { showingFilters.toggle() } }) {
+            Image(
+                systemName: (showingFilters || filters.hasActive)
+                    ? "line.3.horizontal.decrease.circle.fill"
+                    : "line.3.horizontal.decrease.circle"
+            )
+            .font(.system(size: 20))
+            .foregroundColor(
+                (showingFilters || filters.hasActive)
+                    ? AccentColors.primary : TextColors.secondary
+            )
+            .frame(width: 44, height: 44)
+            .background(
+                showingFilters
+                    ? AccentColors.primary.opacity(0.12) : BackgroundColors.elevated
+            )
+            .clipShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help("Filters")
+    }
+
     private var moreMenu: some View {
         Menu {
             // Sort section
@@ -450,15 +480,8 @@ struct LibraryHeaderView: View {
                 }
             }
 
-            // Actions section
+            // Actions section (Filters moved to its own toolbar button)
             Section {
-                Button(action: { showingFilters.toggle() }) {
-                    Label("Filters", systemImage: "line.3.horizontal.decrease.circle")
-                    if filters.hasActive {
-                        Text("•").foregroundColor(AccentColors.primary)
-                    }
-                }
-
                 if !isSelectionMode && viewMode != .folders {
                     Button(action: { isSelectionMode = true }) {
                         Label("Select Comics", systemImage: "checkmark.circle")
