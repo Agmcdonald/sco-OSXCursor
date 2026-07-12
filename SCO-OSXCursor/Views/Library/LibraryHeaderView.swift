@@ -214,7 +214,7 @@ struct LibraryHeaderView: View {
                         }) {
                             HStack(spacing: Spacing.sm) {
                                 Image(systemName: "folder.badge.plus")
-                                Text("Organize & Add Comics")
+                                Text("Organize & Add Books")
                                     .font(Typography.button)
                             }
                             .foregroundColor(AccentColors.primary)

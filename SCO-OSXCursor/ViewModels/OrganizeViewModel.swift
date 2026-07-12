@@ -750,6 +750,146 @@ final class OrganizeViewModel: ObservableObject {
         }
     }
 
+    /// Routes a staged file to the right provider by its format: eBooks go
+    /// to the book sources (Open Library / Google Books / Hardcover — no key
+    /// needed), everything else to ComicVine.
+    func fetchMetadata(for id: UUID) async -> StagingCVOutcome {
+        if stagedComics.first(where: { $0.id == id })?.bookFormat == .ebook {
+            return await fetchBookSources(for: id)
+        }
+        return await fetchComicVine(for: id)
+    }
+
+    /// Book-source fetch for a staged eBook. ISBN first (from the EPUB's own
+    /// OPF metadata), then a fuzzy title/author search across every signed-in
+    /// source; a confident best match is applied to the staged fields.
+    func fetchBookSources(for id: UUID) async -> StagingCVOutcome {
+        guard let staged = stagedComics.first(where: { $0.id == id }) else {
+            return .failed("File is no longer staged.")
+        }
+
+        // Identity from the EPUB's embedded metadata when available.
+        var embedded: ComicMetadata?
+        if staged.originalURL.pathExtension.lowercased() == "epub" {
+            embedded = try? EPUBReader().extractMetadata(from: staged.originalURL)
+        }
+        let isbn = embedded?.isbn
+        let title = BookSearchTitle.clean(
+            embedded?.title
+                ?? (staged.title?.isEmpty == false ? staged.title! : nil)
+                ?? (staged.series.isEmpty ? nil : staged.series)
+                ?? (staged.originalFileName as NSString).deletingPathExtension)
+        let author = embedded?.writer ?? staged.writer
+
+        let proxy = cvProxy(for: staged)
+
+        /// Fill-only-when-missing merge (title replaces — it's canonical).
+        func filled(
+            title: String?, authors: String?, publisher: String?,
+            summary: String?, year: Int?
+        ) -> Comic {
+            var c = proxy
+            if let title, !title.isEmpty { c.title = title }
+            if c.writer?.isEmpty != false, let authors, !authors.isEmpty { c.writer = authors }
+            if c.publisher?.isEmpty != false, let publisher, !publisher.isEmpty {
+                c.publisher = publisher
+            }
+            if c.summary?.isEmpty != false, let summary, !summary.isEmpty { c.summary = summary }
+            if c.year == nil { c.year = year }
+            return c
+        }
+
+        func applied(_ comic: Comic) -> StagingCVOutcome {
+            guard let merged = mergeCVResult(comic, into: id) else {
+                return .failed("File is no longer staged.")
+            }
+            return .applied(merged)
+        }
+
+        // 1. Exact ISBN, source by source.
+        if let isbn {
+            if let doc = try? await OpenLibraryService.shared.lookupByISBN(isbn) {
+                var description: String?
+                if let key = doc.key {
+                    description = (try? await OpenLibraryService.shared.work(key: key))?.description
+                }
+                return applied(
+                    filled(
+                        title: doc.title,
+                        authors: doc.author_name?.joined(separator: ", "),
+                        publisher: doc.publisher?.first,
+                        summary: description,
+                        year: doc.first_publish_year))
+            }
+            if let info = try? await GoogleBooksService.shared.lookupByISBN(isbn) {
+                return applied(
+                    filled(
+                        title: info.title, authors: info.authors?.joined(separator: ", "),
+                        publisher: info.publisher, summary: info.description, year: info.year))
+            }
+            if HardcoverConfig.hasToken,
+                let doc = try? await HardcoverService.shared.lookupByISBN(isbn)
+            {
+                return applied(
+                    filled(
+                        title: doc.title, authors: doc.authorNames.joined(separator: ", "),
+                        publisher: nil, summary: doc.description, year: doc.releaseYear))
+            }
+        }
+
+        // 2. Fuzzy title/author across the signed-in sources, ranked together.
+        guard !title.isEmpty else { return .noMatches }
+        var best: (comic: Comic, score: Double)?
+        func consider(_ names: [String]?, _ baseScore: Double, _ make: () -> Comic) {
+            var score = baseScore
+            if let author, let names,
+                names.contains(where: { ComicVineMatcher.nameSimilarity(author, $0) > 0.8 })
+            {
+                score = min(1.0, score + 0.1)
+            }
+            if best == nil || score > best!.score {
+                best = (make(), score)
+            }
+        }
+
+        if let docs = try? await OpenLibraryService.shared.search(title: title, author: author) {
+            for doc in docs {
+                guard let t = doc.title else { continue }
+                consider(doc.author_name, ComicVineMatcher.nameSimilarity(title, t)) {
+                    filled(
+                        title: t, authors: doc.author_name?.joined(separator: ", "),
+                        publisher: doc.publisher?.first, summary: nil,
+                        year: doc.first_publish_year)
+                }
+            }
+        }
+        if let volumes = try? await GoogleBooksService.shared.search(title: title, author: author) {
+            for info in volumes {
+                guard let t = info.title else { continue }
+                consider(info.authors, ComicVineMatcher.nameSimilarity(title, t)) {
+                    filled(
+                        title: t, authors: info.authors?.joined(separator: ", "),
+                        publisher: info.publisher, summary: info.description, year: info.year)
+                }
+            }
+        }
+        if HardcoverConfig.hasToken,
+            let docs = try? await HardcoverService.shared.search(title: title, author: author)
+        {
+            for doc in docs {
+                guard let t = doc.title else { continue }
+                consider(doc.authorNames, ComicVineMatcher.nameSimilarity(title, t)) {
+                    filled(
+                        title: t, authors: doc.authorNames.joined(separator: ", "),
+                        publisher: nil, summary: doc.description, year: doc.releaseYear)
+                }
+            }
+        }
+
+        guard let winner = best, winner.score >= 0.7 else { return .noMatches }
+        return applied(winner.comic)
+    }
+
     // Batch fetch (checked items)
     @Published private(set) var isBatchFetchingCV = false
     @Published private(set) var batchCVDone = 0
@@ -759,33 +899,40 @@ final class OrganizeViewModel: ObservableObject {
     /// (e.g. a batch fetch) so the inspector rebuilds with the new values.
     @Published private(set) var metadataRevision = 0
 
-    /// Fetch ComicVine metadata for every CHECKED staged file. Confident
-    /// matches are applied to the staged metadata; ambiguous ones are left
-    /// untouched for the per-file Fetch button (which shows the match picker).
+    /// Fetch metadata for every CHECKED staged file, routed by format:
+    /// eBooks use the book sources, everything else uses ComicVine.
+    /// Confident matches are applied to the staged metadata; ambiguous ones
+    /// are left untouched for the per-file Fetch button.
     func fetchComicVineForChecked() async {
         guard !isBatchFetchingCV else { return }
-        guard ComicVineConfig.hasKey else {
+        let items = stagedComics.filter { checkedComicIDs.contains($0.id) }
+        guard !items.isEmpty else { return }
+
+        // Only block outright when EVERY checked file would need the
+        // (missing) ComicVine key — eBooks fetch without one.
+        let comicsNeedKey = items.contains { $0.bookFormat != .ebook }
+        if comicsNeedKey, !ComicVineConfig.hasKey, items.allSatisfy({ $0.bookFormat != .ebook }) {
             batchCVSummary = "Add a ComicVine API key in Settings first."
             return
         }
-        let ids = stagedComics.filter { checkedComicIDs.contains($0.id) }.map(\.id)
-        guard !ids.isEmpty else { return }
 
         isBatchFetchingCV = true
         batchCVSummary = nil
         batchCVDone = 0
-        batchCVTotal = ids.count
+        batchCVTotal = items.count
 
         var applied = 0
         var ambiguous = 0
         var noMatch = 0
         var failed = 0
-        for id in ids {
-            switch await fetchComicVine(for: id) {
+        var noKey = 0
+        for item in items {
+            switch await fetchMetadata(for: item.id) {
             case .applied: applied += 1
             case .needsChoice: ambiguous += 1
             case .noMatches: noMatch += 1
-            case .failed, .noKey: failed += 1
+            case .noKey: noKey += 1
+            case .failed: failed += 1
             }
             batchCVDone += 1
         }
@@ -798,6 +945,7 @@ final class OrganizeViewModel: ObservableObject {
         if ambiguous > 0 { parts.append("\(ambiguous) ambiguous — fetch individually to pick a match") }
         if noMatch > 0 { parts.append("\(noMatch) no match") }
         if failed > 0 { parts.append("\(failed) failed") }
+        if noKey > 0 { parts.append("\(noKey) skipped (comics need a ComicVine key)") }
         batchCVSummary = parts.isEmpty ? "Nothing fetched." : parts.joined(separator: ", ") + "."
     }
 

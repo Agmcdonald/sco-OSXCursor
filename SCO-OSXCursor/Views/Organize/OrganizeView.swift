@@ -360,7 +360,8 @@ struct OrganizeView: View {
                 }
                 .disabled(viewModel.checkedComicIDs.isEmpty)
 
-                // Fetch ComicVine metadata for every checked file
+                // Fetch metadata for every checked file — routed by format
+                // (eBooks -> book sources, comics -> ComicVine)
                 Button(action: {
                     Task { await viewModel.fetchComicVineForChecked() }
                 }) {
@@ -372,7 +373,7 @@ struct OrganizeView: View {
                         }
                     } else {
                         Label(
-                            "Fetch \(viewModel.checkedComicIDs.count) from ComicVine",
+                            "Fetch \(viewModel.checkedComicIDs.count) from Metadata Sources",
                             systemImage: "sparkles")
                     }
                 }
@@ -657,7 +658,7 @@ struct OrganizeView: View {
                             Task { await viewModel.fetchComicVineForChecked() }
                         } label: {
                             Label(
-                                "Fetch \(viewModel.checkedComicIDs.count) from ComicVine",
+                                "Fetch \(viewModel.checkedComicIDs.count) from Metadata Sources",
                                 systemImage: "sparkles")
                         }
                         .disabled(viewModel.checkedComicIDs.isEmpty || viewModel.isBatchFetchingCV)

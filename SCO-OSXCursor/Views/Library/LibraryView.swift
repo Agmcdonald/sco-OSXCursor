@@ -810,6 +810,29 @@ struct LibraryView: View {
             }
             return .ignored
         }
+        // ⌘E → edit metadata, ⌘I → info panel for the highlighted book
+        .onKeyPress(phases: .down) { press in
+            guard editingComicID == nil, !showingFilters, !isSearchFieldFocused else {
+                return .ignored
+            }
+            guard press.modifiers.contains(.command), let comic = focusedComic else {
+                return .ignored
+            }
+            switch press.characters.lowercased() {
+            case "e":
+                editComic(comic)
+                return .handled
+            case "i":
+                #if os(macOS)
+                    isInspectorPresented.toggle()
+                #else
+                    infoSheetComicID = ComicID(id: comic.id)
+                #endif
+                return .handled
+            default:
+                return .ignored
+            }
+        }
     }
 
     // MARK: - Import Progress Overlay

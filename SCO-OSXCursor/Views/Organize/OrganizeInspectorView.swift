@@ -302,8 +302,10 @@ struct OrganizeInspectorView: View {
 
                 // Actions
                 HStack(spacing: 12) {
-                    // Look the book up on ComicVine and fill the fields above
-                    // for review BEFORE it gets imported.
+                    // Look the book up and fill the fields above for review
+                    // BEFORE it gets imported. eBooks use the book sources
+                    // (Open Library / Google Books / Hardcover); comics use
+                    // ComicVine.
                     Button(action: fetchFromComicVine) {
                         HStack(spacing: 4) {
                             if isFetchingCV {
@@ -312,7 +314,7 @@ struct OrganizeInspectorView: View {
                             } else {
                                 Image(systemName: "sparkles")
                             }
-                            Text("Fetch from ComicVine")
+                            Text(bookFormat == .ebook ? "Fetch Book Metadata" : "Fetch from ComicVine")
                         }
                     }
                     .disabled(isFetchingCV)
@@ -388,7 +390,8 @@ struct OrganizeInspectorView: View {
         isFetchingCV = true
         cvMessage = nil
         Task {
-            let outcome = await viewModel.fetchComicVine(for: comic.id)
+            // Routed by format: eBooks -> book sources, comics -> ComicVine.
+            let outcome = await viewModel.fetchMetadata(for: comic.id)
             isFetchingCV = false
             handleCVOutcome(outcome)
         }
@@ -398,14 +401,17 @@ struct OrganizeInspectorView: View {
         switch outcome {
         case .applied(let merged):
             applyFetched(merged)
-            cvMessage = "ComicVine details loaded — review the fields, then import."
+            cvMessage = "Details loaded — review the fields, then import."
         case .needsChoice(let candidates):
             cvCandidates = candidates
             showingCVPicker = true
         case .noKey:
             cvMessage = "Add a ComicVine API key in Settings first."
         case .noMatches:
-            cvMessage = "No ComicVine matches found for this series."
+            cvMessage =
+                bookFormat == .ebook
+                ? "No confident match — you can import and use Search Matches from the Library."
+                : "No ComicVine matches found for this series."
         case .failed(let message):
             cvMessage = message
         }
