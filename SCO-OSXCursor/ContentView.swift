@@ -208,6 +208,18 @@ struct ContentView: View {
                             title: "Reading an eBook",
                             message: "Tap the center of the page to show the controls. Adjust text size from the reader bar; font, spacing, and margins live in Settings → Ebook Typography."
                         )
+                } else if comic.fileType == .pdf && comic.pdfReadsAsBook {
+                    PDFBookContentView(comic: comic)
+                        .id(comic.id)
+                        .environmentObject(libraryViewModel)
+                        .statusBarHidden(true)
+                        .persistentSystemOverlays(.hidden)
+                        .featureHint(
+                            id: "readerPDFBook",
+                            icon: "doc.richtext",
+                            title: "Reading a PDF Book",
+                            message: "Tap the screen edges or swipe to turn pages. Use search to find text in this PDF."
+                        )
                 } else {
                     ComicReaderView(comic: comic)
                         .id(comic.id)
@@ -245,6 +257,19 @@ struct ContentView: View {
                                     icon: "textformat",
                                     title: "Reading an eBook",
                                     message: "Click the center of the page to show the controls. Adjust text size from the reader bar; font, spacing, and margins live in Settings → Ebook Typography."
+                                )
+                                .transition(.opacity)
+                                .zIndex(100)
+                        } else if comic.fileType == .pdf && comic.pdfReadsAsBook {
+                            PDFBookContentView(comic: comic)
+                                .id(comic.id)
+                                .environmentObject(libraryViewModel)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .featureHint(
+                                    id: "readerPDFBook",
+                                    icon: "doc.richtext",
+                                    title: "Reading a PDF Book",
+                                    message: "Click the page edges or use arrow keys to turn pages. Use search to find text in this PDF."
                                 )
                                 .transition(.opacity)
                                 .zIndex(100)

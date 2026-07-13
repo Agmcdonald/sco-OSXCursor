@@ -30,6 +30,8 @@ struct InReaderSettingsView: View {
     @State private var selectedThumbPosition: ThumbnailBarPosition?
     @State private var useDefaultThumbPosition: Bool = true
 
+    @State private var pdfReadsAsBook: Bool = false
+
     var body: some View {
         #if os(macOS)
             // NavigationView inside a macOS sheet collapses to a toolbar-only
@@ -179,6 +181,19 @@ struct InReaderSettingsView: View {
                     Text("Where the page-thumbnail strip appears in vertical-scroll books — along the bottom, or as a rail on the left or right. Paged books always use the bottom strip. You can also flip it from the reader while reading.")
                         .font(Typography.caption)
                         .foregroundColor(TextColors.tertiary)
+                }
+
+                if comic.fileType == .pdf {
+                    Section {
+                        Toggle("Read as Book", isOn: $pdfReadsAsBook)
+                            .tint(AccentColors.primary)
+                    } header: {
+                        Text("PDF Reader")
+                    } footer: {
+                        Text("When enabled, this PDF opens in the PDF book reader with selectable text, links, and search. Leave it off for scanned comics and image-first PDFs.")
+                            .font(Typography.caption)
+                            .foregroundColor(TextColors.tertiary)
+                    }
                 }
 
                 // MARK: - EPUB Theme Section
@@ -403,6 +418,8 @@ struct InReaderSettingsView: View {
                 selectedTheme = nil
             }
         }
+
+        pdfReadsAsBook = comic.pdfReadsAsBook
     }
 
     private var effectiveTransition: PageTransition {
@@ -424,6 +441,10 @@ struct InReaderSettingsView: View {
 
         // Save thumbnail bar position
         updatedComic.thumbnailBarPosition = useDefaultThumbPosition ? nil : selectedThumbPosition?.rawValue
+
+        if comic.fileType == .pdf {
+            updatedComic.pdfReadsAsBook = pdfReadsAsBook
+        }
 
         // Save theme
         if comic.fileType == .epub {

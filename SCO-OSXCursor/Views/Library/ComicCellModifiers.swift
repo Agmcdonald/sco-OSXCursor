@@ -36,6 +36,8 @@ struct ComicCellActions {
     /// Package this book as a .scobook and hand it to the share sheet
     /// (Mac → iPad transfer). Menu item is macOS-only in v1.
     var sendToDevice: (Comic) -> Void = { _ in }
+    /// Toggle the opt-in PDFKit book reader for a single PDF.
+    var togglePDFReadAsBook: (Comic) -> Void = { _ in }
 
     // MARK: Folders
     /// All user folders (for the "Add to Folder" submenu).
@@ -132,6 +134,15 @@ struct ComicCellInteraction: ViewModifier {
 
         Button(action: { actions.openReader(comic) }) {
             Label("Read", systemImage: "book.fill")
+        }
+
+        if comic.fileType == .pdf {
+            Button(action: { actions.togglePDFReadAsBook(comic) }) {
+                Label(
+                    comic.pdfReadsAsBook ? "Open PDF as Comic" : "Open PDF as Book",
+                    systemImage: comic.pdfReadsAsBook ? "rectangle.stack" : "doc.richtext"
+                )
+            }
         }
 
         Button(action: { actions.showInfo(comic) }) {

@@ -625,6 +625,21 @@ final class DatabaseManager {
             AppLog.database.info("[DatabaseManager] ✅ Migration v26_epub_locator complete")
         }
 
+        migrator.registerMigration("v27_pdf_book_reader") { db in
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v27_pdf_book_reader")
+            if try db.tableExists("comics") {
+                do {
+                    try db.alter(table: "comics") { t in
+                        t.add(column: "pdf_reads_as_book", .boolean).defaults(to: false)
+                    }
+                    AppLog.database.info("[DatabaseManager] ✅ Added pdf_reads_as_book column")
+                } catch {
+                    AppLog.database.error("[DatabaseManager] ℹ️ pdf_reads_as_book column may already exist: \(error.localizedDescription)")
+                }
+            }
+            AppLog.database.info("[DatabaseManager] ✅ Migration v27_pdf_book_reader complete")
+        }
+
         return migrator
     }
 

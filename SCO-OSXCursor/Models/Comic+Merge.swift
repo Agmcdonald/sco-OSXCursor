@@ -124,6 +124,7 @@ extension Comic {
             epubLocatorFragment: existing.epubLocatorFragment,
             epubLocatorElement: existing.epubLocatorElement,
             epubLocatorProgress: existing.epubLocatorProgress,
+            pdfReadsAsBook: existing.pdfReadsAsBook,
 
             fileSize: extracted.fileSize,
             fileType: extracted.fileType,
@@ -133,4 +134,3 @@ extension Comic {
         )
     }
 }
-

@@ -261,6 +261,12 @@ struct LibraryView: View {
             sendToDevice: { comic in
                 transferExportRequest = TransferExportRequest(comics: [comic])
             },
+            togglePDFReadAsBook: { comic in
+                var updated = comic
+                updated.pdfReadsAsBook.toggle()
+                updated.dateModified = Date()
+                viewModel.updateComic(updated)
+            },
             folders: viewModel.folders,
             foldersContaining: { viewModel.folders(containing: $0.id) },
             addToFolder: { comic, folderID in

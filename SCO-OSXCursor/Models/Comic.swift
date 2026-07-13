@@ -73,6 +73,7 @@ struct Comic: Identifiable, Codable {
     var epubLocatorFragment: String?  // Optional EPUB fragment/id locator
     var epubLocatorElement: String?   // Optional future element locator
     var epubLocatorProgress: Double?  // Optional EPUB locator/overall progression (0...1)
+    var pdfReadsAsBook: Bool          // Per-book opt-in for PDFKit book reader
     var zoomScale: Double?            // Per-book remembered zoom, nil = 1× (no zoom)
     var thumbnailBarPosition: String? // Per-book thumbnail bar position override (ThumbnailBarPosition.rawValue)
     var contentRating: ContentRating
@@ -147,6 +148,7 @@ struct Comic: Identifiable, Codable {
         epubLocatorFragment: String? = nil,
         epubLocatorElement: String? = nil,
         epubLocatorProgress: Double? = nil,
+        pdfReadsAsBook: Bool = false,
         zoomScale: Double? = nil,
         thumbnailBarPosition: String? = nil,
         comicVineVolumeID: Int? = nil,
@@ -200,6 +202,7 @@ struct Comic: Identifiable, Codable {
         self.epubLocatorFragment = epubLocatorFragment
         self.epubLocatorElement = epubLocatorElement
         self.epubLocatorProgress = epubLocatorProgress
+        self.pdfReadsAsBook = pdfReadsAsBook
         self.zoomScale = zoomScale
         self.thumbnailBarPosition = thumbnailBarPosition
         self.comicVineVolumeID = comicVineVolumeID
@@ -759,6 +762,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         static let epubLocatorFragment = Column("epub_locator_fragment")
         static let epubLocatorElement = Column("epub_locator_element")
         static let epubLocatorProgress = Column("epub_locator_progress")
+        static let pdfReadsAsBook = Column("pdf_reads_as_book")
         static let zoomScale = Column("zoom_scale")
         static let thumbnailBarPosition = Column("thumbnail_bar_position")
         static let comicVineVolumeID = Column("comicvine_volume_id")
@@ -815,6 +819,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         container[Columns.epubLocatorFragment] = epubLocatorFragment
         container[Columns.epubLocatorElement] = epubLocatorElement
         container[Columns.epubLocatorProgress] = epubLocatorProgress
+        container[Columns.pdfReadsAsBook] = pdfReadsAsBook
         container[Columns.zoomScale] = zoomScale
         container[Columns.thumbnailBarPosition] = thumbnailBarPosition
         container[Columns.comicVineVolumeID] = comicVineVolumeID
@@ -902,6 +907,7 @@ extension Comic: FetchableRecord, PersistableRecord {
             epubLocatorFragment: row["epub_locator_fragment"],
             epubLocatorElement: row["epub_locator_element"],
             epubLocatorProgress: row["epub_locator_progress"],
+            pdfReadsAsBook: row["pdf_reads_as_book"] ?? false,
             zoomScale: row["zoom_scale"],
             thumbnailBarPosition: row["thumbnail_bar_position"],
             comicVineVolumeID: row["comicvine_volume_id"],
