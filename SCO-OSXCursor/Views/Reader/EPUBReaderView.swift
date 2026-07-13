@@ -19,13 +19,12 @@ enum EPUBTurnInput {
 
 /// What happens when a page turn runs off the end of a chapter.
 ///
-/// A deliberate swipe carries on into the next chapter, the way a page turn in
-/// Books does. A tap must not: the tap zones cover most of the screen, and
-/// silently skipping a chapter because the reader tapped one page too far is
-/// the kind of thing you only notice three pages later. A tap at the edge
-/// raises the HUD instead, where Previous/Next chapter live.
+/// Every input carries on into the neighbouring chapter, the way a page turn in
+/// Books does: a chapter boundary is invisible to the reader, so stopping dead
+/// at one reads as the book being broken. Turning back across a boundary lands
+/// on the LAST page of the previous chapter, not its first.
 enum EPUBTurnPolicy {
-    static var tapCrossesChapter = false
+    static var tapCrossesChapter = true
     static var keyCrossesChapter = true
     static var swipeCrossesChapter = true
 
@@ -1016,10 +1015,8 @@ struct EPUBWebView {
                 return
             }
 
-            // At a chapter edge. Whether this crosses into the neighbouring
-            // chapter depends on how the reader asked: a deliberate swipe
-            // carries on; a tap must not silently skip a chapter, so it raises
-            // the HUD (where Previous/Next live) instead.
+            // At a chapter edge. navigateChapter bounds-checks, so running off
+            // the front or back of the BOOK is a no-op rather than a wrap.
             guard EPUBTurnPolicy.crossesChapter(for: input) else {
                 onTap()
                 return
