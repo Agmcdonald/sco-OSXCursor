@@ -164,6 +164,7 @@ struct ContentView: View {
         // (Drag-and-drop onto Library/Organize feeds the same coordinator
         // directly, without going through onOpenURL.)
         .onOpenURL { url in
+            AppLog.files.info("[ContentView] Opened URL: \(url.lastPathComponent)")
             incomingTransferCoordinator.enqueue(url)
         }
         .sheet(

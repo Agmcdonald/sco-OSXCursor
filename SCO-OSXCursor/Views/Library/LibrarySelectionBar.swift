@@ -31,7 +31,8 @@ struct LibrarySelectionBar: View {
     var folders: [Folder] = []
     var onAddToFolder: (UUID) -> Void = { _ in }
     var onNewFolder: () -> Void = {}
-    /// Package the selection as .scobook files for AirDrop (macOS-only in v1).
+    /// Package the selection as .scobook files for AirDrop. Available on
+    /// every platform — transfer runs Mac → iPad and iPad/iPhone → Mac.
     var onSendToDevice: () -> Void = {}
 
     var body: some View {
@@ -213,14 +214,13 @@ struct LibrarySelectionBar: View {
             .buttonStyle(.plain)
             .disabled(selectedComics.isEmpty)
 
-            // Send the selection to another device (Mac → iPad transfer)
-            #if os(macOS)
-                actionButton(
-                    title: "Send to Device",
-                    systemImage: "ipad.and.arrow.forward",
-                    action: onSendToDevice
-                )
-            #endif
+            // Send the selection to another device — Mac → iPad and
+            // iPad/iPhone → Mac both go through the same export sheet.
+            actionButton(
+                title: "Send to Device",
+                systemImage: "ipad.and.arrow.forward",
+                action: onSendToDevice
+            )
 
             // Delete button
             Button(action: {

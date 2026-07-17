@@ -33,8 +33,9 @@ struct ComicCellActions {
     var showInfo: (Comic) -> Void = { _ in }
     /// Re-link a missing/moved file (shown only when the book needs attention).
     var relink: (Comic) -> Void = { _ in }
-    /// Package this book as a .scobook and hand it to the share sheet
-    /// (Mac → iPad transfer). Menu item is macOS-only in v1.
+    /// Package this book as a .scobook and hand it to the share sheet.
+    /// Offered on every platform — transfer runs Mac → iPad and
+    /// iPad/iPhone → Mac.
     var sendToDevice: (Comic) -> Void = { _ in }
     /// Toggle the opt-in PDFKit book reader for a single PDF.
     var togglePDFReadAsBook: (Comic) -> Void = { _ in }
@@ -200,15 +201,13 @@ struct ComicCellInteraction: ViewModifier {
             }
         }
 
-        // Mac → iPad transfer (send UI is macOS-only in v1; the receive
-        // path works on both platforms).
-        #if os(macOS)
-            if !comic.needsAttention {
-                Button(action: { actions.sendToDevice(comic) }) {
-                    Label("Send to Device…", systemImage: "ipad.and.arrow.forward")
-                }
+        // Transfer runs both ways: Mac → iPad and iPad/iPhone → Mac. A book
+        // that needs attention has no readable file to package.
+        if !comic.needsAttention {
+            Button(action: { actions.sendToDevice(comic) }) {
+                Label("Send to Device…", systemImage: "ipad.and.arrow.forward")
             }
-        #endif
+        }
 
         Divider()
 

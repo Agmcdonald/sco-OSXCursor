@@ -65,7 +65,8 @@ struct LibraryHeaderView: View {
     var folders: [Folder] = []
     var onAddToFolder: (UUID) -> Void = { _ in }
     var onNewFolderForSelection: () -> Void = {}
-    /// Package the selection as .scobook files for AirDrop (macOS-only in v1).
+    /// Package the selection as .scobook files for AirDrop. Available on
+    /// every platform — transfer runs Mac → iPad and iPad/iPhone → Mac.
     var onSendToDevice: () -> Void = {}
 
     var body: some View {

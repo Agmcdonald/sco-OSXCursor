@@ -93,8 +93,22 @@ struct EPUBReaderControlsOverlay: View {
             tocButton
             #endif
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        // The title used to sit on the bare page: the gradient below has faded
+        // to clear by the time it reaches the text, so a white page (a full-
+        // bleed illustration, say) left white-on-white. Carry the title on the
+        // same solid bar the bottom controls use.
+        //
+        // The scrim is not decoration. Material tints by colour scheme, not by
+        // what is behind it, and the app's scheme follows the user's theme — so
+        // in a light theme the material alone goes pale and this bar's white
+        // text is unreadable again. The scrim keeps it dark in every theme.
+        .background(Color.black.opacity(0.5))
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
         .background(
             LinearGradient(
                 colors: [Color.black.opacity(0.75), Color.clear],
