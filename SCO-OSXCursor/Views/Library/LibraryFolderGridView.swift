@@ -41,6 +41,12 @@ struct LibraryFolderGridView: View {
     let onChoosePhoto: (Folder) -> Void
     let onPickBook: (Folder) -> Void
     let onResetCover: (Folder) -> Void
+    /// Set or clear (nil) the folder-level reading style. Member books
+    /// inherit it when opened unless they have a per-book override.
+    let onSetReadingStyle: (Folder, ReadingStyle?) -> Void
+    /// Open the folder-level vertical zoom sheet (default column width for
+    /// member books in vertical scroll mode).
+    let onSetVerticalZoom: (Folder) -> Void
 
     var body: some View {
         ScrollView {
@@ -111,6 +117,38 @@ struct LibraryFolderGridView: View {
                             }
                         } label: {
                             Label("Set Cover", systemImage: "photo.on.rectangle.angled")
+                        }
+                        Menu {
+                            ForEach(ReadingStyle.allCases, id: \.self) { style in
+                                Button {
+                                    onSetReadingStyle(folder, style)
+                                } label: {
+                                    Label(
+                                        style.displayName,
+                                        systemImage: folder.readingStyle == style.rawValue
+                                            ? "checkmark" : style.icon
+                                    )
+                                }
+                            }
+                            Divider()
+                            Button {
+                                onSetReadingStyle(folder, nil)
+                            } label: {
+                                Label(
+                                    "Use Default",
+                                    systemImage: folder.readingStyle == nil
+                                        ? "checkmark" : "arrow.uturn.backward"
+                                )
+                            }
+                        } label: {
+                            Label("Set Reading Style", systemImage: "book")
+                        }
+                        Button { onSetVerticalZoom(folder) } label: {
+                            Label(
+                                folder.verticalZoomScale == nil
+                                    ? "Set Vertical Zoom…"
+                                    : "Vertical Zoom: \(Int((folder.verticalZoomScale ?? 0.5) * 100))%…",
+                                systemImage: "arrow.left.and.right.square")
                         }
                         Divider()
                         Button(role: .destructive) { onDelete(folder) } label: {
@@ -410,6 +448,161 @@ struct NewFolderCardView: View {
         .scaleEffect(isHovered ? 1.02 : 1.0)
         .animation(.easeInOut(duration: 0.2), value: isHovered)
         .onHover { isHovered = $0 }
+    }
+}
+
+// MARK: - Folder Vertical Zoom Sheet
+
+/// Sheet for setting a folder's default vertical-scroll zoom (column width).
+/// Shows a live preview using an example image from a member book, rendered
+/// at the chosen fraction of the preview width — mirroring how pages will
+/// actually sit in the vertical reader.
+@MainActor
+struct FolderVerticalZoomSheet: View {
+    let folderName: String
+    /// Cover data from an example member book, for the live preview.
+    let sampleImageData: Data?
+    let sampleCacheKey: String
+    /// The folder's current setting; nil = no folder default.
+    let initialZoom: Double?
+    let onSave: (Double?) -> Void
+    let onCancel: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var zoom: Double
+    @State private var useDefault: Bool
+
+    init(
+        folderName: String,
+        sampleImageData: Data?,
+        sampleCacheKey: String,
+        initialZoom: Double?,
+        onSave: @escaping (Double?) -> Void,
+        onCancel: @escaping () -> Void
+    ) {
+        self.folderName = folderName
+        self.sampleImageData = sampleImageData
+        self.sampleCacheKey = sampleCacheKey
+        self.initialZoom = initialZoom
+        self.onSave = onSave
+        self.onCancel = onCancel
+        _zoom = State(initialValue: initialZoom ?? ReaderSettings.defaultVerticalZoom)
+        _useDefault = State(initialValue: initialZoom == nil)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Vertical Scroll Zoom")
+                        .font(Typography.h3)
+                        .foregroundColor(TextColors.primary)
+                    Text(folderName)
+                        .font(Typography.caption)
+                        .foregroundColor(TextColors.secondary)
+                }
+                Spacer()
+                Button("Cancel") {
+                    onCancel()
+                    dismiss()
+                }
+                .buttonStyle(.borderless)
+                .keyboardShortcut(.cancelAction)
+                Button("Set") {
+                    onSave(useDefault ? nil : zoom)
+                    dismiss()
+                }
+                .buttonStyle(.borderless)
+                .keyboardShortcut(.defaultAction)
+            }
+            .padding(Spacing.lg)
+
+            Divider()
+
+            // Live preview — the sample page at the chosen column width,
+            // sitting on a reader-black background like the real thing.
+            GeometryReader { geo in
+                ZStack {
+                    Color.black
+                    if let data = sampleImageData,
+                        let image = PageImageCache.shared.coverImage(
+                            from: data, cacheKey: sampleCacheKey)
+                    {
+                        #if os(macOS)
+                            Image(nsImage: image)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: geo.size.width * zoom)
+                                .frame(maxHeight: geo.size.height)
+                                .clipped()
+                        #else
+                            Image(uiImage: image)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: geo.size.width * zoom)
+                                .frame(maxHeight: geo.size.height)
+                                .clipped()
+                        #endif
+                    } else {
+                        // No member book with a cover yet — show a proxy block
+                        // so the width is still visualised.
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color.white.opacity(0.12))
+                            .frame(width: geo.size.width * zoom)
+                            .frame(maxHeight: geo.size.height * 0.9)
+                            .overlay(
+                                Image(systemName: "book.pages")
+                                    .font(.system(size: 30))
+                                    .foregroundColor(.white.opacity(0.35))
+                            )
+                    }
+                }
+                .frame(width: geo.size.width, height: geo.size.height)
+                .clipped()
+            }
+            .frame(height: 300)
+
+            Divider()
+
+            // Controls
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                Toggle("Use app default (no folder setting)", isOn: $useDefault)
+
+                HStack(spacing: Spacing.md) {
+                    Image(systemName: "arrow.down.right.and.arrow.up.left")
+                        .foregroundColor(TextColors.tertiary)
+                    Slider(value: $zoom, in: 0.3...1.0, step: 0.05)
+                        .disabled(useDefault)
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .foregroundColor(TextColors.tertiary)
+                    Text("\(Int(zoom * 100))%")
+                        .font(Typography.bodySmall.monospacedDigit())
+                        .foregroundColor(TextColors.secondary)
+                        .frame(width: 44, alignment: .trailing)
+                }
+
+                Text(
+                    "Books in this folder open at this width in vertical scroll mode. A book you've zoomed yourself keeps its own setting."
+                )
+                .font(Typography.caption)
+                .foregroundColor(TextColors.tertiary)
+            }
+            .padding(Spacing.lg)
+
+            Spacer(minLength: 0)
+        }
+        // A fixed minimum width wider than an iPhone portrait screen would
+        // clip the sheet edges — only constrain on macOS, where sheets size
+        // to fit their content.
+        #if os(macOS)
+            .frame(minWidth: 480)
+        #endif
+        .background(BackgroundColors.primary)
+        #if os(iOS)
+            // Half-height sheet that fits the content; drag up for full.
+            .presentationDetents([.height(620), .large])
+        #endif
     }
 }
 

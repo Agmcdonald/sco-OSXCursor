@@ -100,6 +100,7 @@ struct LibraryView: View {
     @State private var showingFolderCoverPicker = false
     /// Folder whose representative book is being chosen (drives the picker sheet).
     @State private var folderPendingBookPick: Folder?
+    @State private var folderPendingVerticalZoom: Folder?
     #if os(iOS)
         /// Folder awaiting a cover from the Photos library (iPad/iPhone).
         @State private var folderPendingCoverPhoto: Folder?
@@ -483,6 +484,12 @@ struct LibraryView: View {
                     },
                     onResetCover: { folder in
                         Task { await viewModel.clearFolderCover(folder) }
+                    },
+                    onSetReadingStyle: { folder, style in
+                        Task { await viewModel.setFolderReadingStyle(folder, style: style) }
+                    },
+                    onSetVerticalZoom: { folder in
+                        folderPendingVerticalZoom = folder
                     }
                 )
                 }
@@ -582,6 +589,23 @@ struct LibraryView: View {
                     onCancel: { folderPendingBookPick = nil }
                 )
             }
+        }
+        // Folder-level vertical-scroll zoom, previewed with a member book.
+        // Item-based sheet: content always has a real folder, and dismissal
+        // clears the item automatically (isPresented + inner `if let` left the
+        // Cancel path flaky on iPhone).
+        .sheet(item: $folderPendingVerticalZoom) { folder in
+            let sample = memberComics(in: folder.id).first(where: { $0.coverImageData != nil })
+            FolderVerticalZoomSheet(
+                folderName: folder.name,
+                sampleImageData: sample?.coverImageData,
+                sampleCacheKey: sample?.id.uuidString ?? "folder-zoom-sample",
+                initialZoom: folder.verticalZoomScale,
+                onSave: { zoom in
+                    Task { await viewModel.setFolderVerticalZoom(folder, zoom: zoom) }
+                },
+                onCancel: {}
+            )
         }
         .sheet(isPresented: $showingBulkEdit) {
             BulkEditSheet(itemCount: selectedComics.count) { values in

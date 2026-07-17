@@ -36,6 +36,13 @@ struct VerticalScrollReaderView: View {
     @State private var currentSubPage: Int = 0
     // Debounce rapid currentPage changes triggered by the HUD slider
     @State private var scrollTask: Task<Void, Never>? = nil
+    // False until the initial scroll-to-saved-page has settled. Cell onAppear
+    // must NOT write currentPage before then: during first layout the top
+    // cells (index 0…) appear and would clobber the restored reading position
+    // with 0, which then gets persisted — losing the user's place.
+    @State private var hasAnchored = false
+    // Column width at the moment a pinch began; nil = no pinch in flight
+    @State private var pinchBaseZoom: Double? = nil
 
     var body: some View {
         GeometryReader { geometry in
@@ -60,6 +67,9 @@ struct VerticalScrollReaderView: View {
                             .id("page_\(index)")
                             // Track when a page enters the viewport
                             .onAppear {
+                                // Ignore appearances during initial layout /
+                                // restore-scroll — see hasAnchored.
+                                guard hasAnchored else { return }
                                 // Update the visible page tracker bidirectionally
                                 visiblePage = index
                                 if currentPage != index {
@@ -87,10 +97,44 @@ struct VerticalScrollReaderView: View {
                 }
                 .onAppear {
                     // Jump to the starting page without animation
-                    proxy.scrollTo("page_\(currentPage)", anchor: .top)
-                    visiblePage = currentPage
+                    let target = currentPage
+                    proxy.scrollTo("page_\(target)", anchor: .top)
+                    visiblePage = target
                     currentSubPage = 0
+                    // Re-anchor once after the lazy cells have had a moment to
+                    // size themselves (placeholder heights can shift the strip),
+                    // then start trusting cell onAppear for position tracking.
+                    Task {
+                        try? await Task.sleep(nanoseconds: 300_000_000)
+                        // Only re-anchor if nothing (e.g. a late progress
+                        // restore or the HUD slider) moved the target meanwhile.
+                        if currentPage == target {
+                            proxy.scrollTo("page_\(target)", anchor: .top)
+                            visiblePage = target
+                        }
+                        hasAnchored = true
+                    }
                 }
+                // Pinch (trackpad on Mac, two fingers on iPad) adjusts the
+                // column width — same value the HUD slider drives, so the two
+                // stay in sync and the result is persisted per book upstream.
+                .simultaneousGesture(
+                    MagnificationGesture()
+                        .onChanged { value in
+                            if pinchBaseZoom == nil {
+                                pinchBaseZoom = zoomScale
+                                onBeginPinching()
+                            }
+                            let proposed = (pinchBaseZoom ?? zoomScale) * Double(value)
+                            zoomScale = min(max(proposed, 0.3), 1.0)
+                        }
+                        .onEnded { _ in
+                            // Snap to the slider's 0.05 step grid for consistency
+                            zoomScale = min(max((zoomScale / 0.05).rounded() * 0.05, 0.3), 1.0)
+                            pinchBaseZoom = nil
+                            onEndPinching()
+                        }
+                )
                 .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("VerticalScrollHalfNotification"))) { notification in
                     guard let forward = notification.userInfo?["forward"] as? Bool else { return }
                     withAnimation(.easeInOut(duration: 0.3)) {

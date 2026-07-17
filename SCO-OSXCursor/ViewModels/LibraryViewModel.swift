@@ -52,6 +52,19 @@ final class LibraryViewModel: ObservableObject {
 
     init(database: DatabaseManager) {
         self.database = database
+
+        // Let the reader resolve folder-level reading styles (book override →
+        // folder style → global default) without depending on this class.
+        ReaderSettings.shared.folderReadingStyleResolver = { [weak self] comicID in
+            self?.folderReadingStyle(for: comicID)
+        }
+
+        // Same pattern for folder-level vertical-scroll zoom defaults
+        // (book memory → folder default → global 0.5).
+        ReaderSettings.shared.folderVerticalZoomResolver = { [weak self] comicID in
+            self?.folderVerticalZoom(for: comicID)
+        }
+
         // Load comics from database on initialization
         Task {
             await loadComics()
@@ -1601,6 +1614,70 @@ extension LibraryViewModel {
     /// Folders that contain a given comic, in display order.
     func folders(containing comicID: UUID) -> [Folder] {
         folders.filter { folderMembership[$0.id]?.contains(comicID) == true }
+    }
+
+    /// Folder-level reading style for a comic. If the book belongs to several
+    /// folders that each define a style, the most recently modified folder
+    /// wins (i.e. the style the user set last).
+    func folderReadingStyle(for comicID: UUID) -> ReadingStyle? {
+        folders(containing: comicID)
+            .compactMap { folder -> (Date, ReadingStyle)? in
+                guard let raw = folder.readingStyle,
+                    let style = ReadingStyle(rawValue: raw)
+                else { return nil }
+                return (folder.dateModified, style)
+            }
+            .max(by: { $0.0 < $1.0 })?
+            .1
+    }
+
+    /// Set (or clear, with nil) a folder's reading style. Member books inherit
+    /// it when opened unless they carry their own per-book override.
+    func setFolderReadingStyle(_ folder: Folder, style: ReadingStyle?) async {
+        guard folder.readingStyle != style?.rawValue else { return }
+        var updated = folder
+        updated.readingStyle = style?.rawValue
+        updated.dateModified = Date()
+        do {
+            try await database.saveFolder(updated)
+            await loadFolders()
+            AppLog.library.info(
+                "[LibraryViewModel] ✅ Folder '\(updated.name)' reading style → \(style?.rawValue ?? "default")"
+            )
+        } catch {
+            AppLog.library.error("[LibraryViewModel] ❌ Failed to set folder reading style: \(error)")
+        }
+    }
+
+    /// Folder-level vertical-scroll zoom for a comic. If the book belongs to
+    /// several folders that each define a zoom, the most recently modified
+    /// folder wins (mirrors folderReadingStyle).
+    func folderVerticalZoom(for comicID: UUID) -> Double? {
+        folders(containing: comicID)
+            .compactMap { folder -> (Date, Double)? in
+                guard let zoom = folder.verticalZoomScale else { return nil }
+                return (folder.dateModified, zoom)
+            }
+            .max(by: { $0.0 < $1.0 })?
+            .1
+    }
+
+    /// Set (or clear, with nil) a folder's default vertical-scroll zoom.
+    /// Member books open at it unless they carry their own remembered zoom.
+    func setFolderVerticalZoom(_ folder: Folder, zoom: Double?) async {
+        guard folder.verticalZoomScale != zoom else { return }
+        var updated = folder
+        updated.verticalZoomScale = zoom
+        updated.dateModified = Date()
+        do {
+            try await database.saveFolder(updated)
+            await loadFolders()
+            AppLog.library.info(
+                "[LibraryViewModel] ✅ Folder '\(updated.name)' vertical zoom → \(zoom.map { String(format: "%.2f", $0) } ?? "default")"
+            )
+        } catch {
+            AppLog.library.error("[LibraryViewModel] ❌ Failed to set folder vertical zoom: \(error)")
+        }
     }
 
     /// Whether a comic is in a folder.

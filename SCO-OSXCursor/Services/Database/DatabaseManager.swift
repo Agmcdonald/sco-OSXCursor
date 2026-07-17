@@ -640,6 +640,48 @@ final class DatabaseManager {
             AppLog.database.info("[DatabaseManager] ✅ Migration v27_pdf_book_reader complete")
         }
 
+        // Version 28: Folder reading style. A folder can carry a ReadingStyle
+        // (Standard / Manga RTL / Vertical Scroll) that its member books
+        // inherit when opened, unless a book has its own per-book override.
+        // Resolution order: book override → folder style → global default.
+        migrator.registerMigration("v28_folder_reading_style") { db in
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v28_folder_reading_style")
+            if try db.tableExists("folders") {
+                let columns = try db.columns(in: "folders").map(\.name)
+                if !columns.contains("reading_style") {
+                    try db.alter(table: "folders") { t in
+                        t.add(column: "reading_style", .text)
+                    }
+                    AppLog.database.info("[DatabaseManager] ✅ Added folders.reading_style column")
+                }
+            }
+            AppLog.database.info("[DatabaseManager] ✅ Migration v28_folder_reading_style complete")
+        }
+
+        // Version 29: Vertical-scroll zoom memory. Per-book remembered column
+        // width (comics.vertical_zoom_scale) plus a folder-level default
+        // (folders.vertical_zoom_scale). Resolution: book → folder → 0.5.
+        migrator.registerMigration("v29_vertical_zoom") { db in
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v29_vertical_zoom")
+            let comicColumns = try db.columns(in: "comics").map(\.name)
+            if !comicColumns.contains("vertical_zoom_scale") {
+                try db.alter(table: "comics") { t in
+                    t.add(column: "vertical_zoom_scale", .double)
+                }
+                AppLog.database.info("[DatabaseManager] ✅ Added comics.vertical_zoom_scale column")
+            }
+            if try db.tableExists("folders") {
+                let folderColumns = try db.columns(in: "folders").map(\.name)
+                if !folderColumns.contains("vertical_zoom_scale") {
+                    try db.alter(table: "folders") { t in
+                        t.add(column: "vertical_zoom_scale", .double)
+                    }
+                    AppLog.database.info("[DatabaseManager] ✅ Added folders.vertical_zoom_scale column")
+                }
+            }
+            AppLog.database.info("[DatabaseManager] ✅ Migration v29_vertical_zoom complete")
+        }
+
         return migrator
     }
 

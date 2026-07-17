@@ -31,6 +31,14 @@ struct Folder: Identifiable, Equatable, Hashable {
     /// A single member book chosen to represent the folder. Used when there's
     /// no custom picture; falls back to the default collage if nil.
     var coverComicID: UUID?
+    /// Folder-level reading style (ReadingStyle.rawValue). Books opened from
+    /// this folder inherit it unless they carry their own per-book override.
+    /// Resolution order: book override → folder style → global default.
+    var readingStyle: String?
+    /// Folder-level default vertical-scroll zoom (column width 0.3…1.0).
+    /// Books in this folder open at this zoom unless they carry their own
+    /// remembered `verticalZoomScale`. Resolution: book → folder → 0.5.
+    var verticalZoomScale: Double?
     var createdAt: Date
     var dateModified: Date
 
@@ -57,6 +65,8 @@ struct Folder: Identifiable, Equatable, Hashable {
         icon: String? = nil,
         coverImageData: Data? = nil,
         coverComicID: UUID? = nil,
+        readingStyle: String? = nil,
+        verticalZoomScale: Double? = nil,
         createdAt: Date = Date(),
         dateModified: Date = Date()
     ) {
@@ -68,6 +78,8 @@ struct Folder: Identifiable, Equatable, Hashable {
         self.icon = icon
         self.coverImageData = coverImageData
         self.coverComicID = coverComicID
+        self.readingStyle = readingStyle
+        self.verticalZoomScale = verticalZoomScale
         self.createdAt = createdAt
         self.dateModified = dateModified
     }
@@ -87,6 +99,8 @@ extension Folder: FetchableRecord, PersistableRecord {
         static let icon = Column("icon")
         static let coverImageData = Column("cover_image_data")
         static let coverComicID = Column("cover_comic_id")
+        static let readingStyle = Column("reading_style")
+        static let verticalZoomScale = Column("vertical_zoom_scale")
         static let createdAt = Column("created_at")
         static let dateModified = Column("date_modified")
     }
@@ -100,6 +114,8 @@ extension Folder: FetchableRecord, PersistableRecord {
         container[Columns.icon] = icon
         container[Columns.coverImageData] = coverImageData
         container[Columns.coverComicID] = coverComicID?.uuidString
+        container[Columns.readingStyle] = readingStyle
+        container[Columns.verticalZoomScale] = verticalZoomScale
         container[Columns.createdAt] = createdAt
         container[Columns.dateModified] = dateModified
     }
@@ -130,6 +146,8 @@ extension Folder: FetchableRecord, PersistableRecord {
             icon: row["icon"],
             coverImageData: row["cover_image_data"],
             coverComicID: coverComicID,
+            readingStyle: row["reading_style"],
+            verticalZoomScale: row["vertical_zoom_scale"],
             createdAt: createdAt,
             dateModified: dateModified
         )

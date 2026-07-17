@@ -91,6 +91,8 @@ struct ComicReaderView: View {
     /// Fraction of screen width for pages in vertical-scroll mode (0.3…1.0).
     /// Tick 4 of 15 on the 0.3…1.0 / 0.05-step slider = 0.5, matching a comfortable reading size.
     @State private var verticalZoomScale: Double = 0.5
+    /// Debounces persisting vertical-zoom changes (slider drags / pinch fire rapidly).
+    @State private var verticalZoomSaveTask: Task<Void, Never>? = nil
     /// True while the user is actively scrolling the HUD thumbnail strip/rail
     /// (including momentum/deceleration). The auto-hide countdown is suspended
     /// until this returns to false, so the controls never vanish mid-scroll.
@@ -121,6 +123,10 @@ struct ComicReaderView: View {
     init(comic: Comic) {
         self.comic = comic
         _currentComic = State(initialValue: comic)
+        // Restore remembered vertical-scroll zoom (book memory → folder
+        // default → global 0.5) so reopening a book keeps its width.
+        _verticalZoomScale = State(
+            initialValue: ReaderSettings.shared.effectiveVerticalZoom(for: comic))
     }
 
     var body: some View {
@@ -268,7 +274,10 @@ struct ComicReaderView: View {
             }
         }
         .onDisappear {
-            // Final sync when reader closes
+            // Flush the debounced progress save FIRST so the tracker holds the
+            // true final position (continuous vertical scrolling can keep the
+            // 0.5s debounce from ever firing), then sync the library from it.
+            viewModel.flushProgress()
             libraryViewModel.syncProgressFromTracker()
         }
         #if os(macOS)
@@ -314,6 +323,26 @@ struct ComicReaderView: View {
         #endif
         .onReceive(NotificationCenter.default.publisher(for: .scoToggleControls)) { _ in
             handleTapToToggleControls()
+        }
+        // Per-book vertical-scroll zoom memory: persist width changes made via
+        // the HUD slider or pinch. Debounced; skipped when the value merely
+        // matches the book's effective default (e.g. programmatic restores),
+        // so a book without its own memory keeps following its folder default.
+        .onChange(of: verticalZoomScale) { _, newValue in
+            guard viewModel.isVerticalScroll else { return }
+            verticalZoomSaveTask?.cancel()
+            verticalZoomSaveTask = Task {
+                try? await Task.sleep(nanoseconds: 600_000_000)
+                guard !Task.isCancelled else { return }
+                guard currentComic.verticalZoomScale != newValue,
+                    newValue != ReaderSettings.shared.effectiveVerticalZoom(for: currentComic)
+                else { return }
+                currentComic.verticalZoomScale = newValue
+                currentComic.dateModified = Date()
+                libraryViewModel.updateComic(currentComic)
+                AppLog.reader.debug(
+                    "🔍 [ComicReaderView] Saved vertical zoom memory: \(String(format: "%.2f", newValue))")
+            }
         }
         // Per-book zoom memory: persist deliberate zoom changes
         .onReceive(NotificationCenter.default.publisher(for: .scoZoomScaleSettled)) { note in
@@ -925,6 +954,8 @@ struct ComicReaderView: View {
         currentComic = next
         nextComic = nil
         viewModel.hasNextIssue = false
+        // The next book carries its own vertical-zoom memory (or folder/global default)
+        verticalZoomScale = ReaderSettings.shared.effectiveVerticalZoom(for: next)
 
         Task {
             #if os(iOS)

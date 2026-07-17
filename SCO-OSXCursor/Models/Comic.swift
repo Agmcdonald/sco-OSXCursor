@@ -75,6 +75,7 @@ struct Comic: Identifiable, Codable {
     var epubLocatorProgress: Double?  // Optional EPUB locator/overall progression (0...1)
     var pdfReadsAsBook: Bool          // Per-book opt-in for PDFKit book reader
     var zoomScale: Double?            // Per-book remembered zoom, nil = 1× (no zoom)
+    var verticalZoomScale: Double?    // Per-book remembered vertical-scroll column width (0.3…1.0), nil = folder/global default
     var thumbnailBarPosition: String? // Per-book thumbnail bar position override (ThumbnailBarPosition.rawValue)
     var contentRating: ContentRating
 
@@ -150,6 +151,7 @@ struct Comic: Identifiable, Codable {
         epubLocatorProgress: Double? = nil,
         pdfReadsAsBook: Bool = false,
         zoomScale: Double? = nil,
+        verticalZoomScale: Double? = nil,
         thumbnailBarPosition: String? = nil,
         comicVineVolumeID: Int? = nil,
         comicVineIssueID: Int? = nil,
@@ -204,6 +206,7 @@ struct Comic: Identifiable, Codable {
         self.epubLocatorProgress = epubLocatorProgress
         self.pdfReadsAsBook = pdfReadsAsBook
         self.zoomScale = zoomScale
+        self.verticalZoomScale = verticalZoomScale
         self.thumbnailBarPosition = thumbnailBarPosition
         self.comicVineVolumeID = comicVineVolumeID
         self.comicVineIssueID = comicVineIssueID
@@ -764,6 +767,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         static let epubLocatorProgress = Column("epub_locator_progress")
         static let pdfReadsAsBook = Column("pdf_reads_as_book")
         static let zoomScale = Column("zoom_scale")
+        static let verticalZoomScale = Column("vertical_zoom_scale")
         static let thumbnailBarPosition = Column("thumbnail_bar_position")
         static let comicVineVolumeID = Column("comicvine_volume_id")
         static let comicVineIssueID = Column("comicvine_issue_id")
@@ -821,6 +825,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         container[Columns.epubLocatorProgress] = epubLocatorProgress
         container[Columns.pdfReadsAsBook] = pdfReadsAsBook
         container[Columns.zoomScale] = zoomScale
+        container[Columns.verticalZoomScale] = verticalZoomScale
         container[Columns.thumbnailBarPosition] = thumbnailBarPosition
         container[Columns.comicVineVolumeID] = comicVineVolumeID
         container[Columns.comicVineIssueID] = comicVineIssueID
@@ -909,6 +914,7 @@ extension Comic: FetchableRecord, PersistableRecord {
             epubLocatorProgress: row["epub_locator_progress"],
             pdfReadsAsBook: row["pdf_reads_as_book"] ?? false,
             zoomScale: row["zoom_scale"],
+            verticalZoomScale: row["vertical_zoom_scale"],
             thumbnailBarPosition: row["thumbnail_bar_position"],
             comicVineVolumeID: row["comicvine_volume_id"],
             comicVineIssueID: row["comicvine_issue_id"],

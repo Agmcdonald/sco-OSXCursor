@@ -108,13 +108,26 @@ class ReaderViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        // Keep a window of pages loaded around the reading position
+        // Keep a window of pages loaded around the reading position.
+        // Also mirror every page change into cleanupCurrentPage immediately:
+        // the debounced save above never fires during continuous vertical
+        // scrolling (each change resets the 0.5s timer), so deinit's fallback
+        // save must not depend on it having run.
         $currentPage
             .removeDuplicates()
             .sink { [weak self] newPage in
+                self?.cleanupCurrentPage = newPage
                 self?.schedulePrefetch(around: newPage)
             }
             .store(in: &cancellables)
+    }
+
+    /// Immediately persist the current reading position, bypassing the 0.5s
+    /// debounce. Called when the reader is dismissed so a position reached
+    /// mid-scroll (vertical mode especially) is never lost to the debounce
+    /// window.
+    func flushProgress() {
+        saveCurrentProgress()
     }
 
     /// Save current reading progress

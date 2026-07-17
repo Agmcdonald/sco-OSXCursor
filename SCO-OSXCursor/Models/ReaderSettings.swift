@@ -427,12 +427,22 @@ class ReaderSettings: ObservableObject {
 
     // MARK: - Reading Style Helpers
 
-    /// Get the effective reading style for a specific comic (per-book override, then global default)
+    /// Resolves a folder-level reading style for a comic ID. Installed by
+    /// LibraryViewModel (which owns folders + membership); nil result means
+    /// no folder the book belongs to defines a style.
+    var folderReadingStyleResolver: ((UUID) -> ReadingStyle?)?
+
+    /// Get the effective reading style for a specific comic.
+    /// Resolution order: per-book override → folder style → global default.
     func effectiveReadingStyle(for comic: Comic?) -> ReadingStyle {
         if let comic = comic,
            let styleString = comic.readingStyle,
            let style = ReadingStyle(rawValue: styleString) {
             return style
+        }
+        if let comic = comic,
+           let folderStyle = folderReadingStyleResolver?(comic.id) {
+            return folderStyle
         }
         return defaultReadingStyle
     }
@@ -441,6 +451,29 @@ class ReaderSettings: ObservableObject {
     func setPreferredReadingStyle(_ style: ReadingStyle?, for comic: inout Comic) {
         comic.readingStyle = style?.rawValue
         comic.dateModified = Date()
+    }
+
+    // MARK: - Vertical Zoom Helpers
+
+    /// Fallback vertical-scroll column width when neither the book nor a
+    /// folder defines one. Tick 4 of 15 on the 0.3…1.0 / 0.05-step slider.
+    static let defaultVerticalZoom: Double = 0.5
+
+    /// Resolves a folder-level vertical zoom for a comic ID. Installed by
+    /// LibraryViewModel (which owns folders + membership); nil result means
+    /// no folder the book belongs to defines a zoom.
+    var folderVerticalZoomResolver: ((UUID) -> Double?)?
+
+    /// Effective vertical-scroll zoom for a comic.
+    /// Resolution order: per-book memory → folder default → 0.5.
+    func effectiveVerticalZoom(for comic: Comic?) -> Double {
+        if let comic = comic, let zoom = comic.verticalZoomScale {
+            return min(max(zoom, 0.3), 1.0)
+        }
+        if let comic = comic, let folderZoom = folderVerticalZoomResolver?(comic.id) {
+            return min(max(folderZoom, 0.3), 1.0)
+        }
+        return Self.defaultVerticalZoom
     }
 
     // MARK: - Thumbnail Bar Position Helpers

@@ -89,8 +89,7 @@ struct TransferManifest: Codable {
     /// Zip entry path of the book file inside the package.
     var bookEntryPath: String
     var hasCover: Bool
-    /// When the book was added on the sending device (informational only —
-    /// the receiver sets its own `dateAdded`).
+    /// When the book was added on the sending device.
     var sentDateAdded: Date?
 
     // MARK: Metadata
@@ -120,6 +119,10 @@ struct TransferManifest: Codable {
         /// Preserved so the receiver's re-fetch gate keeps working (cached
         /// ComicVine responses must not be re-fetched without user intent).
         var metadataFetchedAt: Date?
+        /// Ebooks: ISBN and provider source are normal metadata fields and
+        /// should round-trip with Open Library / Google Books / Hardcover data.
+        var isbn: String?
+        var metadataSource: String?
     }
 
     // MARK: Reading State
@@ -140,7 +143,14 @@ struct TransferManifest: Codable {
         var readingStyle: String?
         var epubFontSize: Int?
         var epubTheme: String?
+        var epubChapterIndex: Int?
+        var epubChapterProgress: Double?
+        var epubLocatorFragment: String?
+        var epubLocatorElement: String?
+        var epubLocatorProgress: Double?
+        var pdfReadsAsBook: Bool?
         var zoomScale: Double?
+        var verticalZoomScale: Double?  // Optional → absent in older manifests, decodes as nil
         var thumbnailBarPosition: String?
     }
 
@@ -191,7 +201,9 @@ struct TransferManifest: Codable {
             storyArcs: comic.storyArcs,
             comicVineVolumeID: comic.comicVineVolumeID,
             comicVineIssueID: comic.comicVineIssueID,
-            metadataFetchedAt: comic.metadataFetchedAt
+            metadataFetchedAt: comic.metadataFetchedAt,
+            isbn: comic.isbn,
+            metadataSource: comic.metadataSource
         )
         self.readingState = ReadingState(
             status: comic.status.rawValue,
@@ -206,7 +218,14 @@ struct TransferManifest: Codable {
             readingStyle: comic.readingStyle,
             epubFontSize: comic.epubFontSize,
             epubTheme: comic.epubTheme,
+            epubChapterIndex: comic.epubChapterIndex,
+            epubChapterProgress: comic.epubChapterProgress,
+            epubLocatorFragment: comic.epubLocatorFragment,
+            epubLocatorElement: comic.epubLocatorElement,
+            epubLocatorProgress: comic.epubLocatorProgress,
+            pdfReadsAsBook: comic.pdfReadsAsBook,
             zoomScale: comic.zoomScale,
+            verticalZoomScale: comic.verticalZoomScale,
             thumbnailBarPosition: comic.thumbnailBarPosition
         )
     }
@@ -288,16 +307,25 @@ struct TransferManifest: Codable {
             readingStyle: readerPrefs.readingStyle,
             epubFontSize: readerPrefs.epubFontSize,
             epubTheme: readerPrefs.epubTheme,
+            epubChapterIndex: readerPrefs.epubChapterIndex,
+            epubChapterProgress: readerPrefs.epubChapterProgress,
+            epubLocatorFragment: readerPrefs.epubLocatorFragment,
+            epubLocatorElement: readerPrefs.epubLocatorElement,
+            epubLocatorProgress: readerPrefs.epubLocatorProgress,
+            pdfReadsAsBook: readerPrefs.pdfReadsAsBook ?? false,
             zoomScale: readerPrefs.zoomScale,
+            verticalZoomScale: readerPrefs.verticalZoomScale,
             thumbnailBarPosition: readerPrefs.thumbnailBarPosition,
             comicVineVolumeID: metadata.comicVineVolumeID,
             comicVineIssueID: metadata.comicVineIssueID,
             metadataFetchedAt: metadata.metadataFetchedAt,
             storyArcs: metadata.storyArcs ?? [],
+            isbn: metadata.isbn,
+            metadataSource: metadata.metadataSource,
             contentRating: decodedContentRating,
             fileSize: fileSize,
             fileType: decodedFileType,
-            dateAdded: Date(),
+            dateAdded: sentDateAdded ?? Date(),
             dateModified: Date()
         )
     }
@@ -331,6 +359,8 @@ struct TransferManifest: Codable {
         updated.comicVineVolumeID = metadata.comicVineVolumeID
         updated.comicVineIssueID = metadata.comicVineIssueID
         updated.metadataFetchedAt = metadata.metadataFetchedAt
+        updated.isbn = metadata.isbn
+        updated.metadataSource = metadata.metadataSource
 
         // Reading state
         updated.status = decodedStatus
@@ -347,7 +377,14 @@ struct TransferManifest: Codable {
         updated.readingStyle = readerPrefs.readingStyle
         updated.epubFontSize = readerPrefs.epubFontSize
         updated.epubTheme = readerPrefs.epubTheme
+        updated.epubChapterIndex = readerPrefs.epubChapterIndex
+        updated.epubChapterProgress = readerPrefs.epubChapterProgress
+        updated.epubLocatorFragment = readerPrefs.epubLocatorFragment
+        updated.epubLocatorElement = readerPrefs.epubLocatorElement
+        updated.epubLocatorProgress = readerPrefs.epubLocatorProgress
+        updated.pdfReadsAsBook = readerPrefs.pdfReadsAsBook ?? false
         updated.zoomScale = readerPrefs.zoomScale
+        updated.verticalZoomScale = readerPrefs.verticalZoomScale
         updated.thumbnailBarPosition = readerPrefs.thumbnailBarPosition
 
         // Cover (only if the package actually carried one)

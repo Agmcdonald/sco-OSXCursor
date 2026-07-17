@@ -279,6 +279,13 @@ struct UserManualView: View {
                         )
 
                         FeatureRow(
+                            icon: "arrow.left.and.right.square",
+                            title: "Per-Folder Reading Style & Vertical Zoom",
+                            description:
+                                "Right-click (or long-press) a folder card to set defaults every member book inherits. 'Set Reading Style' picks Standard, Manga (Right-to-Left), or Vertical Scroll for the whole collection. 'Set Vertical Zoom' chooses how wide pages open in Vertical Scroll mode, with a live preview using one of the folder's own covers so you can see the exact width before saving. A book where you've set your own style or zoom keeps its personal setting — folder defaults only fill in when a book has none. Works identically on Mac, iPad, and iPhone."
+                        )
+
+                        FeatureRow(
                             icon: "trash",
                             title: "Deleting a Folder",
                             description:
@@ -412,7 +419,14 @@ struct UserManualView: View {
                             icon: "text.book.closed",
                             title: "Reading Styles",
                             description:
-                                "Enjoy your comics exactly how they were meant to be read. Set per-book Reading Styles including Standard, Manga (Right-to-Left), and Vertical Scroll — on Mac via the Presets menu in the reader's top bar, on iPad via the '…' menu."
+                                "Enjoy your comics exactly how they were meant to be read. Set per-book Reading Styles including Standard, Manga (Right-to-Left), and Vertical Scroll — on Mac via the Presets menu in the reader's top bar, on iPad via the '…' menu. You can also set a style for a whole folder: right-click (or long-press) a folder card in the Folders view and choose Set Reading Style — every book in it inherits the style unless it has its own override."
+                        )
+
+                        FeatureRow(
+                            icon: "arrow.left.and.right.square",
+                            title: "Vertical Scroll Zoom — Remembered Per Book",
+                            description:
+                                "In Vertical Scroll mode, control how wide pages sit on screen with the width slider in the reader controls — or simply pinch: trackpad pinch on Mac, two fingers on iPad and iPhone. The slider and pinch stay in sync, and your chosen width is remembered per book, so every book reopens exactly as you left it. Your reading position in the strip is saved too. For webtoon-heavy collections, set a folder-wide default width with 'Set Vertical Zoom' on the folder's card — books without their own zoom follow the folder."
                         )
 
                         FeatureRow(
