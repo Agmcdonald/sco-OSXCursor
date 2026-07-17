@@ -682,6 +682,38 @@ final class DatabaseManager {
             AppLog.database.info("[DatabaseManager] ✅ Migration v29_vertical_zoom complete")
         }
 
+        // Version 30: Learned organization patterns. Backs OrganizationLearner,
+        // whose per-publisher filename patterns previously lived only in memory
+        // and were lost on quit.
+        migrator.registerMigration("v30_learned_patterns") { db in
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v30_learned_patterns")
+            try db.create(table: "learned_patterns") { t in
+                t.column("publisher", .text).primaryKey()
+                t.column("pattern", .text).notNull()
+                t.column("confidence", .double).notNull().defaults(to: 0.5)
+                t.column("match_count", .integer).notNull().defaults(to: 1)
+                t.column("last_updated", .datetime).notNull()
+            }
+            AppLog.database.info("[DatabaseManager] ✅ Migration v30_learned_patterns complete")
+        }
+
+        // Version 31: Manual reading order within folders. Nullable position
+        // on the membership row: null = never hand-ordered (sorts after
+        // ordered rows, by added_at). Written by "Reorder Books…".
+        migrator.registerMigration("v31_folder_position") { db in
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v31_folder_position")
+            if try db.tableExists("comic_folders") {
+                let columns = try db.columns(in: "comic_folders").map(\.name)
+                if !columns.contains("position") {
+                    try db.alter(table: "comic_folders") { t in
+                        t.add(column: "position", .integer)
+                    }
+                    AppLog.database.info("[DatabaseManager] ✅ Added comic_folders.position column")
+                }
+            }
+            AppLog.database.info("[DatabaseManager] ✅ Migration v31_folder_position complete")
+        }
+
         return migrator
     }
 
@@ -1399,6 +1431,32 @@ extension DatabaseManager {
         }
     }
 
+    // MARK: - Learned Patterns (OrganizationLearner)
+
+    /// All learned per-publisher filename patterns.
+    func fetchLearnedPatterns() async throws -> [LearnedPattern] {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+        return try await dbQueue.read { db in
+            try LearnedPattern.fetchAll(db)
+        }
+    }
+
+    /// Insert or update one learned pattern (publisher is the primary key).
+    func saveLearnedPattern(_ pattern: LearnedPattern) async throws {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+        try await dbQueue.write { db in
+            try pattern.save(db)
+        }
+    }
+
+    /// Forget every learned pattern (Maintenance → reset learning).
+    func deleteAllLearnedPatterns() async throws {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+        _ = try await dbQueue.write { db in
+            try LearnedPattern.deleteAll(db)
+        }
+    }
+
     /// Delete a folder. Membership rows cascade via the foreign key, but we
     /// also delete them explicitly in case cascade is unavailable.
     func deleteFolder(id: UUID) async throws {
@@ -1443,6 +1501,45 @@ extension DatabaseManager {
     }
 
     /// Full membership map: folderID → set of comic IDs in that folder.
+    /// Per-folder ordered comic IDs for the manual "Folder Order" sort.
+    /// Hand-ordered rows first (by position), never-ordered rows after
+    /// (by added_at) so newly added books land at the end of the list.
+    func fetchFolderOrder() async throws -> [UUID: [UUID]] {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+        return try await dbQueue.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT comic_id, folder_id FROM comic_folders
+                    ORDER BY folder_id, (position IS NULL), position, added_at
+                    """)
+            var map: [UUID: [UUID]] = [:]
+            for row in rows {
+                guard let cidStr: String = row["comic_id"],
+                    let cid = UUID(uuidString: cidStr),
+                    let fidStr: String = row["folder_id"],
+                    let fid = UUID(uuidString: fidStr)
+                else { continue }
+                map[fid, default: []].append(cid)
+            }
+            return map
+        }
+    }
+
+    /// Persist a hand-arranged order for a folder: position = array index.
+    func setFolderOrder(folderID: UUID, orderedComicIDs: [UUID]) async throws {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+        try await dbQueue.write { db in
+            for (index, comicID) in orderedComicIDs.enumerated() {
+                try db.execute(
+                    sql: "UPDATE comic_folders SET position = ? WHERE comic_id = ? AND folder_id = ?",
+                    arguments: [index, comicID.uuidString, folderID.uuidString])
+            }
+            AppLog.database.info(
+                "[DatabaseManager] ✅ Saved manual order for folder \(folderID) (\(orderedComicIDs.count) books)")
+        }
+    }
+
     func fetchFolderMembership() async throws -> [UUID: Set<UUID>] {
         guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
         return try await dbQueue.read { db in

@@ -49,6 +49,9 @@ enum LibrarySortOption: String, CaseIterable {
     case year = "Publication Year"
     case rating = "Rating"
     case fileSize = "File Size"
+    /// Hand-arranged order within a folder (set via "Reorder Books…" on a
+    /// folder card). Outside a folder scope it falls back to Date Added.
+    case folderOrder = "Folder Order"
 
     var icon: String {
         switch self {
@@ -59,6 +62,7 @@ enum LibrarySortOption: String, CaseIterable {
         case .year: return "calendar"
         case .rating: return "star"
         case .fileSize: return "externaldrive"
+        case .folderOrder: return "list.number"
         }
     }
 }
@@ -140,7 +144,8 @@ enum LibraryQuery {
         searchText: String,
         filters: LibraryFilters,
         sort: LibrarySortOption,
-        restrictTo: Set<UUID>? = nil
+        restrictTo: Set<UUID>? = nil,
+        folderOrderIndex: [UUID: Int]? = nil
     ) -> [Comic] {
         var result = comics
 
@@ -220,6 +225,20 @@ enum LibraryQuery {
             result.sort { ($0.rating ?? 0) > ($1.rating ?? 0) }
         case .fileSize:
             result.sort { $0.fileSize > $1.fileSize }
+        case .folderOrder:
+            if let index = folderOrderIndex {
+                // Hand-arranged folder order; books never ordered (added after
+                // the last reorder) sink to the end, newest last.
+                result.sort {
+                    let a = index[$0.id] ?? Int.max
+                    let b = index[$1.id] ?? Int.max
+                    if a != b { return a < b }
+                    return $0.dateAdded < $1.dateAdded
+                }
+            } else {
+                // No folder scope → nothing to order by; fall back to Date Added.
+                result.sort { $0.dateAdded > $1.dateAdded }
+            }
         }
 
         // Rank search results: comics whose *visible* identity (title, series,
@@ -265,7 +284,7 @@ enum LibraryQuery {
                 if a != b { return a > b }
                 return $0.name.localizedStandardCompare($1.name) == .orderedAscending
             }
-        case .title, .publisher, .year, .rating:
+        case .title, .publisher, .year, .rating, .folderOrder:
             return folders.sorted {
                 $0.name.localizedStandardCompare($1.name) == .orderedAscending
             }

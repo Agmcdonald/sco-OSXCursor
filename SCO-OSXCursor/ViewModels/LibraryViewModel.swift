@@ -20,6 +20,8 @@ final class LibraryViewModel: ObservableObject {
     @Published var folders: [Folder] = []
     /// folderID → set of comic IDs in that folder.
     @Published var folderMembership: [UUID: Set<UUID>] = [:]
+    /// Per-folder ordered comic IDs for the manual "Folder Order" sort.
+    @Published var folderOrder: [UUID: [UUID]] = [:]
 
     // ✅ Track which comics are currently being edited
     @Published var editingComicIDs: Set<UUID> = []
@@ -1481,13 +1483,16 @@ final class LibraryViewModel: ObservableObject {
 
 extension LibraryViewModel {
 
-    /// Reload folders and the full membership map from the database.
+    /// Reload folders, the full membership map, and per-folder manual order
+    /// from the database.
     func loadFolders() async {
         do {
             let fetchedFolders = try await database.fetchFolders()
             let membership = try await database.fetchFolderMembership()
+            let order = try await database.fetchFolderOrder()
             self.folders = fetchedFolders
             self.folderMembership = membership
+            self.folderOrder = order
             AppLog.library.info(
                 "[LibraryViewModel] ✅ Loaded \(fetchedFolders.count) folders")
         } catch {
@@ -1495,13 +1500,24 @@ extension LibraryViewModel {
         }
     }
 
+    /// Persist a hand-arranged reading order for a folder.
+    func setFolderOrder(_ folderID: UUID, orderedComicIDs: [UUID]) async {
+        do {
+            try await database.setFolderOrder(folderID: folderID, orderedComicIDs: orderedComicIDs)
+            await loadFolders()
+        } catch {
+            AppLog.library.error("[LibraryViewModel] ❌ Failed to save folder order: \(error)")
+        }
+    }
+
     /// Create a folder; returns it so callers can immediately add books.
+    /// Pass `parentID` to create it nested inside another folder.
     @discardableResult
-    func createFolder(named name: String) async -> Folder? {
+    func createFolder(named name: String, parentID: UUID? = nil) async -> Folder? {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         let nextOrder = (folders.map(\.sortOrder).max() ?? 0) + 1
-        let folder = Folder(name: trimmed, sortOrder: nextOrder)
+        let folder = Folder(name: trimmed, parentID: parentID, sortOrder: nextOrder)
         do {
             try await database.saveFolder(folder)
             await loadFolders()
@@ -1510,6 +1526,74 @@ extension LibraryViewModel {
             AppLog.library.error("[LibraryViewModel] ❌ Failed to create folder: \(error)")
             return nil
         }
+    }
+
+    // MARK: Nesting
+
+    /// Direct children of a folder (nil = top-level folders).
+    func childFolders(of parentID: UUID?) -> [Folder] {
+        folders.filter { $0.parentID == parentID }
+    }
+
+    /// Number of direct subfolders.
+    func subfolderCount(_ folderID: UUID) -> Int {
+        folders.reduce(0) { $0 + ($1.parentID == folderID ? 1 : 0) }
+    }
+
+    /// Every folder nested anywhere below `folderID` (children, grandchildren…).
+    func descendantIDs(of folderID: UUID) -> Set<UUID> {
+        var result = Set<UUID>()
+        var queue = [folderID]
+        while let current = queue.popLast() {
+            for child in folders where child.parentID == current {
+                if result.insert(child.id).inserted {
+                    queue.append(child.id)
+                }
+            }
+        }
+        return result
+    }
+
+    /// Move a folder under a new parent (nil = top level). Refuses moves that
+    /// would create a cycle (into itself or any of its own descendants).
+    func moveFolder(_ folder: Folder, toParent parentID: UUID?) async {
+        guard folder.parentID != parentID else { return }
+        if let parentID {
+            guard parentID != folder.id,
+                !descendantIDs(of: folder.id).contains(parentID)
+            else {
+                AppLog.library.error(
+                    "[LibraryViewModel] ⚠️ Refused folder move that would create a cycle")
+                return
+            }
+        }
+        var updated = folder
+        updated.parentID = parentID
+        updated.dateModified = Date()
+        do {
+            try await database.saveFolder(updated)
+            await loadFolders()
+            AppLog.library.info(
+                "[LibraryViewModel] ✅ Moved folder '\(updated.name)' → \(parentID?.uuidString ?? "top level")")
+        } catch {
+            AppLog.library.error("[LibraryViewModel] ❌ Failed to move folder: \(error)")
+        }
+    }
+
+    /// Full display path for a nested folder, e.g. "Marvel › Events › 90s".
+    func folderPathName(_ folder: Folder) -> String {
+        var names = [folder.name]
+        var current = folder
+        var hops = 0
+        while let pid = current.parentID,
+            let parent = folders.first(where: { $0.id == pid }),
+            hops < 12  // cycle guard, should never trigger
+        {
+            names.append(parent.name)
+            current = parent
+            hops += 1
+        }
+        return names.reversed().joined(separator: " › ")
     }
 
     func renameFolder(_ folder: Folder, to newName: String) async {

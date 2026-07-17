@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import GRDB
 import os
 
 // MARK: - Organization Learner
@@ -223,17 +224,39 @@ class OrganizationLearner {
     
     // MARK: - Pattern Management
     
-    /// Load learned patterns from database
+    /// Load learned patterns from database (learned_patterns table, v30).
+    /// Fire-and-forget from init; the in-memory dictionary is authoritative
+    /// once loaded, and imports arriving before the load merely start from an
+    /// empty cache (the same behavior as before persistence existed).
     private func loadLearnedPatterns() {
-        // TODO: Load from database when table is created
-        // For now, patterns are stored in memory
+        Task {
+            do {
+                let stored = try await database.fetchLearnedPatterns()
+                guard !stored.isEmpty else { return }
+                for pattern in stored {
+                    // Don't clobber anything learned since launch
+                    if learnedPatterns[pattern.publisher] == nil {
+                        learnedPatterns[pattern.publisher] = pattern
+                    }
+                }
+                AppLog.learning.info(
+                    "[OrganizationLearner] 📥 Loaded \(stored.count) learned pattern(s) from database")
+            } catch {
+                AppLog.learning.error(
+                    "[OrganizationLearner] ❌ Failed to load learned patterns: \(error.localizedDescription)")
+            }
+        }
     }
-    
+
     /// Save learned pattern to database
     private func saveLearnedPattern(_ pattern: LearnedPattern) async {
-        // TODO: Save to database when table is created
-        // For now, patterns are stored in memory
-        AppLog.learning.info("[OrganizationLearner] 💾 Saved pattern for '\(pattern.publisher)': \(pattern.pattern) (confidence: \(Int(pattern.confidence * 100))%)")
+        do {
+            try await database.saveLearnedPattern(pattern)
+            AppLog.learning.info("[OrganizationLearner] 💾 Saved pattern for '\(pattern.publisher)': \(pattern.pattern) (confidence: \(Int(pattern.confidence * 100))%)")
+        } catch {
+            AppLog.learning.error(
+                "[OrganizationLearner] ❌ Failed to save pattern for '\(pattern.publisher)': \(error.localizedDescription)")
+        }
     }
     
     /// Get all learned patterns
@@ -244,7 +267,12 @@ class OrganizationLearner {
     /// Clear all learned patterns
     func clearAllPatterns() async {
         learnedPatterns.removeAll()
-        // TODO: Clear from database
+        do {
+            try await database.deleteAllLearnedPatterns()
+        } catch {
+            AppLog.learning.error(
+                "[OrganizationLearner] ❌ Failed to clear patterns from database: \(error.localizedDescription)")
+        }
         AppLog.learning.debug("[OrganizationLearner] 🗑️ Cleared all learned patterns")
     }
     
@@ -266,6 +294,46 @@ struct LearnedPattern {
     var confidence: Double // 0.0 - 1.0
     var matchCount: Int
     var lastUpdated: Date
+}
+
+// MARK: - GRDB Persistence (learned_patterns table, migration v30)
+
+extension LearnedPattern: FetchableRecord, PersistableRecord {
+    static let databaseTableName = "learned_patterns"
+
+    enum Columns {
+        static let publisher = Column("publisher")
+        static let pattern = Column("pattern")
+        static let confidence = Column("confidence")
+        static let matchCount = Column("match_count")
+        static let lastUpdated = Column("last_updated")
+    }
+
+    func encode(to container: inout PersistenceContainer) {
+        container[Columns.publisher] = publisher
+        container[Columns.pattern] = pattern
+        container[Columns.confidence] = confidence
+        container[Columns.matchCount] = matchCount
+        container[Columns.lastUpdated] = lastUpdated
+    }
+
+    init(row: Row) throws {
+        guard let publisher: String = row["publisher"],
+            let pattern: String = row["pattern"],
+            let confidence: Double = row["confidence"],
+            let matchCount: Int = row["match_count"],
+            let lastUpdated: Date = row["last_updated"]
+        else {
+            throw DatabaseError.fetchFailed
+        }
+        self.init(
+            publisher: publisher,
+            pattern: pattern,
+            confidence: confidence,
+            matchCount: matchCount,
+            lastUpdated: lastUpdated
+        )
+    }
 }
 
 

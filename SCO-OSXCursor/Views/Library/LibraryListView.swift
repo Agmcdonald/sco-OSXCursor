@@ -15,32 +15,66 @@ struct LibraryListView: View {
     let focusedComicID: Comic.ID?
     let actions: ComicCellActions
     let emptyState: LibraryEmptyStateView
+    /// True while a search is active: rows show a folder chip so results can
+    /// jump to (and highlight in) the collection a book lives in.
+    var showsFolderBadges: Bool = false
 
     var body: some View {
-        ScrollView {
-            if comics.isEmpty {
-                emptyState
-            } else {
-                VStack(spacing: Spacing.md) {
-                    ForEach(comics) { comic in
-                        HStack(spacing: 0) {
-                            // Selection checkbox
-                            if isSelectionMode {
-                                SelectionCheckbox(isSelected: selectedComics.contains(comic.id))
-                                    .padding(.trailing, Spacing.md)
-                            }
+        ScrollViewReader { proxy in
+            ScrollView {
+                if comics.isEmpty {
+                    emptyState
+                } else {
+                    VStack(spacing: Spacing.md) {
+                        ForEach(comics) { comic in
+                            HStack(spacing: 0) {
+                                // Selection checkbox
+                                if isSelectionMode {
+                                    SelectionCheckbox(isSelected: selectedComics.contains(comic.id))
+                                        .padding(.trailing, Spacing.md)
+                                }
 
-                            ComicRowView(comic: comic)
-                                .comicCellInteraction(
-                                    comic: comic,
-                                    isSelectionMode: isSelectionMode,
-                                    isFocused: focusedComicID == comic.id,
-                                    actions: actions
-                                )
+                                ComicRowView(comic: comic)
+                                    .comicCellInteraction(
+                                        comic: comic,
+                                        isSelectionMode: isSelectionMode,
+                                        isFocused: focusedComicID == comic.id,
+                                        actions: actions
+                                    )
+                                    .overlay(alignment: .topTrailing) {
+                                        if showsFolderBadges,
+                                            let first = actions.foldersContaining(comic).first
+                                        {
+                                            FolderChipBadge(
+                                                folder: first,
+                                                extraCount: actions.foldersContaining(comic).count
+                                                    - 1
+                                            ) {
+                                                actions.revealInFolder(first.id, comic)
+                                            }
+                                            .padding(Spacing.sm)
+                                        }
+                                    }
+                            }
+                            .id(comic.id)
                         }
                     }
+                    .padding(Spacing.xl)
                 }
-                .padding(Spacing.xl)
+            }
+            .onChange(of: focusedComicID) { _, newID in
+                guard let newID, comics.contains(where: { $0.id == newID }) else { return }
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    proxy.scrollTo(newID, anchor: .center)
+                }
+            }
+            .onChange(of: comics) { _, newComics in
+                guard let focusedComicID,
+                    newComics.contains(where: { $0.id == focusedComicID })
+                else { return }
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    proxy.scrollTo(focusedComicID, anchor: .center)
+                }
             }
         }
     }

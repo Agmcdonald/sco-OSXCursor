@@ -43,6 +43,9 @@ struct ComicCellActions {
     // MARK: Folders
     /// All user folders (for the "Add to Folder" submenu).
     var folders: [Folder] = []
+    /// Display name for a folder in menus — full path for nested folders
+    /// ("Marvel › Events"), plain name for top-level ones.
+    var folderDisplayName: (Folder) -> String = { $0.name }
     /// Folders a given comic currently belongs to (drives checkmarks + reveal).
     var foldersContaining: (Comic) -> [Folder] = { _ in [] }
     /// Add a single comic to a folder.
@@ -55,8 +58,41 @@ struct ComicCellActions {
     var requestNewFolderForComic: (Comic) -> Void = { _ in }
     /// Prompt for a new folder name, then add the current selection to it.
     var requestNewFolderForSelection: () -> Void = {}
-    /// Navigate the library scope to a folder containing this comic.
-    var revealInFolder: (UUID) -> Void = { _ in }
+    /// Navigate the library scope to a folder containing this comic, then
+    /// focus + scroll to the book so it's highlighted where it lives.
+    var revealInFolder: (UUID, Comic) -> Void = { _, _ in }
+}
+
+// MARK: - Folder Chip Badge
+
+/// Small "lives in: <folder>" capsule shown on cells while searching. Tapping
+/// it jumps the library scope to that folder and highlights the book — search
+/// finds it, the chip takes you to where it lives.
+struct FolderChipBadge: View {
+    let folder: Folder
+    /// Extra folders beyond the first (shown as "+n").
+    var extraCount: Int = 0
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 3) {
+                Image(systemName: folder.icon ?? "folder")
+                    .font(.system(size: 9, weight: .semibold))
+                Text(extraCount > 0 ? "\(folder.name) +\(extraCount)" : folder.name)
+                    .font(.system(size: 10, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Color.black.opacity(0.72))
+            .clipShape(Capsule())
+            .overlay(Capsule().stroke(Color.white.opacity(0.25), lineWidth: 0.5))
+        }
+        .buttonStyle(.plain)
+        .help("Reveal in \(folder.name)")
+    }
 }
 
 // MARK: - Cell Interaction Modifier
@@ -257,7 +293,9 @@ struct ComicCellInteraction: ViewModifier {
                             actions.addToFolder(comic, folder.id)
                         }
                     } label: {
-                        Label(folder.name, systemImage: isIn ? "checkmark" : (folder.icon ?? "folder"))
+                        Label(
+                            actions.folderDisplayName(folder),
+                            systemImage: isIn ? "checkmark" : (folder.icon ?? "folder"))
                     }
                 }
                 if !actions.folders.isEmpty { Divider() }
@@ -275,9 +313,11 @@ struct ComicCellInteraction: ViewModifier {
                 Menu {
                     ForEach(containing) { folder in
                         Button {
-                            actions.revealInFolder(folder.id)
+                            actions.revealInFolder(folder.id, comic)
                         } label: {
-                            Label(folder.name, systemImage: folder.icon ?? "folder")
+                            Label(
+                                actions.folderDisplayName(folder),
+                                systemImage: folder.icon ?? "folder")
                         }
                     }
                 } label: {

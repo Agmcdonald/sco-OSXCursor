@@ -101,6 +101,13 @@ struct LibraryView: View {
     /// Folder whose representative book is being chosen (drives the picker sheet).
     @State private var folderPendingBookPick: Folder?
     @State private var folderPendingVerticalZoom: Folder?
+    /// Folder whose books are being hand-reordered (drives the reorder sheet).
+    @State private var folderPendingReorder: Folder?
+    /// Nesting level shown in the Folders view (nil = top level).
+    @State private var folderGridParent: Folder?
+    /// Parent for the folder being created via the new-folder alert
+    /// (nil = top level; captured when the alert is opened).
+    @State private var newFolderParentID: UUID?
     #if os(iOS)
         /// Folder awaiting a cover from the Photos library (iPad/iPhone).
         @State private var folderPendingCoverPhoto: Folder?
@@ -154,8 +161,19 @@ struct LibraryView: View {
             searchText: searchText,
             filters: filters,
             sort: sortOption,
-            restrictTo: folderRestriction
+            restrictTo: folderRestriction,
+            folderOrderIndex: currentFolderOrderIndex
         )
+    }
+
+    /// Position lookup for the "Folder Order" sort — only meaningful while
+    /// scoped to a folder.
+    private var currentFolderOrderIndex: [UUID: Int]? {
+        guard case let .folder(id) = scope,
+            let ordered = viewModel.folderOrder[id]
+        else { return nil }
+        return Dictionary(
+            uniqueKeysWithValues: ordered.enumerated().map { ($0.element, $0.offset) })
     }
 
     var publisherGroups: [PublisherGroup] {
@@ -174,10 +192,11 @@ struct LibraryView: View {
         Array(Set(viewModel.comics.compactMap { $0.year })).sorted(by: >)
     }
 
-    /// Folders sorted per the shared sort menu (folder view).
+    /// Folders sorted per the shared sort menu (folder view) — only the
+    /// current nesting level (top level, or children of folderGridParent).
     var sortedFolders: [Folder] {
         LibraryQuery.sortFolders(
-            viewModel.folders,
+            viewModel.childFolders(of: folderGridParent?.id),
             by: sortOption,
             count: { viewModel.folderCount($0) }
         )
@@ -207,6 +226,21 @@ struct LibraryView: View {
             viewModel.comics
             .filter { ids.contains($0.id) }
             .sorted { $0.dateAdded > $1.dateAdded }
+    }
+
+    /// Member books in the folder's manual order (hand-ordered first, then
+    /// never-ordered by date added) — seed list for the reorder sheet.
+    private func orderedMemberComics(in folderID: UUID) -> [Comic] {
+        let members = memberComics(in: folderID)
+        guard let ordered = viewModel.folderOrder[folderID] else { return members }
+        let index = Dictionary(
+            uniqueKeysWithValues: ordered.enumerated().map { ($0.element, $0.offset) })
+        return members.sorted {
+            let a = index[$0.id] ?? Int.max
+            let b = index[$1.id] ?? Int.max
+            if a != b { return a < b }
+            return $0.dateAdded < $1.dateAdded
+        }
     }
 
     /// Up to four unfiled comics for the "Unfiled" card's collage.
@@ -269,6 +303,7 @@ struct LibraryView: View {
                 viewModel.updateComic(updated)
             },
             folders: viewModel.folders,
+            folderDisplayName: { viewModel.folderPathName($0) },
             foldersContaining: { viewModel.folders(containing: $0.id) },
             addToFolder: { comic, folderID in
                 Task { await viewModel.addComics([comic.id], toFolder: folderID) }
@@ -286,17 +321,22 @@ struct LibraryView: View {
             },
             requestNewFolderForComic: { comic in
                 newFolderContext = .comic(comic)
+                newFolderParentID = nil
                 newFolderName = ""
                 showingNewFolderAlert = true
             },
             requestNewFolderForSelection: {
                 newFolderContext = .selection
+                newFolderParentID = nil
                 newFolderName = ""
                 showingNewFolderAlert = true
             },
-            revealInFolder: { folderID in
+            revealInFolder: { folderID, comic in
                 searchText = ""
                 scope = .folder(folderID)
+                // Highlight the book where it lives — the grid/list scrolls
+                // to the focused comic once the new scope's list contains it.
+                focusedComic = comic
             }
         )
     }
@@ -362,6 +402,7 @@ struct LibraryView: View {
                 },
                 onNewFolderForSelection: {
                     newFolderContext = .selection
+                    newFolderParentID = nil
                     newFolderName = ""
                     showingNewFolderAlert = true
                 },
@@ -385,9 +426,11 @@ struct LibraryView: View {
                     unfiledCount: viewModel.unfiledCount,
                     onNewFolder: {
                         newFolderContext = .empty
+                        newFolderParentID = nil
                         newFolderName = ""
                         showingNewFolderAlert = true
-                    }
+                    },
+                    folderPathName: { viewModel.folderPathName($0) }
                 )
 
                 Divider()
@@ -407,7 +450,8 @@ struct LibraryView: View {
                     focusedComicID: focusedComic?.id,
                     coverSize: coverSize,
                     actions: cellActions,
-                    emptyState: emptyState
+                    emptyState: emptyState,
+                    showsFolderBadges: !searchText.isEmpty
                 )
                 .modifier(FileDropTarget(isTargeted: $isDropTargeted, onDrop: handleDrop))
             case .list:
@@ -417,7 +461,8 @@ struct LibraryView: View {
                     selectedComics: selectedComics,
                     focusedComicID: focusedComic?.id,
                     actions: cellActions,
-                    emptyState: emptyState
+                    emptyState: emptyState,
+                    showsFolderBadges: !searchText.isEmpty
                 )
                 .modifier(FileDropTarget(isTargeted: $isDropTargeted, onDrop: handleDrop))
             case .publisher:
@@ -453,9 +498,15 @@ struct LibraryView: View {
                         viewMode = .grid
                     },
                     onOpen: { folder in
-                        searchText = ""
-                        scope = .folder(folder.id)
-                        viewMode = .grid
+                        // Folders with children drill deeper in the Folders
+                        // view; leaf folders open their books directly.
+                        if viewModel.subfolderCount(folder.id) > 0 {
+                            folderGridParent = folder
+                        } else {
+                            searchText = ""
+                            scope = .folder(folder.id)
+                            viewMode = .grid
+                        }
                     },
                     onRename: { folder in
                         folderPendingRename = folder
@@ -466,6 +517,7 @@ struct LibraryView: View {
                     },
                     onNewFolder: {
                         newFolderContext = .empty
+                        newFolderParentID = folderGridParent?.id
                         newFolderName = ""
                         showingNewFolderAlert = true
                     },
@@ -490,6 +542,52 @@ struct LibraryView: View {
                     },
                     onSetVerticalZoom: { folder in
                         folderPendingVerticalZoom = folder
+                    },
+                    parentFolder: folderGridParent,
+                    subfolderCount: { viewModel.subfolderCount($0) },
+                    onOpenBooks: { folder in
+                        searchText = ""
+                        scope = .folder(folder.id)
+                        viewMode = .grid
+                    },
+                    onNewSubfolder: { folder in
+                        newFolderContext = .empty
+                        newFolderParentID = folder.id
+                        newFolderName = ""
+                        showingNewFolderAlert = true
+                    },
+                    moveTargets: { folder in
+                        // Anywhere except itself, its descendants, and its
+                        // current parent (already there).
+                        let blocked = viewModel.descendantIDs(of: folder.id)
+                        return viewModel.folders
+                            .filter {
+                                $0.id != folder.id && !blocked.contains($0.id)
+                                    && $0.id != folder.parentID
+                            }
+                            .sorted {
+                                viewModel.folderPathName($0)
+                                    .localizedStandardCompare(viewModel.folderPathName($1))
+                                    == .orderedAscending
+                            }
+                    },
+                    onMove: { folder, newParentID in
+                        Task { await viewModel.moveFolder(folder, toParent: newParentID) }
+                    },
+                    onBack: {
+                        // Go up one level: to the parent's parent, or top.
+                        if let parent = folderGridParent,
+                            let grandParentID = parent.parentID
+                        {
+                            folderGridParent = viewModel.folders.first(where: {
+                                $0.id == grandParentID
+                            })
+                        } else {
+                            folderGridParent = nil
+                        }
+                    },
+                    onReorderBooks: { folder in
+                        folderPendingReorder = folder
                     }
                 )
                 }
@@ -589,6 +687,20 @@ struct LibraryView: View {
                     onCancel: { folderPendingBookPick = nil }
                 )
             }
+        }
+        // Hand-arrange the reading order of a folder's books
+        .sheet(item: $folderPendingReorder) { folder in
+            FolderReorderSheet(
+                folderName: folder.name,
+                books: orderedMemberComics(in: folder.id),
+                onSave: { orderedIDs in
+                    Task { await viewModel.setFolderOrder(folder.id, orderedComicIDs: orderedIDs) }
+                    // Make the result visible: viewing this folder with the
+                    // Folder Order sort shows the arrangement just saved.
+                    sortOption = .folderOrder
+                },
+                onCancel: {}
+            )
         }
         // Folder-level vertical-scroll zoom, previewed with a member book.
         // Item-based sheet: content always has a real folder, and dismissal
@@ -797,6 +909,13 @@ struct LibraryView: View {
                 focusedComic = updated
             }
         }
+        .onChange(of: viewModel.folders) { _, newFolders in
+            // Keep the Folders-view nesting level valid: refresh the parent
+            // copy after edits, and pop to top if it was deleted.
+            if let parent = folderGridParent {
+                folderGridParent = newFolders.first(where: { $0.id == parent.id })
+            }
+        }
         .onChange(of: isInspectorPresented) { _, newValue in
             if !newValue {
                 // Inspector closed — restore sidebar but keep the comic focused
@@ -989,8 +1108,11 @@ struct LibraryView: View {
     private func createFolderFromAlert() {
         let context = newFolderContext
         let name = newFolderName
+        let parentID = newFolderParentID
+        newFolderParentID = nil
         Task {
-            guard let folder = await viewModel.createFolder(named: name) else { return }
+            guard let folder = await viewModel.createFolder(named: name, parentID: parentID)
+            else { return }
             switch context {
             case .empty:
                 break

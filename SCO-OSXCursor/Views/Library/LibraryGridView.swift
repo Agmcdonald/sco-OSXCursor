@@ -23,40 +23,78 @@ struct LibraryGridView: View {
     let actions: ComicCellActions
     /// Empty state supplied by the coordinator (needs library-wide context).
     let emptyState: LibraryEmptyStateView
+    /// True while a search is active: cells show a folder chip so results can
+    /// jump to (and highlight in) the collection a book lives in.
+    var showsFolderBadges: Bool = false
 
     var body: some View {
-        ScrollView {
-            if comics.isEmpty {
-                emptyState
-            } else {
-                LazyVGrid(
-                    columns: [
-                        GridItem(
-                            .adaptive(minimum: coverSize, maximum: coverSize * 1.35),
-                            spacing: Spacing.xl
-                        )
-                    ],
-                    spacing: Spacing.xxl
-                ) {
-                    ForEach(comics) { comic in
-                        ZStack(alignment: .topLeading) {
-                            ComicCardView(comic: comic)
-                                .comicCellInteraction(
-                                    comic: comic,
-                                    isSelectionMode: isSelectionMode,
-                                    isFocused: focusedComicID == comic.id,
-                                    actions: actions
-                                )
+        ScrollViewReader { proxy in
+            ScrollView {
+                if comics.isEmpty {
+                    emptyState
+                } else {
+                    LazyVGrid(
+                        columns: [
+                            GridItem(
+                                .adaptive(minimum: coverSize, maximum: coverSize * 1.35),
+                                spacing: Spacing.xl
+                            )
+                        ],
+                        spacing: Spacing.xxl
+                    ) {
+                        ForEach(comics) { comic in
+                            ZStack(alignment: .topLeading) {
+                                ComicCardView(comic: comic)
+                                    .comicCellInteraction(
+                                        comic: comic,
+                                        isSelectionMode: isSelectionMode,
+                                        isFocused: focusedComicID == comic.id,
+                                        actions: actions
+                                    )
 
-                            // Selection checkbox
-                            if isSelectionMode {
-                                SelectionCheckbox(isSelected: selectedComics.contains(comic.id))
-                                    .padding(Spacing.sm)
+                                // Selection checkbox
+                                if isSelectionMode {
+                                    SelectionCheckbox(isSelected: selectedComics.contains(comic.id))
+                                        .padding(Spacing.sm)
+                                }
                             }
+                            .overlay(alignment: .topTrailing) {
+                                // Folder chip during search — tap to reveal
+                                if showsFolderBadges,
+                                    let first = actions.foldersContaining(comic).first
+                                {
+                                    FolderChipBadge(
+                                        folder: first,
+                                        extraCount: actions.foldersContaining(comic).count - 1
+                                    ) {
+                                        actions.revealInFolder(first.id, comic)
+                                    }
+                                    .padding(Spacing.sm)
+                                }
+                            }
+                            .id(comic.id)
                         }
                     }
+                    .padding(Spacing.xl)
                 }
-                .padding(Spacing.xl)
+            }
+            // Bring the focused book into view — e.g. after "Reveal in Folder"
+            // or a search chip jump switches the scope and focuses the result.
+            .onChange(of: focusedComicID) { _, newID in
+                guard let newID, comics.contains(where: { $0.id == newID }) else { return }
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    proxy.scrollTo(newID, anchor: .center)
+                }
+            }
+            .onChange(of: comics) { _, newComics in
+                // The scope often changes in the same update that sets focus;
+                // re-scroll once the new comic list actually contains it.
+                guard let focusedComicID,
+                    newComics.contains(where: { $0.id == focusedComicID })
+                else { return }
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    proxy.scrollTo(focusedComicID, anchor: .center)
+                }
             }
         }
     }

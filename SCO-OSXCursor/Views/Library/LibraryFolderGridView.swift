@@ -48,8 +48,57 @@ struct LibraryFolderGridView: View {
     /// member books in vertical scroll mode).
     let onSetVerticalZoom: (Folder) -> Void
 
+    // MARK: Nesting
+    /// The folder whose children are being shown; nil = top level.
+    var parentFolder: Folder? = nil
+    /// Number of direct subfolders of a folder (drives drill-in affordances).
+    var subfolderCount: (UUID) -> Int = { _ in 0 }
+    /// Open a folder's *books* (scope the grid) regardless of children.
+    var onOpenBooks: (Folder) -> Void = { _ in }
+    /// Create a folder inside this one.
+    var onNewSubfolder: (Folder) -> Void = { _ in }
+    /// Valid "Move To" destinations for a folder (excludes itself and its
+    /// descendants; supplied by the coordinator).
+    var moveTargets: (Folder) -> [Folder] = { _ in [] }
+    /// Move a folder under a new parent (nil = top level).
+    var onMove: (Folder, UUID?) -> Void = { _, _ in }
+    /// Go up one level in the folders view.
+    var onBack: () -> Void = {}
+    /// Open the hand-reorder sheet for a folder's books.
+    var onReorderBooks: (Folder) -> Void = { _ in }
+
     var body: some View {
         ScrollView {
+            // Breadcrumb bar when browsing inside a folder
+            if let parent = parentFolder {
+                HStack(spacing: Spacing.md) {
+                    Button(action: onBack) {
+                        Label("Back", systemImage: "chevron.left")
+                            .font(Typography.bodySmall)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(AccentColors.primary)
+
+                    Text(parent.name)
+                        .font(Typography.h3)
+                        .foregroundColor(TextColors.primary)
+                        .lineLimit(1)
+
+                    Spacer()
+
+                    Button {
+                        onOpenBooks(parent)
+                    } label: {
+                        Label("All \(count(parent.id)) books", systemImage: "books.vertical")
+                            .font(Typography.bodySmall)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(AccentColors.primary)
+                }
+                .padding(.horizontal, Spacing.xl)
+                .padding(.top, Spacing.lg)
+            }
+
             LazyVGrid(
                 columns: [
                     GridItem(
@@ -59,23 +108,26 @@ struct LibraryFolderGridView: View {
                 ],
                 spacing: Spacing.xxl
             ) {
-                // Whole library
-                SpecialFolderCardView(
-                    title: "All Books",
-                    systemImage: "books.vertical.fill",
-                    bookCount: totalCount,
-                    previewComics: []
-                )
-                .onTapGesture { onOpenAll() }
+                // Whole-library scopes only make sense at the top level
+                if parentFolder == nil {
+                    // Whole library
+                    SpecialFolderCardView(
+                        title: "All Books",
+                        systemImage: "books.vertical.fill",
+                        bookCount: totalCount,
+                        previewComics: []
+                    )
+                    .onTapGesture { onOpenAll() }
 
-                // Books in no folder
-                SpecialFolderCardView(
-                    title: "Unfiled",
-                    systemImage: "tray.fill",
-                    bookCount: unfiledCount,
-                    previewComics: unfiledPreview
-                )
-                .onTapGesture { onOpenUnfiled() }
+                    // Books in no folder
+                    SpecialFolderCardView(
+                        title: "Unfiled",
+                        systemImage: "tray.fill",
+                        bookCount: unfiledCount,
+                        previewComics: unfiledPreview
+                    )
+                    .onTapGesture { onOpenUnfiled() }
+                }
 
                 // Folders
                 ForEach(folders) { folder in
@@ -85,10 +137,51 @@ struct LibraryFolderGridView: View {
                         previewComics: previewComics(folder.id),
                         coverComic: coverComic(folder)
                     )
+                    .overlay(alignment: .topLeading) {
+                        // Subfolder indicator: this card drills in on tap
+                        let children = subfolderCount(folder.id)
+                        if children > 0 {
+                            HStack(spacing: 3) {
+                                Image(systemName: "folder.fill")
+                                    .font(.system(size: 9, weight: .semibold))
+                                Text("\(children)")
+                                    .font(.system(size: 10, weight: .semibold))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Color.black.opacity(0.72))
+                            .clipShape(Capsule())
+                            .padding(Spacing.md + Spacing.xs)
+                        }
+                    }
                     .onTapGesture { onOpen(folder) }
                     .contextMenu {
-                        Button { onOpen(folder) } label: {
-                            Label("Open", systemImage: "folder")
+                        Button { onOpenBooks(folder) } label: {
+                            Label("Open Books", systemImage: "books.vertical")
+                        }
+                        if subfolderCount(folder.id) > 0 {
+                            Button { onOpen(folder) } label: {
+                                Label("Open Subfolders", systemImage: "folder")
+                            }
+                        }
+                        Button { onNewSubfolder(folder) } label: {
+                            Label("New Subfolder…", systemImage: "folder.badge.plus")
+                        }
+                        Menu {
+                            if parentFolder != nil || folder.parentID != nil {
+                                Button { onMove(folder, nil) } label: {
+                                    Label("Top Level", systemImage: "square.grid.2x2")
+                                }
+                                Divider()
+                            }
+                            ForEach(moveTargets(folder)) { target in
+                                Button { onMove(folder, target.id) } label: {
+                                    Label(target.name, systemImage: target.icon ?? "folder")
+                                }
+                            }
+                        } label: {
+                            Label("Move To", systemImage: "arrow.turn.down.right")
                         }
                         Button { onRename(folder) } label: {
                             Label("Rename", systemImage: "pencil")
@@ -142,6 +235,9 @@ struct LibraryFolderGridView: View {
                             }
                         } label: {
                             Label("Set Reading Style", systemImage: "book")
+                        }
+                        Button { onReorderBooks(folder) } label: {
+                            Label("Reorder Books…", systemImage: "list.number")
                         }
                         Button { onSetVerticalZoom(folder) } label: {
                             Label(
@@ -448,6 +544,131 @@ struct NewFolderCardView: View {
         .scaleEffect(isHovered ? 1.02 : 1.0)
         .animation(.easeInOut(duration: 0.2), value: isHovered)
         .onHover { isHovered = $0 }
+    }
+}
+
+// MARK: - Folder Reorder Sheet
+
+/// Hand-arrange the reading order of a folder's books. Drag rows to reorder
+/// (drag handles on iPad/iPhone, plain drag on Mac); Save persists positions
+/// and the folder can then be viewed with the "Folder Order" sort.
+@MainActor
+struct FolderReorderSheet: View {
+    let folderName: String
+    /// Member books in the folder's current order.
+    let books: [Comic]
+    let onSave: ([UUID]) -> Void
+    let onCancel: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var ordered: [Comic]
+
+    init(
+        folderName: String,
+        books: [Comic],
+        onSave: @escaping ([UUID]) -> Void,
+        onCancel: @escaping () -> Void
+    ) {
+        self.folderName = folderName
+        self.books = books
+        self.onSave = onSave
+        self.onCancel = onCancel
+        _ordered = State(initialValue: books)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Reading Order")
+                        .font(Typography.h3)
+                        .foregroundColor(TextColors.primary)
+                    Text(folderName)
+                        .font(Typography.caption)
+                        .foregroundColor(TextColors.secondary)
+                }
+                Spacer()
+                Button("Cancel") {
+                    onCancel()
+                    dismiss()
+                }
+                .buttonStyle(.borderless)
+                .keyboardShortcut(.cancelAction)
+                Button("Save") {
+                    onSave(ordered.map(\.id))
+                    dismiss()
+                }
+                .buttonStyle(.borderless)
+                .keyboardShortcut(.defaultAction)
+            }
+            .padding(Spacing.lg)
+
+            Divider()
+
+            if ordered.isEmpty {
+                Spacer()
+                Text("This folder has no books yet.")
+                    .font(Typography.body)
+                    .foregroundColor(TextColors.secondary)
+                Spacer()
+            } else {
+                List {
+                    ForEach(Array(ordered.enumerated()), id: \.element.id) { index, comic in
+                        HStack(spacing: Spacing.md) {
+                            Text("\(index + 1)")
+                                .font(Typography.bodySmall.monospacedDigit())
+                                .foregroundColor(TextColors.tertiary)
+                                .frame(width: 28, alignment: .trailing)
+
+                            SingleImageCover(
+                                imageData: comic.coverImageData,
+                                cacheKey: comic.id.uuidString,
+                                placeholderSystemImage: "book.closed"
+                            )
+                            .frame(width: 30, height: 45)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(comic.displayTitle)
+                                    .font(Typography.bodySmall)
+                                    .foregroundColor(TextColors.primary)
+                                    .lineLimit(1)
+                                if let series = comic.series {
+                                    Text(series)
+                                        .font(Typography.caption)
+                                        .foregroundColor(TextColors.tertiary)
+                                        .lineLimit(1)
+                                }
+                            }
+                            Spacer()
+                        }
+                    }
+                    .onMove { from, to in
+                        ordered.move(fromOffsets: from, toOffset: to)
+                    }
+                }
+                #if os(iOS)
+                    // Keep drag handles visible without entering an Edit flow
+                    .environment(\.editMode, .constant(.active))
+                #endif
+                .listStyle(.plain)
+            }
+
+            Divider()
+
+            Text("Drag books into reading order, then Save. View it anytime with the Sort menu → Folder Order. Books added later appear at the end.")
+                .font(Typography.caption)
+                .foregroundColor(TextColors.tertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(Spacing.lg)
+        }
+        #if os(macOS)
+            .frame(minWidth: 480, minHeight: 520)
+        #endif
+        .background(BackgroundColors.primary)
+        #if os(iOS)
+            .presentationDetents([.large])
+        #endif
     }
 }
 

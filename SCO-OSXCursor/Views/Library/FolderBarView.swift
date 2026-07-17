@@ -21,16 +21,22 @@ struct FolderBarView: View {
     /// Books not in any folder (for "Unfiled").
     let unfiledCount: Int
     let onNewFolder: () -> Void
+    /// Full display path for nested folders ("Marvel › Events"); top-level
+    /// folders resolve to their plain name.
+    var folderPathName: (Folder) -> String = { $0.name }
 
-    /// Folders A→Z for the dropdown.
+    /// Folders A→Z by full path for the dropdown, so nested folders sort
+    /// under their parents.
     private var alphabetical: [Folder] {
-        folders.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        folders.sorted {
+            folderPathName($0).localizedStandardCompare(folderPathName($1)) == .orderedAscending
+        }
     }
 
-    /// Name of the folder currently scoped, if any.
+    /// Display name (full path) of the folder currently scoped, if any.
     private var activeFolderName: String? {
         if case let .folder(id) = scope {
-            return folders.first(where: { $0.id == id })?.name
+            return folders.first(where: { $0.id == id }).map(folderPathName)
         }
         return nil
     }
@@ -62,7 +68,7 @@ struct FolderBarView: View {
                         ForEach(alphabetical) { folder in
                             Button(action: { scope = .folder(folder.id) }) {
                                 Label(
-                                    "\(folder.name)  (\(folderCount(folder.id)))",
+                                    "\(folderPathName(folder))  (\(folderCount(folder.id)))",
                                     systemImage: folder.icon ?? "folder")
                             }
                         }
