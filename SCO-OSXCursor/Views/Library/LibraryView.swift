@@ -228,6 +228,140 @@ struct LibraryView: View {
             .sorted { $0.dateAdded > $1.dateAdded }
     }
 
+    // MARK: - Folder Grid (extracted)
+    //
+    // Built as its own property with named handlers: the previous inline
+    // 28-argument call with multi-line closures made the compiler unable to
+    // type-check the body "in reasonable time".
+
+    private var folderGridView: some View {
+        LibraryFolderGridView(
+            folders: sortedFolders,
+            count: viewModel.folderCount,
+            previewComics: previewComics(in:),
+            coverComic: coverComic(for:),
+            coverSize: coverSize,
+            totalCount: viewModel.comics.count,
+            unfiledCount: viewModel.unfiledCount,
+            unfiledPreview: unfiledPreviewComics(),
+            onOpenAll: openAllScope,
+            onOpenUnfiled: openUnfiledScope,
+            onOpen: openFolderCard(_:),
+            onRename: beginRenameFolder(_:),
+            onDelete: { folderPendingDelete = $0 },
+            onNewFolder: beginNewFolderAtCurrentLevel,
+            onChoosePicture: beginChooseFolderPicture(_:),
+            onChoosePhoto: beginChooseFolderPhoto(_:),
+            onPickBook: { folderPendingBookPick = $0 },
+            onResetCover: clearFolderCoverAction(_:),
+            onSetReadingStyle: setFolderReadingStyleAction(_:_:),
+            onSetVerticalZoom: { folderPendingVerticalZoom = $0 },
+            parentFolder: folderGridParent,
+            subfolderCount: viewModel.subfolderCount(_:),
+            onOpenBooks: openFolderBooks(_:),
+            onNewSubfolder: beginNewSubfolder(in:),
+            moveTargets: folderMoveTargets(for:),
+            onMove: moveFolderAction(_:_:),
+            onBack: folderGridGoBack,
+            onReorderBooks: { folderPendingReorder = $0 }
+        )
+    }
+
+    private func openAllScope() {
+        searchText = ""
+        scope = .all
+        viewMode = .grid
+    }
+
+    private func openUnfiledScope() {
+        searchText = ""
+        scope = .unfiled
+        viewMode = .grid
+    }
+
+    /// Open a folder's books (scope the book grid to it).
+    private func openFolderBooks(_ folder: Folder) {
+        searchText = ""
+        scope = .folder(folder.id)
+        viewMode = .grid
+    }
+
+    /// Card tap: folders with children drill deeper in the Folders view;
+    /// leaf folders open their books directly.
+    private func openFolderCard(_ folder: Folder) {
+        if viewModel.subfolderCount(folder.id) > 0 {
+            folderGridParent = folder
+        } else {
+            openFolderBooks(folder)
+        }
+    }
+
+    private func beginRenameFolder(_ folder: Folder) {
+        folderPendingRename = folder
+        renameFolderName = folder.name
+    }
+
+    private func beginNewFolderAtCurrentLevel() {
+        newFolderContext = .empty
+        newFolderParentID = folderGridParent?.id
+        newFolderName = ""
+        showingNewFolderAlert = true
+    }
+
+    private func beginNewSubfolder(in folder: Folder) {
+        newFolderContext = .empty
+        newFolderParentID = folder.id
+        newFolderName = ""
+        showingNewFolderAlert = true
+    }
+
+    private func beginChooseFolderPicture(_ folder: Folder) {
+        folderPendingCoverPicture = folder
+        showingFolderCoverPicker = true
+    }
+
+    private func beginChooseFolderPhoto(_ folder: Folder) {
+        #if os(iOS)
+            folderPendingCoverPhoto = folder
+            showingPhotoPicker = true
+        #endif
+    }
+
+    private func clearFolderCoverAction(_ folder: Folder) {
+        Task { await viewModel.clearFolderCover(folder) }
+    }
+
+    private func setFolderReadingStyleAction(_ folder: Folder, _ style: ReadingStyle?) {
+        Task { await viewModel.setFolderReadingStyle(folder, style: style) }
+    }
+
+    private func moveFolderAction(_ folder: Folder, _ newParentID: UUID?) {
+        Task { await viewModel.moveFolder(folder, toParent: newParentID) }
+    }
+
+    /// Valid "Move To" destinations: anywhere except itself, its descendants,
+    /// and its current parent (already there). Sorted by full path.
+    private func folderMoveTargets(for folder: Folder) -> [Folder] {
+        let blocked = viewModel.descendantIDs(of: folder.id)
+        return viewModel.folders
+            .filter {
+                $0.id != folder.id && !blocked.contains($0.id) && $0.id != folder.parentID
+            }
+            .sorted {
+                viewModel.folderPathName($0)
+                    .localizedStandardCompare(viewModel.folderPathName($1)) == .orderedAscending
+            }
+    }
+
+    /// Go up one level in the Folders view: to the parent's parent, or top.
+    private func folderGridGoBack() {
+        if let parent = folderGridParent, let grandParentID = parent.parentID {
+            folderGridParent = viewModel.folders.first(where: { $0.id == grandParentID })
+        } else {
+            folderGridParent = nil
+        }
+    }
+
     /// Member books in the folder's manual order (hand-ordered first, then
     /// never-ordered by date added) — seed list for the reorder sheet.
     private func orderedMemberComics(in folderID: UUID) -> [Comic] {
@@ -356,6 +490,12 @@ struct LibraryView: View {
     // MARK: - Body
 
     var body: some View {
+        withRemainingChrome
+    }
+
+    /// Stage 1 of the body: the browse layout (header, scope bar, grid/list/
+    /// publisher/folder views) plus frame, drop targets, and file importers.
+    private var browseLayout: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header
             LibraryHeaderView(
@@ -478,118 +618,7 @@ struct LibraryView: View {
                     emptyState: emptyState
                 )
             case .folders:
-                LibraryFolderGridView(
-                    folders: sortedFolders,
-                    count: { viewModel.folderCount($0) },
-                    previewComics: { previewComics(in: $0) },
-                    coverComic: { coverComic(for: $0) },
-                    coverSize: coverSize,
-                    totalCount: viewModel.comics.count,
-                    unfiledCount: viewModel.unfiledCount,
-                    unfiledPreview: unfiledPreviewComics(),
-                    onOpenAll: {
-                        searchText = ""
-                        scope = .all
-                        viewMode = .grid
-                    },
-                    onOpenUnfiled: {
-                        searchText = ""
-                        scope = .unfiled
-                        viewMode = .grid
-                    },
-                    onOpen: { folder in
-                        // Folders with children drill deeper in the Folders
-                        // view; leaf folders open their books directly.
-                        if viewModel.subfolderCount(folder.id) > 0 {
-                            folderGridParent = folder
-                        } else {
-                            searchText = ""
-                            scope = .folder(folder.id)
-                            viewMode = .grid
-                        }
-                    },
-                    onRename: { folder in
-                        folderPendingRename = folder
-                        renameFolderName = folder.name
-                    },
-                    onDelete: { folder in
-                        folderPendingDelete = folder
-                    },
-                    onNewFolder: {
-                        newFolderContext = .empty
-                        newFolderParentID = folderGridParent?.id
-                        newFolderName = ""
-                        showingNewFolderAlert = true
-                    },
-                    onChoosePicture: { folder in
-                        folderPendingCoverPicture = folder
-                        showingFolderCoverPicker = true
-                    },
-                    onChoosePhoto: { folder in
-                        #if os(iOS)
-                            folderPendingCoverPhoto = folder
-                            showingPhotoPicker = true
-                        #endif
-                    },
-                    onPickBook: { folder in
-                        folderPendingBookPick = folder
-                    },
-                    onResetCover: { folder in
-                        Task { await viewModel.clearFolderCover(folder) }
-                    },
-                    onSetReadingStyle: { folder, style in
-                        Task { await viewModel.setFolderReadingStyle(folder, style: style) }
-                    },
-                    onSetVerticalZoom: { folder in
-                        folderPendingVerticalZoom = folder
-                    },
-                    parentFolder: folderGridParent,
-                    subfolderCount: { viewModel.subfolderCount($0) },
-                    onOpenBooks: { folder in
-                        searchText = ""
-                        scope = .folder(folder.id)
-                        viewMode = .grid
-                    },
-                    onNewSubfolder: { folder in
-                        newFolderContext = .empty
-                        newFolderParentID = folder.id
-                        newFolderName = ""
-                        showingNewFolderAlert = true
-                    },
-                    moveTargets: { folder in
-                        // Anywhere except itself, its descendants, and its
-                        // current parent (already there).
-                        let blocked = viewModel.descendantIDs(of: folder.id)
-                        return viewModel.folders
-                            .filter {
-                                $0.id != folder.id && !blocked.contains($0.id)
-                                    && $0.id != folder.parentID
-                            }
-                            .sorted {
-                                viewModel.folderPathName($0)
-                                    .localizedStandardCompare(viewModel.folderPathName($1))
-                                    == .orderedAscending
-                            }
-                    },
-                    onMove: { folder, newParentID in
-                        Task { await viewModel.moveFolder(folder, toParent: newParentID) }
-                    },
-                    onBack: {
-                        // Go up one level: to the parent's parent, or top.
-                        if let parent = folderGridParent,
-                            let grandParentID = parent.parentID
-                        {
-                            folderGridParent = viewModel.folders.first(where: {
-                                $0.id == grandParentID
-                            })
-                        } else {
-                            folderGridParent = nil
-                        }
-                    },
-                    onReorderBooks: { folder in
-                        folderPendingReorder = folder
-                    }
-                )
+                folderGridView
                 }
             }
             // Focusable so keyboard events (Space/Return open reader) still
@@ -668,6 +697,13 @@ struct LibraryView: View {
                 )
             )
         #endif
+    }
+
+    /// Stage 2 of the body: folder-related sheets, alerts, and dialogs.
+    /// (The body is split into stages — one giant modifier chain stopped
+    /// type-checking in reasonable time.)
+    private var withFolderSheets: some View {
+        browseLayout
         // Pick a single member book to represent a folder
         .sheet(
             isPresented: Binding(
@@ -799,6 +835,11 @@ struct LibraryView: View {
                 )
             }
         }
+    }
+
+    /// Stage 3 of the body: remaining sheets, overlays, and state observers.
+    private var withRemainingChrome: some View {
+        withFolderSheets
         // iPad: read-only Info panel (long-press → Show Info). macOS uses the
         // side inspector; this half-sheet gives iPad the same metadata view.
         #if os(iOS)
