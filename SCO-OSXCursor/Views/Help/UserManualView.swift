@@ -286,6 +286,20 @@ struct UserManualView: View {
                         )
 
                         FeatureRow(
+                            icon: "folder.badge.plus",
+                            title: "Folders Inside Folders",
+                            description:
+                                "Folders can nest. Right-click (or long-press) any folder card and choose 'New Subfolder…' to create one inside it, or use 'Move To' to move an existing folder into another (or back to the top level). A folder with subfolders shows a small count badge, and tapping its card drills in — a breadcrumb bar at the top gives you Back and an 'All books' button, and the New Folder card at that level creates folders inside the one you're browsing. To open a parent folder's books directly, use 'Open Books' in its right-click menu. Nested folders appear with their full path (like 'Marvel › Events') in the scope bar and Add to Folder menus."
+                        )
+
+                        FeatureRow(
+                            icon: "list.number",
+                            title: "Custom Reading Order",
+                            description:
+                                "Reading order matters for events and long runs, so folders support a hand-arranged order. Right-click (or long-press) a folder card and choose 'Reorder Books…', then drag the books into the order you want and Save. View the arrangement anytime by picking 'Folder Order' in the Sort menu while inside that folder — books you add later automatically line up at the end until you reorder again."
+                        )
+
+                        FeatureRow(
                             icon: "trash",
                             title: "Deleting a Folder",
                             description:
@@ -296,7 +310,7 @@ struct UserManualView: View {
                             icon: "magnifyingglass",
                             title: "Search Always Finds Everything",
                             description:
-                                "Searching always looks across your entire library, even while a folder is selected — so a book is never hidden by your current scope. Use 'Reveal in Folder' from a book's menu to jump straight to a collection it belongs to."
+                                "Searching always looks across your entire library, even while a folder is selected — so a book is never hidden by your current scope. While you're searching, every result that lives in a folder shows a small folder chip on its cover (with '+1', '+2'… if it's in several); tap the chip to jump into that folder with the book highlighted and scrolled into view. 'Reveal in Folder' from a book's menu does the same."
                         )
                     }
                 }
