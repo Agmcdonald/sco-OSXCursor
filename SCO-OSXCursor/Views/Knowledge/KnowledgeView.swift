@@ -155,10 +155,19 @@ struct KnowledgeView: View {
 
     private var headerView: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            HStack {
-                Text("Knowledge Base")
-                    .font(Typography.h1)
-                    .foregroundColor(TextColors.primary)
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text("Knowledge Base")
+                        .font(Typography.h1)
+                        .foregroundColor(TextColors.primary)
+
+                    // No .fixedSize here: on this view it inflates the NavigationSplitView
+                    // detail column's ideal height at tab attach, shoving the whole window
+                    // layout into the titlebar (see Learning's subtitle, also plain).
+                    Text("Publishers, series, and creators across your collection — the app draws on these to suggest matches when you organize and edit books.")
+                        .font(Typography.bodySmall)
+                        .foregroundColor(TextColors.secondary)
+                }
 
                 Spacer()
 

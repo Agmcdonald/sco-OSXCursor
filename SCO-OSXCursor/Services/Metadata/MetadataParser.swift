@@ -349,7 +349,7 @@ class XMLDecoder {
         case formatted(() -> DateFormatter)
     }
 
-    func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
+    func decode(_ type: ComicInfo.Type, from data: Data) throws -> ComicInfo {
         let parser = ComicInfoXMLParser()
         return try parser.parse(data: data)
     }
@@ -434,7 +434,7 @@ class ComicInfoXMLParser: NSObject, XMLParserDelegate {
     private var currentValue: String = ""
     private var metadata: ComicInfo = ComicInfo()
 
-    func parse<T: Decodable>(data: Data) throws -> T {
+    func parse(data: Data) throws -> ComicInfo {
         let parser = XMLParser(data: data)
         parser.delegate = self
 
@@ -444,7 +444,7 @@ class ComicInfoXMLParser: NSObject, XMLParserDelegate {
                 userInfo: [NSLocalizedDescriptionKey: "Failed to parse XML"])
         }
 
-        return metadata as! T
+        return metadata
     }
 
     func parser(

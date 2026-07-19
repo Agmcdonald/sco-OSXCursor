@@ -167,6 +167,8 @@ struct UserManualView: View {
                                 "If you ever need to move your comic library to a new drive or folder, use the 'Relocate Library' tool in Settings to bulk-update your file paths quickly without losing your database."
                         )
 
+                        LibraryFolderTreeDiagram()
+
                         // Cloud & Network Drive warning callout
                         HStack(alignment: .top, spacing: Spacing.sm) {
                             Image(systemName: "exclamationmark.triangle.fill")
@@ -322,6 +324,8 @@ struct UserManualView: View {
                     description: "From messy filenames to a clean, organized library."
                 ) {
                     VStack(alignment: .leading, spacing: Spacing.xl) {
+                        OrganizeFlowDiagram()
+
                         FeatureRow(
                             icon: "plus",
                             title: "Quick Add (Mac & iPad)",
@@ -589,6 +593,8 @@ struct UserManualView: View {
                     description: "Move books between your Mac and iPad — file, metadata, and reading progress together."
                 ) {
                     VStack(alignment: .leading, spacing: Spacing.xl) {
+                        SendToDeviceDiagram()
+
                         FeatureRow(
                             icon: "square.and.arrow.up",
                             title: "Sending Books",
@@ -669,6 +675,118 @@ struct UserManualView: View {
                             description:
                                 "We're in beta and your input matters. Settings → Feedback & Support → 'Send Feedback' opens an email to our team with your app version and system details attached automatically, so we can reproduce and fix issues quickly. No mail app set up? Copy the address and write from anywhere."
                         )
+                    }
+                }
+
+                // 4d. Menus & Actions — reference for every right-click menu
+                // and toolbar control, mirroring the real in-app labels.
+                ManualSection(
+                    title: "Menus & Actions",
+                    icon: "filemenu.and.selection",
+                    description: "Every right-click menu and toolbar control, in one place."
+                ) {
+                    VStack(alignment: .leading, spacing: Spacing.lg) {
+                        // Book right-click menu
+                        MenuGroupCard(
+                            title: "Book Right-Click Menu",
+                            subtitle: "Right-click a cover on Mac, or touch and hold on iPad, for everything you can do to one book.",
+                            icon: "book.closed"
+                        ) {
+                            MenuItemRow(icon: "book.fill", name: "Read",
+                                detail: "Open the book in the reader.")
+                            MenuItemRow(icon: "info.circle", name: "Show Info",
+                                detail: "Open the info panel with the cover, metadata, and file details.")
+                            MenuItemRow(icon: "pencil", name: "Edit Metadata",
+                                detail: "Change title, series, issue, publisher, and more by hand.")
+                            MenuItemRow(icon: "network", name: "Fetch from ComicVine · Fetch Book Metadata",
+                                detail: "Look the book up online and fill in details automatically — ComicVine for comics, Open Library / Google Books / Hardcover for eBooks. The wording changes to match the item type.")
+                            MenuItemRow(icon: "arrow.uturn.backward", name: "Revert ComicVine Fetch · Revert Metadata Fetch",
+                                detail: "Shown only after a fetch — puts back the details the book had before you fetched. The wording follows the item type.")
+                            MenuItemRow(icon: "checkmark.circle", name: "Mark as Read · Mark as Unread",
+                                detail: "Flip the read state without opening the book.")
+                            MenuItemRow(icon: "bookmark", name: "Add to · Remove from Reading List",
+                                detail: "Toggle the book on your Want-to-Read list, shown on the Dashboard.")
+                            MenuItemRow(icon: "arrow.clockwise.circle", name: "Regenerate Cover",
+                                detail: "Rebuild the cover thumbnail from the file's first page.")
+                            MenuItemRow(icon: "doc.richtext", name: "Open PDF as Book · Open PDF as Comic",
+                                detail: "PDFs only — switch between paged comic reading and reflowable book reading.")
+                            MenuItemRow(icon: "ipad.and.arrow.forward", name: "Send to Device…",
+                                detail: "Package the book — file, metadata, and reading progress — to AirDrop or save for another device.")
+                            MenuItemRow(icon: "folder.badge.plus", name: "Add to Folder ▸",
+                                detail: "Add or remove the book from a collection folder, or make a new one. When a book is already in a folder, 'Reveal in Folder' jumps the Library there.")
+                            MenuItemRow(icon: "folder.badge.questionmark", name: "Locate File…",
+                                detail: "Shown only when a book's file is missing — point SCO at where the file moved to.")
+                            MenuItemRow(icon: "trash", name: "Delete",
+                                detail: "Remove the book from your library. The file on your drive is left untouched.")
+                        }
+
+                        // Folder right-click menu
+                        MenuGroupCard(
+                            title: "Folder Right-Click Menu",
+                            subtitle: "Right-click a folder in Folder view to manage the collection.",
+                            icon: "folder"
+                        ) {
+                            MenuItemRow(icon: "books.vertical", name: "Open Books · Open Subfolders",
+                                detail: "Show the books this folder holds, or drill into its subfolders.")
+                            MenuItemRow(icon: "folder.badge.plus", name: "New Subfolder…",
+                                detail: "Create a folder nested inside this one.")
+                            MenuItemRow(icon: "arrow.turn.down.right", name: "Move To ▸",
+                                detail: "Re-nest this folder under another folder, or move it back to the top level.")
+                            MenuItemRow(icon: "pencil", name: "Rename",
+                                detail: "Give the collection a new name.")
+                            MenuItemRow(icon: "photo.on.rectangle.angled", name: "Set Cover ▸",
+                                detail: "Use a picture from Photos or Files, pick one of the books inside, or go back to the automatic book-collage cover.")
+                            MenuItemRow(icon: "book", name: "Set Reading Style ▸",
+                                detail: "Pin a reading style for every book opened from this folder (see the Folders section).")
+                            MenuItemRow(icon: "list.number", name: "Reorder Books…",
+                                detail: "Arrange the books in a custom order used by the folder's 'Folder Order' sort.")
+                            MenuItemRow(icon: "arrow.up.left.and.arrow.down.right", name: "Set Vertical Zoom",
+                                detail: "Remember a zoom level for vertical-scroll reading in this folder.")
+                            MenuItemRow(icon: "trash", name: "Delete Folder",
+                                detail: "For an empty folder, removes the collection. When it holds books, SCO offers three choices: 'Delete Folder Only' (books stay in your library), 'Delete Folder & Remove Books from App' (books leave the library but their files stay on disk), or 'Delete Folder & Delete Files from Device' — only the last erases files and can't be undone.")
+                        }
+
+                        // Reader controls
+                        MenuGroupCard(
+                            title: "Reader Controls",
+                            subtitle: "The floating toolbar in the reader — tap or click the center of the page to show it.",
+                            icon: "book.pages"
+                        ) {
+                            MenuItemRow(icon: "chevron.left", name: "Previous · Next Page",
+                                detail: "Step through pages; the arrows flip for right-to-left manga.")
+                            MenuItemRow(icon: "minus.magnifyingglass", name: "Smaller · Larger Pages",
+                                detail: "Zoom the page in or out.")
+                            MenuItemRow(icon: "rectangle.split.2x1", name: "Single Page · Two-Page Spread",
+                                detail: "Toggle between one page and a facing-page spread.")
+                            MenuItemRow(icon: "arrow.up.left.and.arrow.down.right", name: "Full Screen",
+                                detail: "Enter or leave distraction-free full screen.")
+                            MenuItemRow(icon: "square.grid.3x3.topleft.filled", name: "Thumbnail Bar",
+                                detail: "Show the page-thumbnail strip and move it to another edge.")
+                            MenuItemRow(icon: "square.grid.3x3", name: "Show All Pages",
+                                detail: "Open the grid of every page to jump anywhere at a glance.")
+                            MenuItemRow(icon: "slider.horizontal.below.square.filled.and.square", name: "Reading Style · Configure Reader…",
+                                detail: "Switch reading style (single, spread, manga, vertical scroll) and open the reader's own settings.")
+                        }
+
+                        // Library toolbar
+                        MenuGroupCard(
+                            title: "Library Toolbar",
+                            subtitle: "The controls across the top of the Library.",
+                            icon: "books.vertical"
+                        ) {
+                            MenuItemRow(icon: "magnifyingglass", name: "Search",
+                                detail: "Find books by title, series, or publisher — search always looks across your whole library, even inside a folder.")
+                            MenuItemRow(icon: "arrow.up.arrow.down", name: "Sort ▸",
+                                detail: "Order by Title (A-Z), Date Added, Recently Modified, Publisher, Publication Year, Rating, or File Size — plus Folder Order while you're inside a folder.")
+                            MenuItemRow(icon: "line.3.horizontal.decrease.circle", name: "Filters",
+                                detail: "Narrow the grid by read state, format, rating, and more; a dot marks when filters are active.")
+                            MenuItemRow(icon: "checkmark.circle", name: "Select",
+                                detail: "Enter multi-select for bulk editing, folder changes, sending, or deleting.")
+                            MenuItemRow(icon: "square.resize", name: "Cover Size",
+                                detail: "Make the covers larger or smaller in the grid.")
+                            MenuItemRow(icon: "square.grid.2x2", name: "Grid · List · Publisher · Folder Views",
+                                detail: "Switch how the Library is laid out — a cover grid, a detail list, grouped by publisher, or by your folders.")
+                        }
                     }
                 }
 
@@ -860,6 +978,272 @@ private struct ReaderZonesMockup: View {
                     .stroke(BorderColors.subtle, lineWidth: 1)
             )
         }
+    }
+}
+
+// MARK: - Flow diagram building blocks
+
+/// A single labeled step in a horizontal flow diagram (icon + title + caption).
+private struct ManualFlowStep: View {
+    let icon: String
+    let title: String
+    let caption: String
+    var tint: Color = AccentColors.primary
+
+    var body: some View {
+        VStack(spacing: Spacing.xs) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(tint.opacity(0.12))
+                    .frame(width: 56, height: 56)
+                Image(systemName: icon)
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundColor(tint)
+            }
+            Text(title)
+                .font(Typography.caption.weight(.semibold))
+                .foregroundColor(TextColors.primary)
+                .multilineTextAlignment(.center)
+            Text(caption)
+                .font(.system(size: 10))
+                .foregroundColor(TextColors.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+/// A small chevron separator between flow steps.
+private struct ManualFlowArrow: View {
+    var body: some View {
+        Image(systemName: "chevron.compact.right")
+            .font(.system(size: 20, weight: .semibold))
+            .foregroundColor(TextColors.tertiary)
+            .padding(.bottom, 24)   // nudge up to align with the step icons
+    }
+}
+
+/// Wraps a diagram with a small caption label and a subtle bordered card,
+/// matching the look of `ReaderZonesMockup`.
+private struct ManualDiagramCard<Content: View>: View {
+    let caption: String
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text(caption)
+                .font(Typography.caption)
+                .foregroundColor(TextColors.tertiary)
+            content()
+                .padding(Spacing.md)
+                .frame(maxWidth: .infinity)
+                .background(BackgroundColors.secondary.opacity(0.5))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(BorderColors.subtle, lineWidth: 1)
+                )
+        }
+    }
+}
+
+// MARK: - Visual Mockups (flows)
+
+/// The Organize staging pipeline: files come in, get detected, are reviewed,
+/// then applied into the home library. Explains what "staging" means visually.
+private struct OrganizeFlowDiagram: View {
+    var body: some View {
+        ManualDiagramCard(caption: "How Organize stages a book before it enters your library") {
+            HStack(alignment: .top, spacing: 0) {
+                ManualFlowStep(
+                    icon: "square.and.arrow.down",
+                    title: "1 · Add",
+                    caption: "Drop or Scan Folder"
+                )
+                ManualFlowArrow()
+                ManualFlowStep(
+                    icon: "sparkles",
+                    title: "2 · Detect",
+                    caption: "Publisher · Series · Issue"
+                )
+                ManualFlowArrow()
+                ManualFlowStep(
+                    icon: "checklist",
+                    title: "3 · Review",
+                    caption: "Fix anything wrong"
+                )
+                ManualFlowArrow()
+                ManualFlowStep(
+                    icon: "checkmark.circle.fill",
+                    title: "4 · Apply",
+                    caption: "Filed into Home Library",
+                    tint: .green
+                )
+            }
+        }
+    }
+}
+
+/// How the Send to Device flow packages and moves a book between machines.
+private struct SendToDeviceDiagram: View {
+    var body: some View {
+        ManualDiagramCard(caption: "What travels when you Send to Device") {
+            HStack(alignment: .top, spacing: 0) {
+                ManualFlowStep(
+                    icon: "desktopcomputer",
+                    title: "This Mac",
+                    caption: "Pick a book"
+                )
+                ManualFlowArrow()
+                ManualFlowStep(
+                    icon: "shippingbox.fill",
+                    title: ".scobook",
+                    caption: "File + metadata + progress"
+                )
+                ManualFlowArrow()
+                ManualFlowStep(
+                    icon: "dot.radiowaves.right",
+                    title: "AirDrop",
+                    caption: "or save to Files"
+                )
+                ManualFlowArrow()
+                ManualFlowStep(
+                    icon: "ipad.and.arrow.forward",
+                    title: "iPad",
+                    caption: "Incoming Book sheet",
+                    tint: .green
+                )
+            }
+        }
+    }
+}
+
+/// The auto-filing folder tree the home library builds for each confirmed book,
+/// contrasted with user Folders (collections) that never move files.
+private struct LibraryFolderTreeDiagram: View {
+    private struct TreeRow: View {
+        let indent: Int
+        let icon: String
+        let iconColor: Color
+        let text: String
+        let note: String?
+
+        var body: some View {
+            HStack(spacing: Spacing.xs) {
+                if indent > 0 {
+                    Spacer().frame(width: CGFloat(indent) * 20)
+                }
+                Image(systemName: icon)
+                    .font(.system(size: 13))
+                    .foregroundColor(iconColor)
+                    .frame(width: 18)
+                Text(text)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundColor(TextColors.primary)
+                if let note {
+                    Text(note)
+                        .font(.system(size: 10))
+                        .foregroundColor(TextColors.tertiary)
+                }
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    var body: some View {
+        ManualDiagramCard(caption: "How your Home Library files a confirmed book on disk") {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                TreeRow(indent: 0, icon: "house.fill", iconColor: AccentColors.primary,
+                        text: "Home Library", note: "the folder you chose")
+                TreeRow(indent: 1, icon: "building.2.fill", iconColor: .orange,
+                        text: "Marvel Comics", note: "← Publisher")
+                TreeRow(indent: 2, icon: "books.vertical.fill", iconColor: .blue,
+                        text: "Amazing Spider-Man", note: "← Series")
+                TreeRow(indent: 3, icon: "doc.fill", iconColor: TextColors.secondary,
+                        text: "Amazing Spider-Man #001 (2025).cbz", note: nil)
+
+                Divider().padding(.vertical, 2)
+
+                HStack(alignment: .top, spacing: Spacing.xs) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 11))
+                        .foregroundColor(TextColors.tertiary)
+                        .padding(.top, 1)
+                    Text("Your own **Folders** (like \"Currently Reading\") are collections — they group books without moving or renaming any files.")
+                        .font(.system(size: 10))
+                        .foregroundColor(TextColors.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Menu reference row
+
+/// One entry in the menu-reference tables: the menu item's icon + name and a
+/// short description of what it does.
+private struct MenuItemRow: View {
+    let icon: String
+    let name: String
+    let detail: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Image(systemName: icon)
+                .font(.system(size: 13))
+                .foregroundColor(AccentColors.primary)
+                .frame(width: 20)
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(name)
+                    .font(Typography.bodySmall.weight(.semibold))
+                    .foregroundColor(TextColors.primary)
+                Text(detail)
+                    .font(Typography.caption)
+                    .foregroundColor(TextColors.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+}
+
+/// A titled group of menu items inside the "Menus & Actions" section.
+private struct MenuGroupCard<Content: View>: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack(spacing: Spacing.sm) {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(AccentColors.primary)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                        .font(Typography.h3)
+                        .foregroundColor(TextColors.primary)
+                    Text(subtitle)
+                        .font(Typography.caption)
+                        .foregroundColor(TextColors.secondary)
+                }
+            }
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                content()
+            }
+        }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(BackgroundColors.secondary.opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(BorderColors.subtle, lineWidth: 1)
+        )
     }
 }
 
