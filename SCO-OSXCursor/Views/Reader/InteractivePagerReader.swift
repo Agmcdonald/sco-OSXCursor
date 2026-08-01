@@ -42,8 +42,12 @@ struct InteractivePagerReader<Item: Identifiable, Content: View>: View {
 
     /// Live strip displacement while the finger is down (or settling)
     @State private var dragX: CGFloat = 0
-    /// True while animating toward a neighbor — ignore new scrubs until settled
-    @State private var isSettling = false
+    /// Strip offset when the current stroke began — strokes chain, so a drag
+    /// can carry the page across the screen in stages (scroll-view feel)
+    @State private var strokeBase: CGFloat? = nil
+    /// Set while a pager-committed index change is in flight so the external
+    /// reset in onChange(of: index) leaves the remapped dragX alone
+    @State private var suppressExternalReset = false
 
     @inline(__always) private func debugLog(_ msg: @autoclosure () -> String) {
         #if DEBUG
@@ -90,37 +94,52 @@ struct InteractivePagerReader<Item: Identifiable, Content: View>: View {
             .background(Color.black.ignoresSafeArea())
         }
         .onChange(of: index) {
-            // Index committed (pager turn, scrubber jump, keys, zoomed edge
-            // swipe): the strip re-centers on the new item without animation —
-            // after a pager-committed settle this lands on identical pixels.
-            var t = Transaction()
-            t.disablesAnimations = true
-            withTransaction(t) {
-                dragX = 0
+            // Pager-committed turns already remapped dragX for pixel
+            // continuity — leave it to finish its settle animation. External
+            // jumps (scrubber, keys, zoomed edge swipe) swap in place.
+            if suppressExternalReset {
+                suppressExternalReset = false
+            } else {
+                var t = Transaction()
+                t.disablesAnimations = true
+                withTransaction(t) {
+                    dragX = 0
+                }
+                strokeBase = nil
             }
-            isSettling = false
         }
         .onChange(of: items.count) {
             dragX = 0
-            isSettling = false
+            strokeBase = nil
         }
     }
 
     private func scrubChanged(_ dx: CGFloat, width: CGFloat) {
-        guard !isSettling else { return }
-        let visualStep = dx < 0 ? +1 : -1
+        // Strokes continue from wherever the strip currently sits, so
+        // successive drags chain instead of snapping back to the start
+        if strokeBase == nil { strokeBase = dragX }
+        let base = strokeBase ?? 0
+        let limit = width + gutter
+        var proposed = base + dx
+
+        let visualStep = proposed < 0 ? +1 : -1
         if neighborIndex(visualStep: visualStep) == nil {
-            // No page in that direction — rubber-band
-            dragX = dx * 0.25
-        } else {
-            dragX = dx
+            // No page in that direction — rubber-band around rest
+            proposed *= 0.25
+        } else if proposed < -limit {
+            // Soft stop at the neighbor's rest position: a full-width drag
+            // parks the next page on screen instead of overshooting into black
+            proposed = -limit + (proposed + limit) * 0.2
+        } else if proposed > limit {
+            proposed = limit + (proposed - limit) * 0.2
         }
+        dragX = proposed
     }
 
     private func scrubEnded(_ dx: CGFloat, predicted: CGFloat, width: CGFloat) {
-        guard !isSettling else { return }
+        strokeBase = nil
         let step = ReaderZoomMath.pagerSettleStep(
-            dragX: dx, predictedDragX: predicted, viewportWidth: width
+            dragX: dx, predictedDragX: predicted, viewportWidth: width, positionX: dragX
         )
 
         guard step != 0 else {
@@ -140,21 +159,33 @@ struct InteractivePagerReader<Item: Identifiable, Content: View>: View {
             return
         }
 
-        isSettling = true
+        // Commit immediately and remap the strip offset so the new index
+        // renders the same pixels (shifting one cell re-centers the strip on
+        // the neighbor: dragX += step * cell width). The settle then animates
+        // the short remainder, and a new stroke can begin at any time — no
+        // locked-out dead zone while the animation plays.
+        let original = dragX
         let indexBefore = index
-        withAnimation(.spring(response: 0.32, dampingFraction: 0.88)) {
-            dragX = -CGFloat(step) * (width + gutter)
-        } completion: {
-            onTurn(step)
-            // turn(by:) commits synchronously when accepted → onChange(of:
-            // index) has reset the strip. If it was rejected (cooldown,
-            // boundary), spring back.
-            if index == indexBefore {
-                debugLog("[InteractivePagerReader] Turn rejected — bouncing back")
-                isSettling = false
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
-                    dragX = 0
-                }
+        var t = Transaction()
+        t.disablesAnimations = true
+        suppressExternalReset = true
+        withTransaction(t) {
+            dragX = original + CGFloat(step) * (width + gutter)
+        }
+        onTurn(step)
+        if index == indexBefore {
+            // Rejected (cooldown, boundary) — restore and bounce back
+            debugLog("[InteractivePagerReader] Turn rejected — bouncing back")
+            suppressExternalReset = false
+            withTransaction(t) {
+                dragX = original
+            }
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
+                dragX = 0
+            }
+        } else {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
+                dragX = 0
             }
         }
     }

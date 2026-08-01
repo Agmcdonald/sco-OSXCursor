@@ -164,4 +164,32 @@ struct ReaderZoomMathTests {
     @Test func zeroWidthViewportNeverCommits() {
         #expect(ReaderZoomMath.pagerSettleStep(dragX: -250, predictedDragX: -500, viewportWidth: 0) == 0)
     }
+
+    // MARK: - Chained strokes (position-aware settle)
+
+    @Test func stripParkedPastHalfwayCommitsByPosition() {
+        // Earlier strokes carried the strip to -450 of 800; a tiny final
+        // nudge still lands the page that's already mostly on screen
+        #expect(
+            ReaderZoomMath.pagerSettleStep(
+                dragX: -30, predictedDragX: -35, viewportWidth: 800, positionX: -450) == +1)
+        #expect(
+            ReaderZoomMath.pagerSettleStep(
+                dragX: 30, predictedDragX: 35, viewportWidth: 800, positionX: 450) == -1)
+    }
+
+    @Test func pullBackTowardRestDoesNotCommitOutward() {
+        // Strip is out at -300 (next page half-visible); a stroke back toward
+        // rest must settle back to the current page, not fire a turn
+        #expect(
+            ReaderZoomMath.pagerSettleStep(
+                dragX: 150, predictedDragX: 160, viewportWidth: 800, positionX: -300) == 0)
+    }
+
+    @Test func outwardFlingFromParkedPositionCommits() {
+        // Parked at -350 with a modest outward fling — momentum carries it past halfway
+        #expect(
+            ReaderZoomMath.pagerSettleStep(
+                dragX: -60, predictedDragX: -260, viewportWidth: 800, positionX: -350) == +1)
+    }
 }
