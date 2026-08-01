@@ -135,18 +135,25 @@ struct ReaderZoomMathTests {
     @Test func smallDragBouncesBack() {
         #expect(ReaderZoomMath.pagerSettleStep(dragX: -50, predictedDragX: -60, viewportWidth: 800) == 0)
         #expect(ReaderZoomMath.pagerSettleStep(dragX: 30, predictedDragX: 35, viewportWidth: 800) == 0)
+        // Just under the 15% position threshold with no fling → still a bounce
+        #expect(ReaderZoomMath.pagerSettleStep(dragX: -115, predictedDragX: -130, viewportWidth: 800) == 0)
     }
 
-    @Test func dragPastQuarterWidthCommits() {
+    @Test func dragPastThresholdCommits() {
+        // Light feel: 15% of the viewport is enough.
         // Finger left (dx<0) advances to the visual-right page
-        #expect(ReaderZoomMath.pagerSettleStep(dragX: -250, predictedDragX: -250, viewportWidth: 800) == +1)
+        #expect(ReaderZoomMath.pagerSettleStep(dragX: -125, predictedDragX: -125, viewportWidth: 800) == +1)
         // Finger right goes to the visual-left page
-        #expect(ReaderZoomMath.pagerSettleStep(dragX: 250, predictedDragX: 250, viewportWidth: 800) == -1)
+        #expect(ReaderZoomMath.pagerSettleStep(dragX: 125, predictedDragX: 125, viewportWidth: 800) == -1)
+        // Big deliberate drags obviously still commit
+        #expect(ReaderZoomMath.pagerSettleStep(dragX: -250, predictedDragX: -250, viewportWidth: 800) == +1)
     }
 
     @Test func fastFlingCommitsEvenWithShortDrag() {
         #expect(ReaderZoomMath.pagerSettleStep(dragX: -60, predictedDragX: -500, viewportWidth: 800) == +1)
         #expect(ReaderZoomMath.pagerSettleStep(dragX: 60, predictedDragX: 500, viewportWidth: 800) == -1)
+        // A gentle flick — 25% predicted travel — is enough
+        #expect(ReaderZoomMath.pagerSettleStep(dragX: -40, predictedDragX: -210, viewportWidth: 800) == +1)
     }
 
     @Test func flingOpposingTheDragDoesNotCommit() {

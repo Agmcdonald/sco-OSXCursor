@@ -87,12 +87,16 @@ enum ReaderZoomMath {
     /// Pager settle decision after a horizontal scrub.
     /// Returns the *visual* step: +1 = advance to the page on the visual right
     /// (finger moved left), -1 = the visual left neighbor, 0 = bounce back.
+    ///
+    /// Tuned light: a page turn should feel like a flick, not a haul — commit
+    /// on a 15%-of-width drag, or any modest fling (25% predicted travel)
+    /// that agrees with the drag direction.
     static func pagerSettleStep(
         dragX: CGFloat, predictedDragX: CGFloat, viewportWidth: CGFloat
     ) -> Int {
         guard viewportWidth > 0 else { return 0 }
-        let positionThreshold = viewportWidth * 0.25
-        let flingThreshold = viewportWidth * 0.5
+        let positionThreshold = viewportWidth * 0.15
+        let flingThreshold = viewportWidth * 0.25
         // A fling only counts when it agrees with the drag direction
         if abs(dragX) >= positionThreshold || (abs(predictedDragX) >= flingThreshold && predictedDragX * dragX > 0) {
             return dragX < 0 ? +1 : -1
