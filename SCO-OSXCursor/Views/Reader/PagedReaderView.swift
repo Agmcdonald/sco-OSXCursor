@@ -64,15 +64,76 @@ struct PagedReaderView: View {
                     )
                     .background(Color.black)
                     .ignoresSafeArea()
+                } else if effectiveTransition == .slide {
+                    interactiveSlideView
                 } else {
                     standardPageView
                 }
             #else
-                standardPageView
+                if effectiveTransition == .slide {
+                    interactiveSlideView
+                } else {
+                    standardPageView
+                }
             #endif
         }
     }
-    
+
+    // MARK: - Interactive slide (Panels-style contiguous pager)
+    //
+    // The current page and its neighbor move together, tracking the finger,
+    // with a small black gutter between them — both pages stay visible for
+    // the whole gesture (no blackout while the next page loads in).
+
+    private var interactiveSlideView: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            if !pages.isEmpty {
+                InteractivePagerReader(
+                    items: pages,
+                    index: $currentPage,
+                    isRTL: viewModel?.isMangaRTL ?? false,
+                    onTurn: { step in
+                        if let viewModel {
+                            viewModel.turn(by: step)
+                        } else {
+                            let target = currentPage + step
+                            guard pages.indices.contains(target) else { return }
+                            currentPage = target
+                        }
+                    }
+                ) { page, isActive, scrubChanged, scrubEnded in
+                    ComicPageView(
+                        page: page,
+                        onSwipeLeft: {
+                            if let viewModel {
+                                viewModel.turn(by: +1)
+                            } else if currentPage < pages.count - 1 {
+                                currentPage += 1
+                            }
+                        },
+                        onSwipeRight: {
+                            if let viewModel {
+                                viewModel.turn(by: -1)
+                            } else if currentPage > 0 {
+                                currentPage -= 1
+                            }
+                        },
+                        onBeginDragging: onBeginDragging,
+                        onEndDragging: onEndDragging,
+                        onBeginPinching: onBeginPinching,
+                        onEndPinching: onEndPinching,
+                        initialScale: CGFloat(comic?.zoomScale ?? 1.0),
+                        isActive: isActive,
+                        onScrubChanged: scrubChanged,
+                        onScrubEnded: scrubEnded
+                    )
+                }
+            }
+        }
+    }
+
     private var standardPageView: some View {
         ZStack {
             Color.black.ignoresSafeArea()

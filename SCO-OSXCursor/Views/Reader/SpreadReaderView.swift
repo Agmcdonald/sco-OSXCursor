@@ -63,14 +63,61 @@ struct SpreadReaderView: View {
                     )
                     .background(Color.black)
                     .ignoresSafeArea()
+                } else if effectiveTransition == .slide {
+                    interactiveSlideView
                 } else {
                     standardSpreadView
                 }
             #else
-                standardSpreadView
+                if effectiveTransition == .slide {
+                    interactiveSlideView
+                } else {
+                    standardSpreadView
+                }
             #endif
         }
     }
+
+    // MARK: - Interactive slide (Panels-style contiguous pager)
+
+    private var interactiveSlideView: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            if !spreads.isEmpty {
+                InteractivePagerReader(
+                    items: spreads,
+                    index: $currentSpreadIndex,
+                    isRTL: viewModel?.isMangaRTL ?? false,
+                    onTurn: { step in
+                        if let viewModel {
+                            viewModel.turn(by: step)  // 1 step = 1 spread (VM converts to 2 pages)
+                        } else {
+                            let target = currentSpreadIndex + step
+                            guard spreads.indices.contains(target) else { return }
+                            currentSpreadIndex = target
+                        }
+                    }
+                ) { spread, isActive, scrubChanged, scrubEnded in
+                    SpreadView(
+                        spread: spread,
+                        initialScale: CGFloat(comic?.zoomScale ?? 1.0),
+                        onSwipeLeft: { viewModel?.turn(by: +1) },
+                        onSwipeRight: { viewModel?.turn(by: -1) },
+                        onBeginDragging: onBeginDragging,
+                        onEndDragging: onEndDragging,
+                        onBeginPinching: onBeginPinching,
+                        onEndPinching: onEndPinching,
+                        isActive: isActive,
+                        onScrubChanged: scrubChanged,
+                        onScrubEnded: scrubEnded
+                    )
+                }
+            }
+        }
+    }
+
+    // MARK: - Transition-based spread swap (fade / zoom / none)
 
     private var standardSpreadView: some View {
         ZStack {
@@ -136,33 +183,18 @@ struct SpreadReaderView: View {
             }
         }
     }
-
-    private var flattenedPages: [ComicPage] {
-        spreads.flatMap { spread in
-            [spread.leftPage] + (spread.rightPage.map { [$0] } ?? [])
-        }
-    }
-
-    private func spreadToPageIndex(_ spreadIndex: Int) -> Int {
-        guard spreadIndex < spreads.count else { return 0 }
-        return spreads[spreadIndex].leftPage.pageNumber - 1
-    }
-
-    private func pageToSpreadIndex(_ pageIndex: Int) -> Int {
-        for (index, spread) in spreads.enumerated() {
-            if spread.leftPage.pageNumber - 1 == pageIndex {
-                return index
-            }
-        }
-        return 0
-    }
 }
 
 // MARK: - Single Spread View
+//
+// The whole spread renders inside ONE ZoomableCanvas: pinch zooms both pages
+// together as a single surface (art crosses the center gutter) and fills the
+// entire viewport — matching Panels, instead of each page zooming alone
+// inside its own half-screen pane.
 @MainActor
 struct SpreadView: View {
     let spread: PageSpread
-    /// Per-book zoom memory, threaded down to each page
+    /// Per-book zoom memory
     var initialScale: CGFloat = 1.0
     var onSwipeLeft: () -> Void = {}  // Next page/spread
     var onSwipeRight: () -> Void = {}  // Previous page/spread
@@ -173,75 +205,38 @@ struct SpreadView: View {
     var onBeginPinching: () -> Void = {}
     var onEndPinching: () -> Void = {}
 
-    // MARK: - Debug Logging
-
-    @inline(__always) private func debugLog(_ msg: @autoclosure () -> String) {
-        #if DEBUG
-            AppLog.reader.debug("\(msg())")
-        #endif
-    }
-
-    private let platform: String = {
-        #if os(iOS)
-            return "📱 iOS"
-        #else
-            return "💻 macOS"
-        #endif
-    }()
+    /// Pager wiring (see ZoomableCanvas)
+    var isActive: Bool = true
+    var onScrubChanged: ((CGFloat) -> Void)? = nil
+    var onScrubEnded: ((CGFloat, CGFloat) -> Void)? = nil
 
     var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                // Page content
-                if spread.isSinglePage {
-                    // Single page — center it; tap handling is still global below
-                    ComicPageView(
-                        page: spread.leftPage,
-                        onSwipeLeft: onSwipeLeft,
-                        onSwipeRight: onSwipeRight,
-                        onBeginDragging: onBeginDragging,
-                        onEndDragging: onEndDragging,
-                        onBeginPinching: onBeginPinching,
-                        onEndPinching: onEndPinching,
-                        initialScale: initialScale
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    // Two pages side by side
-                    HStack(spacing: 0) {
-                        ComicPageView(
-                            page: spread.leftPage,
-                            onSwipeLeft: onSwipeLeft,
-                            onSwipeRight: onSwipeRight,
-                            onBeginDragging: onBeginDragging,
-                            onEndDragging: onEndDragging,
-                            onBeginPinching: onBeginPinching,
-                            onEndPinching: onEndPinching,
-                            initialScale: initialScale
-                        )
-                        .frame(width: geometry.size.width / 2)
+        ZoomableCanvas(
+            resetID: AnyHashable(spread.id),
+            onSwipeLeft: onSwipeLeft,
+            onSwipeRight: onSwipeRight,
+            onBeginDragging: onBeginDragging,
+            onEndDragging: onEndDragging,
+            onBeginPinching: onBeginPinching,
+            onEndPinching: onEndPinching,
+            initialScale: initialScale,
+            isActive: isActive,
+            onScrubChanged: onScrubChanged,
+            onScrubEnded: onScrubEnded
+        ) {
+            if spread.isSinglePage {
+                ComicPageImage(page: spread.leftPage)
+            } else {
+                HStack(spacing: 0) {
+                    ComicPageImage(page: spread.leftPage)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                        if let rightPage = spread.rightPage {
-                            ComicPageView(
-                                page: rightPage,
-                                onSwipeLeft: onSwipeLeft,
-                                onSwipeRight: onSwipeRight,
-                                onBeginDragging: onBeginDragging,
-                                onEndDragging: onEndDragging,
-                                onBeginPinching: onBeginPinching,
-                                onEndPinching: onEndPinching,
-                                initialScale: initialScale
-                            )
-                            .frame(width: geometry.size.width / 2)
-                        }
+                    if let rightPage = spread.rightPage {
+                        ComicPageImage(page: rightPage)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-
-            }  // ZStack
-        }  // GeometryReader
-        .onAppear {
-            debugLog("[\(platform)][SpreadView] 🎬 Appeared")
+            }
         }
     }
 }
