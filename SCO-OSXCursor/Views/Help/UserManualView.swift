@@ -256,7 +256,7 @@ struct UserManualView: View {
                             icon: "folder.badge.plus",
                             title: "Create Folders & Add Books",
                             description:
-                                "Folders are your own collections (like \"Marvel Events\" or \"Currently Reading\"). Make one from the scope bar's Folders ▾ menu or the New Folder card in Folder view. To add books, right-click (or long-press) a book and choose 'Add to Folder', or enter Select mode, pick several, and use 'Add to Folder' in the toolbar. A book can live in as many folders as you like, and folders never move or rename your files — they're purely organizational."
+                                "Folders are your own collections (like \"Marvel Events\" or \"Currently Reading\"). Make one from the scope bar's Folders ▾ menu or the New Folder card in Folder view. To add books, right-click (or long-press) a book and choose 'Add to Folder', or enter Select mode, pick several, and use 'Add to Folder' in the toolbar. To take books out again, use 'Remove from Folder' in the same right-click menu or Select-mode toolbar — when you're browsing inside a folder there's a direct 'Remove from \"<folder>\"' shortcut. A book can live in as many folders as you like, and folders never move or rename your files — they're purely organizational."
                         )
 
                         FeatureRow(
@@ -698,22 +698,26 @@ struct UserManualView: View {
                                 detail: "Open the info panel with the cover, metadata, and file details.")
                             MenuItemRow(icon: "pencil", name: "Edit Metadata",
                                 detail: "Change title, series, issue, publisher, and more by hand.")
-                            MenuItemRow(icon: "network", name: "Fetch from ComicVine · Fetch Book Metadata",
-                                detail: "Look the book up online and fill in details automatically — ComicVine for comics, Open Library / Google Books / Hardcover for eBooks. The wording changes to match the item type.")
-                            MenuItemRow(icon: "arrow.uturn.backward", name: "Revert ComicVine Fetch · Revert Metadata Fetch",
-                                detail: "Shown only after a fetch — puts back the details the book had before you fetched. The wording follows the item type.")
+                            MenuItemRow(icon: "checkmark.square", name: "Select Book",
+                                detail: "Enter Select mode with this book already selected — tap more covers to build the selection, then use the toolbar's bulk actions.")
+                            MenuItemRow(icon: "folder.badge.plus", name: "Add to Folder ▸",
+                                detail: "Add the book to a collection folder (a checkmark marks folders it's already in), or make a new one. When a book is already in a folder, 'Reveal in Folder' jumps the Library there.")
+                            MenuItemRow(icon: "folder.badge.minus", name: "Remove from Folder ▸",
+                                detail: "Take the book out of a folder it belongs to — shown only when it's in one. Browsing inside a folder adds a direct 'Remove from \"<folder>\"' shortcut. The file itself is never touched.")
                             MenuItemRow(icon: "checkmark.circle", name: "Mark as Read · Mark as Unread",
                                 detail: "Flip the read state without opening the book.")
                             MenuItemRow(icon: "bookmark", name: "Add to · Remove from Reading List",
                                 detail: "Toggle the book on your Want-to-Read list, shown on the Dashboard.")
-                            MenuItemRow(icon: "arrow.clockwise.circle", name: "Regenerate Cover",
-                                detail: "Rebuild the cover thumbnail from the file's first page.")
                             MenuItemRow(icon: "doc.richtext", name: "Open PDF as Book · Open PDF as Comic",
                                 detail: "PDFs only — switch between paged comic reading and reflowable book reading.")
                             MenuItemRow(icon: "ipad.and.arrow.forward", name: "Send to Device…",
                                 detail: "Package the book — file, metadata, and reading progress — to AirDrop or save for another device.")
-                            MenuItemRow(icon: "folder.badge.plus", name: "Add to Folder ▸",
-                                detail: "Add or remove the book from a collection folder, or make a new one. When a book is already in a folder, 'Reveal in Folder' jumps the Library there.")
+                            MenuItemRow(icon: "network", name: "Fetch from ComicVine · Fetch Book Metadata",
+                                detail: "In its own section near the bottom. Look the book up online and fill in details automatically — ComicVine for comics, Open Library / Google Books / Hardcover for eBooks. The wording changes to match the item type.")
+                            MenuItemRow(icon: "arrow.uturn.backward", name: "Revert ComicVine Fetch · Revert Metadata Fetch",
+                                detail: "Shown only after a fetch — puts back the details the book had before you fetched. The wording follows the item type.")
+                            MenuItemRow(icon: "arrow.clockwise.circle", name: "Regenerate Cover",
+                                detail: "Rebuild the cover thumbnail from the file's first page. Lives with the fetch actions.")
                             MenuItemRow(icon: "folder.badge.questionmark", name: "Locate File…",
                                 detail: "Shown only when a book's file is missing — point SCO at where the file moved to.")
                             MenuItemRow(icon: "trash", name: "Delete",

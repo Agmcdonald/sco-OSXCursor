@@ -54,6 +54,13 @@ struct ComicCellActions {
     var removeFromFolder: (Comic, UUID) -> Void = { _, _ in }
     /// Add the whole current selection to a folder (selection mode).
     var addSelectionToFolder: (UUID) -> Void = { _ in }
+    /// Remove the whole current selection from a folder (selection mode).
+    var removeSelectionFromFolder: (UUID) -> Void = { _ in }
+    /// Folders containing at least one selected comic (drives bulk removal).
+    var foldersContainingSelection: () -> [Folder] = { [] }
+    /// The folder the library is currently scoped to — drives the direct
+    /// "Remove from '<name>'" shortcut. nil for All Books / Unfiled.
+    var currentFolder: Folder? = nil
     /// Prompt for a new folder name, then add this comic to it.
     var requestNewFolderForComic: (Comic) -> Void = { _ in }
     /// Prompt for a new folder name, then add the current selection to it.
@@ -61,6 +68,9 @@ struct ComicCellActions {
     /// Navigate the library scope to a folder containing this comic, then
     /// focus + scroll to the book so it's highlighted where it lives.
     var revealInFolder: (UUID, Comic) -> Void = { _, _ in }
+    /// Enter selection mode with this comic as the first selection ("Select
+    /// Book" in the context menu) — further taps extend the selection.
+    var selectBook: (Comic) -> Void = { _ in }
 }
 
 // MARK: - Folder Chip Badge
@@ -190,25 +200,21 @@ struct ComicCellInteraction: ViewModifier {
             Label("Edit Metadata", systemImage: "pencil")
         }
 
-        // EPUB books fetch from Open Library / Google Books; comics from
-        // ComicVine. Same action — LibraryView routes by file type.
-        Button(action: { actions.fetchMetadata(comic) }) {
-            if comic.isEbook {
-                Label("Fetch Book Metadata", systemImage: "books.vertical")
-            } else {
-                Label("Fetch from ComicVine", systemImage: "network")
+        // Enter selection mode with this book selected — further taps then
+        // extend the selection as usual. Its own section.
+        if !isSelectionMode {
+            Divider()
+
+            Button(action: { actions.selectBook(comic) }) {
+                Label("Select Book", systemImage: "checkmark.square")
             }
         }
 
-        // Escape hatch for a wrong match — only offered while a pre-fetch
-        // snapshot is stored on the record.
-        if comic.metadataBackup != nil {
-            Button(action: { actions.revertMetadataFetch(comic) }) {
-                Label(
-                    comic.isEbook ? "Revert Metadata Fetch" : "Revert ComicVine Fetch",
-                    systemImage: "arrow.uturn.backward")
-            }
-        }
+        Divider()
+
+        folderMenu
+
+        Divider()
 
         Button(action: { actions.markAsRead(comic) }) {
             Label("Mark as Read", systemImage: "checkmark.circle")
@@ -231,12 +237,6 @@ struct ComicCellInteraction: ViewModifier {
             )
         }
 
-        if showsRegenerate {
-            Button(action: { actions.regenerateCover(comic) }) {
-                Label("Regenerate Cover", systemImage: "arrow.clockwise.circle")
-            }
-        }
-
         // Transfer runs both ways: Mac → iPad and iPad/iPhone → Mac. A book
         // that needs attention has no readable file to package.
         if !comic.needsAttention {
@@ -247,7 +247,33 @@ struct ComicCellInteraction: ViewModifier {
 
         Divider()
 
-        folderMenu
+        // Online metadata — its own section so the destructive-ish network
+        // actions sit apart from the everyday items above.
+        // EPUB books fetch from Open Library / Google Books; comics from
+        // ComicVine. Same action — LibraryView routes by file type.
+        Button(action: { actions.fetchMetadata(comic) }) {
+            if comic.isEbook {
+                Label("Fetch Book Metadata", systemImage: "books.vertical")
+            } else {
+                Label("Fetch from ComicVine", systemImage: "network")
+            }
+        }
+
+        // Escape hatch for a wrong match — only offered while a pre-fetch
+        // snapshot is stored on the record.
+        if comic.metadataBackup != nil {
+            Button(action: { actions.revertMetadataFetch(comic) }) {
+                Label(
+                    comic.isEbook ? "Revert Metadata Fetch" : "Revert ComicVine Fetch",
+                    systemImage: "arrow.uturn.backward")
+            }
+        }
+
+        if showsRegenerate {
+            Button(action: { actions.regenerateCover(comic) }) {
+                Label("Regenerate Cover", systemImage: "arrow.clockwise.circle")
+            }
+        }
 
         Divider()
 
@@ -279,6 +305,39 @@ struct ComicCellInteraction: ViewModifier {
             } label: {
                 Label("Add Selected to Folder", systemImage: "folder.badge.plus")
             }
+
+            // Bulk removal: only folders that actually contain part of the
+            // selection. Browsing inside a folder gets a direct shortcut.
+            let selectionFolders = actions.foldersContainingSelection()
+            if let current = actions.currentFolder,
+                selectionFolders.contains(where: { $0.id == current.id })
+            {
+                Button {
+                    actions.removeSelectionFromFolder(current.id)
+                } label: {
+                    Label(
+                        "Remove Selected from “\(current.name)”",
+                        systemImage: "folder.badge.minus")
+                }
+            }
+            let otherSelectionFolders = selectionFolders.filter {
+                $0.id != actions.currentFolder?.id
+            }
+            if !otherSelectionFolders.isEmpty {
+                Menu {
+                    ForEach(otherSelectionFolders) { folder in
+                        Button {
+                            actions.removeSelectionFromFolder(folder.id)
+                        } label: {
+                            Label(
+                                actions.folderDisplayName(folder),
+                                systemImage: folder.icon ?? "folder")
+                        }
+                    }
+                } label: {
+                    Label("Remove Selected from Folder", systemImage: "folder.badge.minus")
+                }
+            }
         } else {
             let containing = actions.foldersContaining(comic)
 
@@ -306,6 +365,37 @@ struct ComicCellInteraction: ViewModifier {
                 }
             } label: {
                 Label("Add to Folder", systemImage: "folder.badge.plus")
+            }
+
+            // Explicit removal (the checkmark toggle above also removes, but
+            // nobody guesses that). Browsing inside a folder gets a direct
+            // "Remove from '<name>'"; other memberships live in a submenu.
+            let isInCurrentFolder =
+                actions.currentFolder.map { current in
+                    containing.contains(where: { $0.id == current.id })
+                } ?? false
+            if isInCurrentFolder, let current = actions.currentFolder {
+                Button {
+                    actions.removeFromFolder(comic, current.id)
+                } label: {
+                    Label("Remove from “\(current.name)”", systemImage: "folder.badge.minus")
+                }
+            }
+            let otherContaining = containing.filter { $0.id != actions.currentFolder?.id }
+            if !otherContaining.isEmpty {
+                Menu {
+                    ForEach(otherContaining) { folder in
+                        Button {
+                            actions.removeFromFolder(comic, folder.id)
+                        } label: {
+                            Label(
+                                actions.folderDisplayName(folder),
+                                systemImage: folder.icon ?? "folder")
+                        }
+                    }
+                } label: {
+                    Label("Remove from Folder", systemImage: "folder.badge.minus")
+                }
             }
 
             // Jump the library scope to a folder this book lives in.

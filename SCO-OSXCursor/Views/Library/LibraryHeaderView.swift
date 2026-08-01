@@ -65,6 +65,9 @@ struct LibraryHeaderView: View {
     var folders: [Folder] = []
     var onAddToFolder: (UUID) -> Void = { _ in }
     var onNewFolderForSelection: () -> Void = {}
+    /// Folders containing at least one selected comic (bulk removal menu).
+    var removalFoldersForSelection: () -> [Folder] = { [] }
+    var onRemoveFromFolder: (UUID) -> Void = { _ in }
     /// Package the selection as .scobook files for AirDrop. Available on
     /// every platform — transfer runs Mac → iPad and iPad/iPhone → Mac.
     var onSendToDevice: () -> Void = {}
@@ -265,6 +268,8 @@ struct LibraryHeaderView: View {
             folders: folders,
             onAddToFolder: onAddToFolder,
             onNewFolder: onNewFolderForSelection,
+            removalFolders: removalFoldersForSelection,
+            onRemoveFromFolder: onRemoveFromFolder,
             onSendToDevice: onSendToDevice
         )
     }

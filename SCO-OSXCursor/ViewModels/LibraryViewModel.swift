@@ -1700,6 +1700,13 @@ extension LibraryViewModel {
         folders.filter { folderMembership[$0.id]?.contains(comicID) == true }
     }
 
+    /// Folders containing at least one of the given comics — drives the bulk
+    /// "Remove Selected from Folder" menus.
+    func folders(containingAnyOf comicIDs: Set<UUID>) -> [Folder] {
+        guard !comicIDs.isEmpty else { return [] }
+        return folders.filter { folderMembership[$0.id]?.isDisjoint(with: comicIDs) == false }
+    }
+
     /// Folder-level reading style for a comic. If the book belongs to several
     /// folders that each define a style, the most recently modified folder
     /// wins (i.e. the style the user set last).

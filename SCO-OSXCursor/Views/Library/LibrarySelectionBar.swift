@@ -31,6 +31,10 @@ struct LibrarySelectionBar: View {
     var folders: [Folder] = []
     var onAddToFolder: (UUID) -> Void = { _ in }
     var onNewFolder: () -> Void = {}
+    /// Folders containing at least one selected comic — the "Remove from
+    /// Folder" menu lists only these (evaluated per render, tracks selection).
+    var removalFolders: () -> [Folder] = { [] }
+    var onRemoveFromFolder: (UUID) -> Void = { _ in }
     /// Package the selection as .scobook files for AirDrop. Available on
     /// every platform — transfer runs Mac → iPad and iPad/iPhone → Mac.
     var onSendToDevice: () -> Void = {}
@@ -162,6 +166,38 @@ struct LibrarySelectionBar: View {
             .buttonStyle(.plain)
             .fixedSize()
             .disabled(selectedComics.isEmpty)
+
+            // Remove the whole selection from a folder it belongs to. Only
+            // folders that contain part of the selection are listed; the
+            // button stays disabled when the selection is folderless.
+            let foldersWithSelection = removalFolders()
+            Menu {
+                ForEach(foldersWithSelection) { folder in
+                    Button(action: { onRemoveFromFolder(folder.id) }) {
+                        Label(folder.name, systemImage: folder.icon ?? "folder")
+                    }
+                }
+            } label: {
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: "folder.badge.minus")
+                    Text("Remove from Folder")
+                        .font(Typography.bodySmall)
+                }
+                .foregroundColor(
+                    foldersWithSelection.isEmpty ? TextColors.tertiary : AccentColors.primary
+                )
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .background(
+                    foldersWithSelection.isEmpty
+                        ? BackgroundColors.elevated : AccentColors.primary.opacity(0.1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .menuIndicator(.hidden)
+            .buttonStyle(.plain)
+            .fixedSize()
+            .disabled(foldersWithSelection.isEmpty)
 
             // Fetch ComicVine metadata for the whole selection
             Button(action: {

@@ -400,6 +400,13 @@ struct LibraryView: View {
         }
     }
 
+    /// The folder the library is scoped to — drives the direct
+    /// "Remove from '<name>'" shortcuts. nil for All Books / Unfiled.
+    private var currentScopeFolder: Folder? {
+        guard case .folder(let id) = scope else { return nil }
+        return viewModel.folders.first(where: { $0.id == id })
+    }
+
     /// Closures handed to every comic cell (grid, list, publisher grids).
     private var cellActions: ComicCellActions {
         ComicCellActions(
@@ -453,6 +460,16 @@ struct LibraryView: View {
                     isSelectionMode = false
                 }
             },
+            removeSelectionFromFolder: { folderID in
+                let ids = Array(selectedComics)
+                Task {
+                    await viewModel.removeComics(ids, fromFolder: folderID)
+                    selectedComics.removeAll()
+                    isSelectionMode = false
+                }
+            },
+            foldersContainingSelection: { viewModel.folders(containingAnyOf: selectedComics) },
+            currentFolder: currentScopeFolder,
             requestNewFolderForComic: { comic in
                 newFolderContext = .comic(comic)
                 newFolderParentID = nil
@@ -471,6 +488,10 @@ struct LibraryView: View {
                 // Highlight the book where it lives — the grid/list scrolls
                 // to the focused comic once the new scope's list contains it.
                 focusedComic = comic
+            },
+            selectBook: { comic in
+                isSelectionMode = true
+                selectedComics.insert(comic.id)
             }
         )
     }
@@ -545,6 +566,17 @@ struct LibraryView: View {
                     newFolderParentID = nil
                     newFolderName = ""
                     showingNewFolderAlert = true
+                },
+                removalFoldersForSelection: {
+                    viewModel.folders(containingAnyOf: selectedComics)
+                },
+                onRemoveFromFolder: { folderID in
+                    let ids = Array(selectedComics)
+                    Task {
+                        await viewModel.removeComics(ids, fromFolder: folderID)
+                        selectedComics.removeAll()
+                        isSelectionMode = false
+                    }
                 },
                 onSendToDevice: {
                     let selected = viewModel.comics.filter { selectedComics.contains($0.id) }
