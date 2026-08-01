@@ -112,6 +112,17 @@ struct PremadeLogoPickerSheet: View {
     private let tileWidth: CGFloat = 230
     private let tileHeight: CGFloat = 100
 
+    /// macOS shows exact-size 230×100 tiles; iOS lets tiles shrink to fit
+    /// compact widths (iPhone portrait can't fit even one fixed 230pt column
+    /// per half, and landscape sheets are inset narrower than the old 540pt frame).
+    private var gridColumns: [GridItem] {
+        #if os(macOS)
+            [GridItem(.adaptive(minimum: tileWidth), spacing: 16)]
+        #else
+            [GridItem(.adaptive(minimum: 150, maximum: tileWidth), spacing: 12)]
+        #endif
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Header
@@ -145,7 +156,7 @@ struct PremadeLogoPickerSheet: View {
             } else {
                 ScrollView {
                     LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: tileWidth), spacing: 16)],
+                        columns: gridColumns,
                         spacing: 16
                     ) {
                         ForEach(logos) { logo in
@@ -156,7 +167,11 @@ struct PremadeLogoPickerSheet: View {
                 }
             }
         }
-        .frame(width: 540, height: 480)
+        #if os(macOS)
+            .frame(width: 540, height: 480)
+        #else
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        #endif
         .background(BackgroundColors.primary)
         .task { logos = PremadePublisherLogoLibrary.allLogos() }
     }
@@ -196,7 +211,12 @@ struct PremadeLogoPickerSheet: View {
                         }
                     #endif
                 }
-                .frame(width: tileWidth, height: tileHeight)
+                #if os(macOS)
+                    .frame(width: tileWidth, height: tileHeight)
+                #else
+                    .aspectRatio(tileWidth / tileHeight, contentMode: .fit)
+                    .frame(maxWidth: tileWidth)
+                #endif
                 .clipped()
                 .clipShape(RoundedRectangle(cornerRadius: 5))
                 .overlay(
@@ -219,5 +239,13 @@ struct PremadeLogoPickerSheet: View {
 #if DEBUG
     #Preview("Premade Logo Picker") {
         PremadeLogoPickerSheet(publisherName: "DC Comics") { _ in }
+    }
+
+    #Preview("iPhone Portrait", traits: .fixedLayout(width: 390, height: 844)) {
+        PremadeLogoPickerSheet(publisherName: "Marvel") { _ in }
+    }
+
+    #Preview("iPhone Landscape", traits: .fixedLayout(width: 500, height: 390)) {
+        PremadeLogoPickerSheet(publisherName: "Marvel") { _ in }
     }
 #endif
