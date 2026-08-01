@@ -284,7 +284,7 @@ struct UserManualView: View {
                             icon: "arrow.left.and.right.square",
                             title: "Per-Folder Reading Style & Vertical Zoom",
                             description:
-                                "Right-click (or long-press) a folder card to set defaults every member book inherits. 'Set Reading Style' picks Standard, Manga (Right-to-Left), or Vertical Scroll for the whole collection. 'Set Vertical Zoom' chooses how wide pages open in Vertical Scroll mode, with a live preview using one of the folder's own covers so you can see the exact width before saving. A book where you've set your own style or zoom keeps its personal setting — folder defaults only fill in when a book has none. Works identically on Mac, iPad, and iPhone."
+                                "Right-click (or long-press) a folder card to set defaults every member book inherits. 'Set Reading Style' picks Western, Manga (Right-to-Left), or Vertical Scroll for the whole collection. 'Set Vertical Zoom' chooses how wide pages open in Vertical Scroll mode, with a live preview using one of the folder's own covers so you can see the exact width before saving. A book where you've set your own style or zoom keeps its personal setting — folder defaults only fill in when a book has none. Works identically on Mac, iPad, and iPhone."
                         )
 
                         FeatureRow(
@@ -437,7 +437,7 @@ struct UserManualView: View {
                             icon: "text.book.closed",
                             title: "Reading Styles",
                             description:
-                                "Enjoy your comics exactly how they were meant to be read. Set per-book Reading Styles including Standard, Manga (Right-to-Left), and Vertical Scroll — on Mac via the Presets menu in the reader's top bar, on iPad via the '…' menu. You can also set a style for a whole folder: right-click (or long-press) a folder card in the Folders view and choose Set Reading Style — every book in it inherits the style unless it has its own override."
+                                "Enjoy your comics exactly how they were meant to be read. Set per-book Reading Styles including Western, Manga (Right-to-Left), and Vertical Scroll — on Mac via the Presets menu in the reader's top bar, on iPad via the '…' menu. You can also set a style for a whole folder: right-click (or long-press) a folder card in the Folders view and choose Set Reading Style — every book in it inherits the style unless it has its own override."
                         )
 
                         FeatureRow(

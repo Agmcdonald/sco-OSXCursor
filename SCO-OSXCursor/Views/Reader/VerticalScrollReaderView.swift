@@ -4,8 +4,14 @@
 //
 //  Continuous vertical-strip reader, optimised for webtoons and
 //  vertical-scroll comics. All pages are stacked in a single lazy
-//  vertical scroll view. The HUD slider anchors the view to any page;
-//  each page reports its appearance to keep currentPage in sync.
+//  vertical scroll view.
+//
+//  Positioning uses `.scrollPosition(id:)` + `.scrollTargetLayout()`:
+//  the saved reading position is applied during the FIRST layout pass
+//  (no post-hoc scrollTo racing lazy cell creation — the old approach
+//  silently failed on long books, opening an 877-page PDF at page 1),
+//  and the same binding both drives programmatic jumps (HUD slider,
+//  thumbnails, restore) and reports the page the user scrolled to.
 //
 
 import SwiftUI
@@ -30,19 +36,51 @@ struct VerticalScrollReaderView: View {
     var onBeginPinching: () -> Void = {}
     var onEndPinching: () -> Void = {}
 
-    // Track which page the scroll view most recently made fully visible
-    @State private var visiblePage: Int = 0
+    /// The page id (`ComicPage.id`) anchored at the top of the viewport.
+    /// Seeded from the saved reading position so the strip opens there.
+    @State private var scrolledID: String?
     // Track which half of the page is currently targeted (0 = top, 1 = middle)
     @State private var currentSubPage: Int = 0
-    // Debounce rapid currentPage changes triggered by the HUD slider
-    @State private var scrollTask: Task<Void, Never>? = nil
-    // False until the initial scroll-to-saved-page has settled. Cell onAppear
-    // must NOT write currentPage before then: during first layout the top
-    // cells (index 0…) appear and would clobber the restored reading position
-    // with 0, which then gets persisted — losing the user's place.
-    @State private var hasAnchored = false
     // Column width at the moment a pinch began; nil = no pinch in flight
     @State private var pinchBaseZoom: Double? = nil
+
+    init(
+        pages: [ComicPage],
+        currentPage: Binding<Int>,
+        zoomScale: Binding<Double>,
+        pageAspects: [Int: CGFloat] = [:],
+        onBeginDragging: @escaping () -> Void = {},
+        onEndDragging: @escaping () -> Void = {},
+        onBeginPinching: @escaping () -> Void = {},
+        onEndPinching: @escaping () -> Void = {}
+    ) {
+        self.pages = pages
+        self._currentPage = currentPage
+        self._zoomScale = zoomScale
+        self.pageAspects = pageAspects
+        self.onBeginDragging = onBeginDragging
+        self.onEndDragging = onEndDragging
+        self.onBeginPinching = onBeginPinching
+        self.onEndPinching = onEndPinching
+        // Anchor the strip to the saved page on the very first layout
+        let start = currentPage.wrappedValue
+        self._scrolledID = State(
+            initialValue: pages.indices.contains(start) ? pages[start].id : nil)
+    }
+
+    /// `ComicPage.id` for a page index (stable "page-N" form, N = index + 1).
+    private func pageID(at index: Int) -> String? {
+        pages.indices.contains(index) ? pages[index].id : nil
+    }
+
+    /// Inverse of `pageID(at:)` — page index for a scroll-position id.
+    private func pageIndex(for id: String?) -> Int? {
+        guard let id, id.hasPrefix("page-"), let number = Int(id.dropFirst(5)) else {
+            return nil
+        }
+        let index = number - 1
+        return pages.indices.contains(index) ? index : nil
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -51,10 +89,10 @@ struct VerticalScrollReaderView: View {
                     LazyVStack(spacing: 0) {
                         ForEach(Array(pages.enumerated()), id: \.element.id) { index, page in
                             let columnWidth = geometry.size.width * zoomScale
-                            
+
                             ZStack {
                                 pageCell(page: page, index: index, columnWidth: columnWidth)
-                                
+
                                 // Invisible anchor points for half-page scrolling
                                 VStack(spacing: 0) {
                                     Color.clear.frame(height: 1).id("page_\(index)_0")
@@ -64,55 +102,37 @@ struct VerticalScrollReaderView: View {
                                 }
                             }
                             .frame(maxWidth: .infinity)  // Centre within the scroll view
-                            .id("page_\(index)")
-                            // Track when a page enters the viewport
-                            .onAppear {
-                                // Ignore appearances during initial layout /
-                                // restore-scroll — see hasAnchored.
-                                guard hasAnchored else { return }
-                                // Update the visible page tracker bidirectionally
-                                visiblePage = index
-                                if currentPage != index {
-                                    currentPage = index
-                                    currentSubPage = 0
-                                }
-                            }
                         }
+                    }
+                    .scrollTargetLayout()
+                }
+                .scrollPosition(id: $scrolledID, anchor: .top)
+                // HUD slider, thumbnail grid, or a late progress restore moved
+                // the page — drive the strip there
+                .onChange(of: currentPage) { _, newPage in
+                    guard let target = pageID(at: newPage), target != scrolledID else { return }
+                    currentSubPage = 0
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        scrolledID = target
                     }
                 }
-                // When the HUD slider or external code changes currentPage, scroll to it
-                .onChange(of: currentPage) { _, newPage in
-                    // If the page change came from natural scrolling (onAppear), don't snap
-                    guard newPage != visiblePage else { return }
-                    
-                    scrollTask?.cancel()
-                    scrollTask = Task {
-                        try? await Task.sleep(nanoseconds: 50_000_000)  // 50ms debounce
-                        guard !Task.isCancelled else { return }
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            proxy.scrollTo("page_\(newPage)", anchor: .top)
-                        }
-                        visiblePage = newPage
-                    }
+                // Natural scrolling — keep currentPage (and persisted
+                // progress) in sync with what's at the top of the viewport
+                .onChange(of: scrolledID) { _, newID in
+                    guard let index = pageIndex(for: newID), index != currentPage else { return }
+                    currentPage = index
+                    currentSubPage = 0
                 }
                 .onAppear {
-                    // Jump to the starting page without animation
-                    let target = currentPage
-                    proxy.scrollTo("page_\(target)", anchor: .top)
-                    visiblePage = target
-                    currentSubPage = 0
-                    // Re-anchor once after the lazy cells have had a moment to
-                    // size themselves (placeholder heights can shift the strip),
-                    // then start trusting cell onAppear for position tracking.
-                    Task {
-                        try? await Task.sleep(nanoseconds: 300_000_000)
-                        // Only re-anchor if nothing (e.g. a late progress
-                        // restore or the HUD slider) moved the target meanwhile.
-                        if currentPage == target {
-                            proxy.scrollTo("page_\(target)", anchor: .top)
-                            visiblePage = target
-                        }
-                        hasAnchored = true
+                    // Safety net: if the view first rendered before pages were
+                    // available, seed the anchor as soon as we can
+                    if scrolledID == nil {
+                        scrolledID = pageID(at: currentPage)
+                    }
+                }
+                .onChange(of: pages.count) {
+                    if scrolledID == nil {
+                        scrolledID = pageID(at: currentPage)
                     }
                 }
                 // Pinch (trackpad on Mac, two fingers on iPad) adjusts the
@@ -147,12 +167,12 @@ struct VerticalScrollReaderView: View {
                                 if currentPage < pages.count - 1 {
                                     currentPage += 1
                                 }
-                                proxy.scrollTo("page_\(currentPage)_0", anchor: .top)
+                                scrolledID = pageID(at: currentPage)
                             }
                         } else {
                             if currentSubPage == 1 {
                                 currentSubPage = 0
-                                proxy.scrollTo("page_\(currentPage)_0", anchor: .top)
+                                scrolledID = pageID(at: currentPage)
                             } else {
                                 currentSubPage = 1
                                 if currentPage > 0 {

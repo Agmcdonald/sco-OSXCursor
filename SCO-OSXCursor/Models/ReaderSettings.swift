@@ -12,11 +12,19 @@ import SwiftUI
 // MARK: - Reading Style
 
 enum ReadingStyle: String, CaseIterable, Codable {
+    // Raw values are persisted (per-book and per-folder overrides store them),
+    // so they stay stable — displayName is the user-facing label.
     case standard    = "Standard"
     case verticalScroll = "Vertical Scroll"
     case mangaRTL    = "Manga / Manhwa"
 
-    var displayName: String { rawValue }
+    var displayName: String {
+        switch self {
+        case .standard: return "Western"
+        case .verticalScroll: return "Vertical Scroll"
+        case .mangaRTL: return "Manga / Manhwa"
+        }
+    }
 
     var icon: String {
         switch self {
