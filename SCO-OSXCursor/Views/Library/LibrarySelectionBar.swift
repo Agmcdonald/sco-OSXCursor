@@ -40,7 +40,11 @@ struct LibrarySelectionBar: View {
     var onSendToDevice: () -> Void = {}
 
     var body: some View {
-        HStack(spacing: Spacing.md) {
+        // Two rows (Andrew, Aug 7): one long row squeezed the trailing
+        // buttons ("Delete" wrapped mid-word). Row 1 holds selection +
+        // organize actions, row 2 the per-book operations and Cancel.
+        VStack(alignment: .trailing, spacing: Spacing.sm) {
+            HStack(spacing: Spacing.md) {
             Text("\(selectedComics.count) selected")
                 .font(Typography.body)
                 .foregroundColor(TextColors.secondary)
@@ -198,7 +202,9 @@ struct LibrarySelectionBar: View {
             .buttonStyle(.plain)
             .fixedSize()
             .disabled(foldersWithSelection.isEmpty)
+            }
 
+            HStack(spacing: Spacing.md) {
             // Fetch ComicVine metadata for the whole selection
             Button(action: {
                 if !selectedComics.isEmpty && !isFetchingMetadata {
@@ -284,6 +290,7 @@ struct LibrarySelectionBar: View {
             Button("Cancel", action: onCancel)
                 .buttonStyle(.plain)
                 .foregroundColor(TextColors.secondary)
+            }
         }
     }
 
