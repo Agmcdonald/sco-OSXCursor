@@ -10,8 +10,12 @@
 	<string>6.0</string>
 	<key>CFBundleName</key>
 	<string>Super Comic Organizer</string>
+	<!-- Home Screen icon labels fit ~12 characters. Past that, SpringBoard
+	     strips the spaces out before it truncates, so "Super Comic Organizer"
+	     renders as "SuperComicOr…". SCO_DISPLAY_NAME is defined per-SDK in the
+	     project file: short on iOS, full name on macOS. -->
 	<key>CFBundleDisplayName</key>
-	<string>Super Comic Organizer</string>
+	<string>$(SCO_DISPLAY_NAME)</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.books</string>
 	<key>ITSAppUsesNonExemptEncryption</key>

@@ -450,7 +450,7 @@
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				INFOPLIST_FILE = "SCO-OSXCursor/Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "Super Comic Organizer";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(SCO_DISPLAY_NAME)";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.books";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -469,6 +469,9 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "RapturePress.SuperComicOrganizer-App";
 				PRODUCT_MODULE_NAME = SCO_OSXCursor;
 				PRODUCT_NAME = "Super Comic Organizer";
+				SCO_DISPLAY_NAME = "Super Comic Organizer";
+				"SCO_DISPLAY_NAME[sdk=iphoneos*]" = SCOrganizer;
+				"SCO_DISPLAY_NAME[sdk=iphonesimulator*]" = SCOrganizer;
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -508,7 +511,7 @@
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				INFOPLIST_FILE = "SCO-OSXCursor/Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "Super Comic Organizer";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(SCO_DISPLAY_NAME)";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.books";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -527,6 +530,9 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "RapturePress.SuperComicOrganizer-App";
 				PRODUCT_MODULE_NAME = SCO_OSXCursor;
 				PRODUCT_NAME = "Super Comic Organizer";
+				SCO_DISPLAY_NAME = "Super Comic Organizer";
+				"SCO_DISPLAY_NAME[sdk=iphoneos*]" = SCOrganizer;
+				"SCO_DISPLAY_NAME[sdk=iphonesimulator*]" = SCOrganizer;
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
