@@ -819,14 +819,11 @@ private struct EPUBWebViewHelper {
         """
         
         let headInjection = "\(viewportMeta)\n\(css)\n\(js)\n\(tapZonesJS)\n\(stripInlineColorsJS)"
-        
-        if let range = html.range(of: "</head>", options: .caseInsensitive) {
-            return html.replacingCharacters(in: range, with: "\(headInjection)</head>")
-        } else if let range = html.range(of: "<html>", options: .caseInsensitive) {
-            return html.replacingCharacters(in: range, with: "<html><head>\(headInjection)</head>")
-        } else {
-            return "<html><head>\(headInjection)</head><body>\(html)</body></html>"
-        }
+
+        // The charset meta must be the FIRST element of <head>: the styled file
+        // is loaded via loadFileURL, and without an early charset declaration
+        // WebKit's HTML parser falls back to Latin-1 and garbles UTF-8 books.
+        return EPUBHeadCharsetInjector.inject(headInjection, into: html)
     }
 }
 
