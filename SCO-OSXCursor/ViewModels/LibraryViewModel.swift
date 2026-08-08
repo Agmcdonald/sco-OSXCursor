@@ -397,6 +397,9 @@ final class LibraryViewModel: ObservableObject {
                     bookmarkDataIsStale: &isStale
                 ) {
                     fileURL = resolved
+                    // Required for files imported "in place" from Files/iCloud
+                    // (outside the sandbox) — reads fail without active scope.
+                    didStartAccess = resolved.startAccessingSecurityScopedResource()
                 }
             #endif
         }

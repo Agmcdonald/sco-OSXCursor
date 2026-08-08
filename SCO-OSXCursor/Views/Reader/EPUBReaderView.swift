@@ -224,6 +224,10 @@ struct EPUBReaderView: View {
                 bookmarkDataIsStale: &isStale
             ) {
                 fileURL = resolved
+                // Required for books imported "in place" from Files/iCloud —
+                // the file lives outside the sandbox and reads block or fail
+                // without an active security scope.
+                didStartAccess = resolved.startAccessingSecurityScopedResource()
             }
             #endif
         }
