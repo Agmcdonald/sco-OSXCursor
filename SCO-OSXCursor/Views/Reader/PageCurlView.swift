@@ -245,7 +245,7 @@ struct PageCurlView: UIViewControllerRepresentable {
                 page: page,
                 onSwipeLeft: { [weak coordinator] in coordinator?.requestTurn(+1) },
                 onSwipeRight: { [weak coordinator] in coordinator?.requestTurn(-1) },
-                isCurlMode: true,
+                nativePagerMode: true,
                 onZoomStateChanged: { [weak coordinator] zoomed in
                     coordinator?.setZoomed(zoomed)
                 },
@@ -507,7 +507,7 @@ struct SpreadCurlView: UIViewControllerRepresentable {
                 page: page,
                 onSwipeLeft: { [weak coordinator] in coordinator?.requestTurn(+1) },
                 onSwipeRight: { [weak coordinator] in coordinator?.requestTurn(-1) },
-                isCurlMode: true,
+                nativePagerMode: true,
                 onZoomStateChanged: { [weak coordinator] zoomed in
                     coordinator?.setZoomed(zoomed)
                 },

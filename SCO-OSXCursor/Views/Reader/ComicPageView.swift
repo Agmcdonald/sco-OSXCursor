@@ -67,13 +67,13 @@ struct ComicPageView: View {
     var onBeginPinching: () -> Void = {}
     var onEndPinching: () -> Void = {}
 
-    /// Curl mode (iOS): UIPageViewController owns the page-turn pan gesture,
-    /// so our drag gesture must stand down while unzoomed — otherwise it
-    /// claims the touch and the interactive curl never tracks the finger.
-    /// While zoomed (scale > 1.01) the drag re-engages for panning and the
-    /// host disables the curl pan via `onZoomStateChanged`.
-    var isCurlMode: Bool = false
-    /// Reports zoom state crossings so the curl host can toggle its pan gesture.
+    /// Native pager mode (iOS): a UIKit pager (curl or slide scroll) owns the
+    /// page-turn pan gesture, so our drag gesture must stand down while
+    /// unzoomed — otherwise it claims the touch and the pager never tracks
+    /// the finger. While zoomed (scale > 1.01) the drag re-engages for
+    /// panning and the host disables its pan via `onZoomStateChanged`.
+    var nativePagerMode: Bool = false
+    /// Reports zoom state crossings so the pager host can yield its pan/scroll.
     var onZoomStateChanged: (Bool) -> Void = { _ in }
 
     /// Per-book zoom memory: the scale this page starts at (and returns to on
@@ -98,7 +98,7 @@ struct ComicPageView: View {
             onEndDragging: onEndDragging,
             onBeginPinching: onBeginPinching,
             onEndPinching: onEndPinching,
-            isCurlMode: isCurlMode,
+            nativePagerMode: nativePagerMode,
             onZoomStateChanged: onZoomStateChanged,
             initialScale: initialScale,
             isActive: isActive,

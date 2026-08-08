@@ -149,9 +149,9 @@ struct ZoomableCanvas<Content: View>: View {
     var onBeginPinching: () -> Void = {}
     var onEndPinching: () -> Void = {}
 
-    /// Curl mode (iOS): UIPageViewController owns the page-turn pan; our drag
-    /// stands down while unzoomed (see ComicPageView docs).
-    var isCurlMode: Bool = false
+    /// Native pager mode (iOS): a UIKit pager (curl or slide scroll) owns the
+    /// page-turn pan; our drag stands down while unzoomed (see ComicPageView).
+    var nativePagerMode: Bool = false
     var onZoomStateChanged: (Bool) -> Void = { _ in }
 
     /// Per-book zoom memory: the scale this canvas starts at.
@@ -190,9 +190,10 @@ struct ZoomableCanvas<Content: View>: View {
     /// Maximum vertical-to-horizontal ratio for swipe classification
     private let maxDiagonalRatio: CGFloat = 0.75
 
-    /// Mask for the unified drag gesture: detached in curl mode while unzoomed.
+    /// Mask for the unified drag gesture: detached in native pager mode while
+    /// unzoomed.
     private var dragGestureMask: GestureMask {
-        (isCurlMode && scale <= 1.01) ? .none : .all
+        (nativePagerMode && scale <= 1.01) ? .none : .all
     }
 
     @inline(__always) private func debugLog(_ msg: @autoclosure () -> String) {

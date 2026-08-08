@@ -65,7 +65,7 @@ struct PagedReaderView: View {
                     .background(Color.black)
                     .ignoresSafeArea()
                 } else if effectiveTransition == .slide {
-                    interactiveSlideView
+                    nativeSlideView
                 } else {
                     standardPageView
                 }
@@ -79,7 +79,64 @@ struct PagedReaderView: View {
         }
     }
 
-    // MARK: - Interactive slide (Panels-style contiguous pager)
+    // MARK: - Native slide (iOS): UIPageViewController scroll pager
+    //
+    // A native scroll view owns the slide — 1:1 finger tracking, flick
+    // momentum, and jitter-free stop/reverse mid-gesture (see SlidePagerView).
+
+    #if os(iOS)
+        private var nativeSlideView: some View {
+            ZStack {
+                Color.black.ignoresSafeArea()
+
+                if !pages.isEmpty {
+                    SlidePagerReader(
+                        items: pages,
+                        index: $currentPage,
+                        isRTL: viewModel?.isMangaRTL ?? false,
+                        refreshSignature: { idx in
+                            let loaded = [idx - 1, idx, idx + 1].compactMap { i in
+                                pages.indices.contains(i) ? pages[i].isLoaded : nil
+                            }
+                            return "\(pages.count)|\(loaded)|\(comic?.zoomScale ?? 1.0)"
+                        },
+                        onBoundaryTurn: { step in
+                            viewModel?.turn(by: step)
+                        }
+                    ) { page, isActive, onZoomChanged in
+                        ComicPageView(
+                            page: page,
+                            onSwipeLeft: {
+                                if let viewModel {
+                                    viewModel.turn(by: +1)
+                                } else if currentPage < pages.count - 1 {
+                                    currentPage += 1
+                                }
+                            },
+                            onSwipeRight: {
+                                if let viewModel {
+                                    viewModel.turn(by: -1)
+                                } else if currentPage > 0 {
+                                    currentPage -= 1
+                                }
+                            },
+                            onBeginDragging: onBeginDragging,
+                            onEndDragging: onEndDragging,
+                            onBeginPinching: onBeginPinching,
+                            onEndPinching: onEndPinching,
+                            nativePagerMode: true,
+                            onZoomStateChanged: onZoomChanged,
+                            initialScale: CGFloat(comic?.zoomScale ?? 1.0),
+                            isActive: isActive
+                        )
+                    }
+                    .ignoresSafeArea()
+                }
+            }
+        }
+    #endif
+
+    // MARK: - Interactive slide (macOS: SwiftUI contiguous pager)
     //
     // The current page and its neighbor move together, tracking the finger,
     // with a small black gutter between them — both pages stay visible for

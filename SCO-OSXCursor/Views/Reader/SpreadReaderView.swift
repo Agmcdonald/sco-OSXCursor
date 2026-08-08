@@ -64,7 +64,7 @@ struct SpreadReaderView: View {
                     .background(Color.black)
                     .ignoresSafeArea()
                 } else if effectiveTransition == .slide {
-                    interactiveSlideView
+                    nativeSlideView
                 } else {
                     standardSpreadView
                 }
@@ -78,7 +78,54 @@ struct SpreadReaderView: View {
         }
     }
 
-    // MARK: - Interactive slide (Panels-style contiguous pager)
+    // MARK: - Native slide (iOS): UIPageViewController scroll pager
+    //
+    // A native scroll view owns the slide — see SlidePagerView. One item =
+    // one whole spread; the SpreadView zooms as a single canvas as before.
+
+    #if os(iOS)
+        private var nativeSlideView: some View {
+            ZStack {
+                Color.black.ignoresSafeArea()
+
+                if !spreads.isEmpty {
+                    SlidePagerReader(
+                        items: spreads,
+                        index: $currentSpreadIndex,
+                        isRTL: viewModel?.isMangaRTL ?? false,
+                        refreshSignature: { idx in
+                            let loaded = [idx - 1, idx, idx + 1].compactMap { i -> String? in
+                                guard spreads.indices.contains(i) else { return nil }
+                                let s = spreads[i]
+                                return "\(s.leftPage.isLoaded)\(s.rightPage?.isLoaded ?? true)"
+                            }
+                            return "\(spreads.count)|\(loaded)|\(comic?.zoomScale ?? 1.0)"
+                        },
+                        onBoundaryTurn: { step in
+                            viewModel?.turn(by: step)  // 1 step = 1 spread (VM converts to 2 pages)
+                        }
+                    ) { spread, isActive, onZoomChanged in
+                        SpreadView(
+                            spread: spread,
+                            initialScale: CGFloat(comic?.zoomScale ?? 1.0),
+                            onSwipeLeft: { viewModel?.turn(by: +1) },
+                            onSwipeRight: { viewModel?.turn(by: -1) },
+                            onBeginDragging: onBeginDragging,
+                            onEndDragging: onEndDragging,
+                            onBeginPinching: onBeginPinching,
+                            onEndPinching: onEndPinching,
+                            nativePagerMode: true,
+                            onZoomStateChanged: onZoomChanged,
+                            isActive: isActive
+                        )
+                    }
+                    .ignoresSafeArea()
+                }
+            }
+        }
+    #endif
+
+    // MARK: - Interactive slide (macOS: SwiftUI contiguous pager)
 
     private var interactiveSlideView: some View {
         ZStack {
@@ -205,6 +252,12 @@ struct SpreadView: View {
     var onBeginPinching: () -> Void = {}
     var onEndPinching: () -> Void = {}
 
+    /// Native pager mode (iOS): the slide pager's scroll view owns unzoomed
+    /// horizontal drags (see ZoomableCanvas/ComicPageView docs)
+    var nativePagerMode: Bool = false
+    /// Reports zoom crossings so the native pager can stop scrolling
+    var onZoomStateChanged: (Bool) -> Void = { _ in }
+
     /// Pager wiring (see ZoomableCanvas)
     var isActive: Bool = true
     var onScrubChanged: ((CGFloat) -> Void)? = nil
@@ -219,6 +272,8 @@ struct SpreadView: View {
             onEndDragging: onEndDragging,
             onBeginPinching: onBeginPinching,
             onEndPinching: onEndPinching,
+            nativePagerMode: nativePagerMode,
+            onZoomStateChanged: onZoomStateChanged,
             initialScale: initialScale,
             isActive: isActive,
             onScrubChanged: onScrubChanged,
