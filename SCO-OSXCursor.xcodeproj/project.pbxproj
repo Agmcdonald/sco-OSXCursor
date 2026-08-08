@@ -45,6 +45,9 @@
 				.agent/skills/mvvm_generator/SKILL.md,
 				.agent/skills/nano_banana_studio/SKILL.md,
 				Info.plist,
+				"SampleBooks/Adventures into Darkness #13 1954.cbz",
+				SampleBooks/Billy_Bunny_01.cbz,
+				"SampleBooks/The Adventures of Captain Havoc and The Phantom Knight #04 (1949).cbz",
 			);
 			target = 1ABFF60F2EBC3B6600485435 /* SCO-OSXCursor */;
 		};
