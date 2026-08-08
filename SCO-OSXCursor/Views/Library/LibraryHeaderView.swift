@@ -52,25 +52,13 @@ struct LibraryHeaderView: View {
     // Actions
     let onQuickAdd: () -> Void
     let onAddComicsOrganize: (() -> Void)?
-    let onMarkAsRead: () -> Void
-    var onMarkAsUnread: () -> Void = {}
-    let onEditFields: () -> Void
-    let onAddToList: () -> Void
-    let onRegenerateCovers: () -> Void
-    let onFetchMetadata: () -> Void
-    let onDelete: () -> Void
-    var isFetchingMetadata: Bool = false
+    /// Bulk-action wiring for selection mode. Shared with the touch bottom
+    /// bar so the two never drift — see LibrarySelectionActions.
+    var selectionActions = LibrarySelectionActions()
 
-    // Folders (bulk move from the selection bar)
+    // Folders — used by the header's own folder controls, separately from
+    // the bulk-move menus inside selectionActions.
     var folders: [Folder] = []
-    var onAddToFolder: (UUID) -> Void = { _ in }
-    var onNewFolderForSelection: () -> Void = {}
-    /// Folders containing at least one selected comic (bulk removal menu).
-    var removalFoldersForSelection: () -> [Folder] = { [] }
-    var onRemoveFromFolder: (UUID) -> Void = { _ in }
-    /// Package the selection as .scobook files for AirDrop. Available on
-    /// every platform — transfer runs Mac → iPad and iPad/iPhone → Mac.
-    var onSendToDevice: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
@@ -198,12 +186,8 @@ struct LibraryHeaderView: View {
 
             // Selection mode controls
             if isSelectionMode {
-                // iPad portrait: not enough width beside the title for all
-                // controls — scroll horizontally instead of crushing labels
                 #if os(iOS)
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        selectionBar
-                    }
+                    compactSelectionControls
                 #else
                     selectionBar
                 #endif
@@ -249,29 +233,65 @@ struct LibraryHeaderView: View {
         }
     }
 
+    private func endSelection() {
+        isSelectionMode = false
+        selectedComics.removeAll()
+    }
+
     private var selectionBar: some View {
         LibrarySelectionBar(
             selectedComics: $selectedComics,
             visibleComicIDs: visibleComicIDs,
-            onMarkAsRead: onMarkAsRead,
-            onMarkAsUnread: onMarkAsUnread,
-            onEditFields: onEditFields,
-            onAddToList: onAddToList,
-            onRegenerateCovers: onRegenerateCovers,
-            onFetchMetadata: onFetchMetadata,
-            onDelete: onDelete,
-            onCancel: {
-                isSelectionMode = false
-                selectedComics.removeAll()
-            },
-            isFetchingMetadata: isFetchingMetadata,
-            folders: folders,
-            onAddToFolder: onAddToFolder,
-            onNewFolder: onNewFolderForSelection,
-            removalFolders: removalFoldersForSelection,
-            onRemoveFromFolder: onRemoveFromFolder,
-            onSendToDevice: onSendToDevice
+            onMarkAsRead: selectionActions.onMarkAsRead,
+            onMarkAsUnread: selectionActions.onMarkAsUnread,
+            onEditFields: selectionActions.onEditFields,
+            onAddToList: selectionActions.onAddToList,
+            onRegenerateCovers: selectionActions.onRegenerateCovers,
+            onFetchMetadata: selectionActions.onFetchMetadata,
+            onDelete: selectionActions.onDelete,
+            onCancel: endSelection,
+            isFetchingMetadata: selectionActions.isFetchingMetadata,
+            folders: selectionActions.folders,
+            onAddToFolder: selectionActions.onAddToFolder,
+            onNewFolder: selectionActions.onNewFolder,
+            removalFolders: selectionActions.removalFolders,
+            onRemoveFromFolder: selectionActions.onRemoveFromFolder,
+            onSendToDevice: selectionActions.onSendToDevice
         )
+    }
+
+    /// Touch header controls: just the count, Select All and Done. The bulk
+    /// actions live in LibrarySelectionBottomBar, so the header stays a
+    /// single uncrowded row instead of a horizontal scroller.
+    private var compactSelectionControls: some View {
+        HStack(spacing: Spacing.md) {
+            Button {
+                let visibleIDs = Set(visibleComicIDs)
+                if selectedComics.count < visibleIDs.count {
+                    selectedComics = visibleIDs
+                } else {
+                    selectedComics.removeAll()
+                }
+            } label: {
+                Text(
+                    selectedComics.count < visibleComicIDs.count
+                        ? "Select All" : "Deselect All"
+                )
+                .font(Typography.bodySmall)
+                .foregroundColor(AccentColors.primary)
+            }
+            .buttonStyle(.plain)
+
+            Text("\(selectedComics.count) selected")
+                .font(Typography.bodySmall)
+                .foregroundColor(TextColors.secondary)
+                .lineLimit(1)
+
+            Button("Done", action: endSelection)
+                .buttonStyle(.plain)
+                .font(Typography.body.weight(.semibold))
+                .foregroundColor(AccentColors.primary)
+        }
     }
 
     // MARK: - Toolbar Components

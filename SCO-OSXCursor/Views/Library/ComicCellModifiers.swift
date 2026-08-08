@@ -442,6 +442,8 @@ extension View {
 struct SelectionCheckbox: View {
     let isSelected: Bool
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         ZStack {
             Circle()
@@ -452,12 +454,22 @@ struct SelectionCheckbox: View {
                 .stroke(isSelected ? AccentColors.primary : BorderColors.regular, lineWidth: 2)
                 .frame(width: 28, height: 28)
 
-            if isSelected {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(.white)
-            }
+            // Kept mounted and faded rather than inserted/removed: a drag can
+            // cross dozens of cells, and building/tearing down the glyph each
+            // time costs more than animating opacity on a resident view.
+            Image(systemName: "checkmark")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(.white)
+                .opacity(isSelected ? 1 : 0)
+                .scaleEffect(isSelected ? 1 : 0.6)
         }
+        .animation(badgeAnimation, value: isSelected)
+    }
+
+    private var badgeAnimation: Animation {
+        reduceMotion
+            ? .easeOut(duration: 0.12)
+            : .spring(response: 0.28, dampingFraction: 0.72, blendDuration: 0.08)
     }
 }
 

@@ -514,6 +514,67 @@ struct LibraryView: View {
         withRemainingChrome
     }
 
+    /// Bottom padding for the transient status toast. Clears the selection
+    /// bottom bar when it is on screen; macOS keeps its bulk actions in the
+    /// header, so nothing competes for the bottom edge there.
+    private var toastBottomInset: CGFloat {
+        #if os(iOS)
+            isSelectionMode ? 96 : Spacing.xl
+        #else
+            Spacing.xl
+        #endif
+    }
+
+    /// Bulk-action wiring shared by the macOS header bar and the touch bottom
+    /// bar. Built here (not inline in `browseLayout`) so a dozen closure
+    /// literals stay out of a body this file has previously had to split for
+    /// Swift type-check time.
+    private var selectionActions: LibrarySelectionActions {
+        LibrarySelectionActions(
+            onMarkAsRead: markAsReadSelectedComics,
+            onMarkAsUnread: markAsUnreadSelectedComics,
+            onEditFields: { showingBulkEdit = true },
+            onAddToList: addSelectedToReadingList,
+            onRegenerateCovers: regenerateCoversForSelected,
+            onFetchMetadata: fetchMetadataForSelected,
+            onDelete: {
+                requestDelete(viewModel.comics.filter { selectedComics.contains($0.id) })
+            },
+            onSendToDevice: {
+                let selected = viewModel.comics.filter { selectedComics.contains($0.id) }
+                guard !selected.isEmpty else { return }
+                transferExportRequest = TransferExportRequest(comics: selected)
+            },
+            isFetchingMetadata: isBatchFetching,
+            folders: viewModel.folders,
+            onAddToFolder: { folderID in
+                let ids = Array(selectedComics)
+                Task {
+                    await viewModel.addComics(ids, toFolder: folderID)
+                    selectedComics.removeAll()
+                    isSelectionMode = false
+                }
+            },
+            onNewFolder: {
+                newFolderContext = .selection
+                newFolderParentID = nil
+                newFolderName = ""
+                showingNewFolderAlert = true
+            },
+            removalFolders: {
+                viewModel.folders(containingAnyOf: selectedComics)
+            },
+            onRemoveFromFolder: { folderID in
+                let ids = Array(selectedComics)
+                Task {
+                    await viewModel.removeComics(ids, fromFolder: folderID)
+                    selectedComics.removeAll()
+                    isSelectionMode = false
+                }
+            }
+        )
+    }
+
     /// Stage 1 of the body: the browse layout (header, scope bar, grid/list/
     /// publisher/folder views) plus frame, drop targets, and file importers.
     private var browseLayout: some View {
@@ -542,47 +603,8 @@ struct LibraryView: View {
                 folderViewCount: viewModel.folders.count,
                 onQuickAdd: { showingFilePicker = true },
                 onAddComicsOrganize: onAddComicsOrganize,
-                onMarkAsRead: markAsReadSelectedComics,
-                onMarkAsUnread: markAsUnreadSelectedComics,
-                onEditFields: { showingBulkEdit = true },
-                onAddToList: addSelectedToReadingList,
-                onRegenerateCovers: regenerateCoversForSelected,
-                onFetchMetadata: fetchMetadataForSelected,
-                onDelete: {
-                    requestDelete(viewModel.comics.filter { selectedComics.contains($0.id) })
-                },
-                isFetchingMetadata: isBatchFetching,
-                folders: viewModel.folders,
-                onAddToFolder: { folderID in
-                    let ids = Array(selectedComics)
-                    Task {
-                        await viewModel.addComics(ids, toFolder: folderID)
-                        selectedComics.removeAll()
-                        isSelectionMode = false
-                    }
-                },
-                onNewFolderForSelection: {
-                    newFolderContext = .selection
-                    newFolderParentID = nil
-                    newFolderName = ""
-                    showingNewFolderAlert = true
-                },
-                removalFoldersForSelection: {
-                    viewModel.folders(containingAnyOf: selectedComics)
-                },
-                onRemoveFromFolder: { folderID in
-                    let ids = Array(selectedComics)
-                    Task {
-                        await viewModel.removeComics(ids, fromFolder: folderID)
-                        selectedComics.removeAll()
-                        isSelectionMode = false
-                    }
-                },
-                onSendToDevice: {
-                    let selected = viewModel.comics.filter { selectedComics.contains($0.id) }
-                    guard !selected.isEmpty else { return }
-                    transferExportRequest = TransferExportRequest(comics: selected)
-                }
+                selectionActions: selectionActions,
+                folders: viewModel.folders
             )
 
             Divider()
@@ -623,7 +645,8 @@ struct LibraryView: View {
                     coverSize: coverSize,
                     actions: cellActions,
                     emptyState: emptyState,
-                    showsFolderBadges: !searchText.isEmpty
+                    showsFolderBadges: !searchText.isEmpty,
+                    onPaintSelection: paintSelection
                 )
                 .modifier(FileDropTarget(isTargeted: $isDropTargeted, onDrop: handleDrop))
             case .list:
@@ -658,6 +681,22 @@ struct LibraryView: View {
             .focusable()
             .focusEffectDisabled()
             .focused($isBrowseAreaFocused)
+            // Touch platforms move bulk actions out of the header and pin
+            // them over the content. safeAreaInset (rather than an overlay)
+            // so the grid's own bottom inset grows and the last row can
+            // still scroll clear of the bar.
+            #if os(iOS)
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    if isSelectionMode {
+                        LibrarySelectionBottomBar(
+                            selectedCount: selectedComics.count,
+                            actions: selectionActions
+                        )
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                }
+                .animation(.easeInOut(duration: 0.22), value: isSelectionMode)
+            #endif
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(BackgroundColors.primary)
@@ -957,7 +996,11 @@ struct LibraryView: View {
                     .padding(.vertical, Spacing.md)
                     .background(Color.black.opacity(0.85))
                     .clipShape(Capsule())
-                    .padding(.bottom, Spacing.xl)
+                    // Stacks above the selection bottom bar rather than
+                    // landing on top of it — both live on the bottom edge,
+                    // and a metadata fetch is commonly kicked off from a
+                    // selection, so they genuinely coincide.
+                    .padding(.bottom, toastBottomInset)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -1201,6 +1244,15 @@ struct LibraryView: View {
     }
 
     // MARK: - Selection Helpers
+
+    /// Drag-to-paint delta from the grid: applies both directions in one
+    /// write so the view updates once per traversal, not twice.
+    private func paintSelection(add: Set<Comic.ID>, remove: Set<Comic.ID>) {
+        var updated = selectedComics
+        updated.formUnion(add)
+        updated.subtract(remove)
+        selectedComics = updated
+    }
 
     private func toggleSelection(for id: Comic.ID) {
         if selectedComics.contains(id) {
