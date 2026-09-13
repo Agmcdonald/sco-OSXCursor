@@ -1153,6 +1153,10 @@ struct ComicVineMatchPicker: View {
                 linkError = message
             case .noKey:
                 linkError = ComicSource.current.credentialsHint
+            case .unauthorized:
+                linkError = "Metron sign-in failed — check username/password in Settings."
+            case .rateLimited:
+                linkError = outcome.rateLimitMessage
             default:
                 dismiss()
             }
