@@ -51,6 +51,11 @@ struct MaintenanceView: View {
     @State private var trashStatus: String?
     @State private var showingEmptyTrashConfirm = false
     @State private var pendingPurgeEntry: TrashEntry?
+    /// Per-row "Delete File from Device" awaiting confirmation.
+    @State private var pendingEscalateEntry: TrashEntry?
+    @State private var selectedTrashIDs: Set<UUID> = []
+    @State private var showingEscalateSelectedConfirm = false
+    @State private var showingPurgeSelectedConfirm = false
     @AppStorage(LibraryViewModel.trashRetentionDefaultsKey) private var trashRetentionDays: Int = 30
 
     // Shared error alert
@@ -181,6 +186,38 @@ struct MaintenanceView: View {
             Button("Delete", role: .destructive) { purgeEntry(entry) }
         } message: { entry in
             Text("Permanently delete \(entry.displayTitle)? This cannot be undone.")
+        }
+        .alert(
+            "Delete File from Device?",
+            isPresented: Binding(
+                get: { pendingEscalateEntry != nil },
+                set: { if !$0 { pendingEscalateEntry = nil } }),
+            presenting: pendingEscalateEntry
+        ) { entry in
+            Button("Cancel", role: .cancel) { pendingEscalateEntry = nil }
+            Button("Delete File", role: .destructive) { escalateEntry(entry) }
+        } message: { entry in
+            Text(
+                "\(entry.displayTitle)'s file is still on your drive. It will be moved into the Trash, where it stays restorable until the retention window runs out — its existing purge date doesn't change."
+            )
+        }
+        .alert("Delete Files from Device?", isPresented: $showingEscalateSelectedConfirm) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete Files", role: .destructive) { escalateSelected() }
+        } message: {
+            let count = selectedEscalatableEntries.count
+            Text(
+                "Move \(count) file\(count == 1 ? "" : "s") off your drive and into the Trash? They stay restorable until the retention window runs out, and their existing purge dates don't change."
+            )
+        }
+        .alert("Permanently Delete Selected?", isPresented: $showingPurgeSelectedConfirm) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) { purgeSelected() }
+        } message: {
+            let count = selectedTrashIDs.count
+            Text(
+                "Permanently delete \(count) item\(count == 1 ? "" : "s") from the Trash? This cannot be undone."
+            )
         }
         .alert(
             "Something Went Wrong",
@@ -441,17 +478,36 @@ struct MaintenanceView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, Spacing.xs)
                 } else {
+                    trashSelectionHeader
+                    Divider()
                     ForEach(trashEntries) { entry in
                         trashRow(entry)
                         Divider()
                     }
                 }
 
-                // Footer: empty-all + retention window
-                HStack {
-                    Button("Empty Trash") { showingEmptyTrashConfirm = true }
+                // Footer: bulk actions for the current selection, or empty-all
+                HStack(spacing: Spacing.sm) {
+                    if selectedTrashIDs.isEmpty {
+                        Button("Empty Trash") { showingEmptyTrashConfirm = true }
+                            .foregroundColor(AccentColors.error)
+                            .disabled(trashEntries.isEmpty)
+                    } else {
+                        Button("Restore Selected (\(selectedTrashIDs.count))") { restoreSelected() }
+                        // Only offered when the selection actually contains
+                        // books whose files are still on the drive.
+                        if !selectedEscalatableEntries.isEmpty {
+                            Button(
+                                "Delete Files from Device (\(selectedEscalatableEntries.count))"
+                            ) {
+                                showingEscalateSelectedConfirm = true
+                            }
+                        }
+                        Button("Delete Now Selected (\(selectedTrashIDs.count))") {
+                            showingPurgeSelectedConfirm = true
+                        }
                         .foregroundColor(AccentColors.error)
-                        .disabled(trashEntries.isEmpty)
+                    }
                     Spacer()
                 }
                 .padding(.vertical, Spacing.xs)
@@ -486,9 +542,36 @@ struct MaintenanceView: View {
         }
     }
 
+    /// Select All / Clear, plus what the current selection amounts to.
+    private var trashSelectionHeader: some View {
+        HStack(spacing: Spacing.sm) {
+            Text(
+                selectedTrashIDs.isEmpty
+                    ? "Tick books to restore or delete several at once."
+                    : "\(selectedTrashIDs.count) of \(trashEntries.count) selected"
+            )
+            .font(Typography.caption)
+            .foregroundColor(TextColors.secondary)
+
+            Spacer()
+
+            Button("Select All") { selectedTrashIDs = Set(trashEntries.map(\.id)) }
+                .disabled(selectedTrashIDs.count == trashEntries.count)
+            Button("Clear") { selectedTrashIDs.removeAll() }
+                .disabled(selectedTrashIDs.isEmpty)
+        }
+        .padding(.vertical, Spacing.xs)
+    }
+
     /// One trashed book: cover thumb, title, what was deleted, and when it goes.
     private func trashRow(_ entry: TrashEntry) -> some View {
         HStack(spacing: Spacing.sm) {
+            Button { toggleTrashSelection(entry) } label: {
+                SelectionCheckbox(isSelected: selectedTrashIDs.contains(entry.id))
+            }
+            .buttonStyle(.plain)
+            .help(selectedTrashIDs.contains(entry.id) ? "Deselect" : "Select")
+
             trashThumbnail(for: entry)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -511,8 +594,15 @@ struct MaintenanceView: View {
 
             Spacer()
 
-            Button("Restore") { restoreEntry(entry) }
-            Button("Delete Now", role: .destructive) { pendingPurgeEntry = entry }
+            // Single-row actions belong to the empty-selection state; once a
+            // selection exists the footer's bulk actions take over.
+            if selectedTrashIDs.isEmpty {
+                Button("Restore") { restoreEntry(entry) }
+                if entry.canEscalateToDeviceDelete {
+                    Button("Delete File from Device") { pendingEscalateEntry = entry }
+                }
+                Button("Delete Now", role: .destructive) { pendingPurgeEntry = entry }
+            }
         }
         .padding(.vertical, Spacing.xs)
     }
@@ -550,6 +640,17 @@ struct MaintenanceView: View {
                     .font(.system(size: 14))
                     .foregroundColor(TextColors.tertiary)
             )
+    }
+
+    /// The selected entries, in list order (the Set itself is unordered).
+    private var selectedTrashEntries: [TrashEntry] {
+        trashEntries.filter { selectedTrashIDs.contains($0.id) }
+    }
+
+    /// Selected entries whose file is still on the drive — the only ones
+    /// "Delete Files from Device" applies to.
+    private var selectedEscalatableEntries: [TrashEntry] {
+        selectedTrashEntries.filter(\.canEscalateToDeviceDelete)
     }
 
     private var trashSummary: String {
@@ -772,6 +873,17 @@ struct MaintenanceView: View {
     private func loadTrash() async {
         trashEntries = await libraryViewModel.trashEntries()
         trashSize = libraryViewModel.trashTotalSize()
+        // Entries restored or purged elsewhere must not linger in the selection
+        // and inflate the footer's counts.
+        selectedTrashIDs.formIntersection(trashEntries.map(\.id))
+    }
+
+    private func toggleTrashSelection(_ entry: TrashEntry) {
+        if selectedTrashIDs.contains(entry.id) {
+            selectedTrashIDs.remove(entry.id)
+        } else {
+            selectedTrashIDs.insert(entry.id)
+        }
     }
 
     private func restoreEntry(_ entry: TrashEntry) {
@@ -806,6 +918,73 @@ struct MaintenanceView: View {
         Task {
             await libraryViewModel.emptyTrash()
             trashStatus = "Trash emptied."
+            await loadTrash()
+        }
+    }
+
+    /// Per-row escalation: take this book's still-on-disk file into the Trash.
+    private func escalateEntry(_ entry: TrashEntry) {
+        pendingEscalateEntry = nil
+        Task {
+            switch await libraryViewModel.escalateTrashEntryToDeviceDelete(entry) {
+            case .escalated:
+                trashStatus = "\(entry.displayTitle)'s file moved to the Trash."
+            case .notApplicable:
+                trashStatus = "\(entry.displayTitle)'s file is already in the Trash."
+            case .failed(let reason):
+                trashStatus = "Couldn't move \(entry.displayTitle)'s file to the Trash: \(reason)"
+            }
+            await loadTrash()
+        }
+    }
+
+    // MARK: - Trash bulk actions
+
+    private func restoreSelected() {
+        let entries = selectedTrashEntries
+        guard !entries.isEmpty else { return }
+        Task {
+            var restored = 0
+            var failed = 0
+            for entry in entries {
+                if case .failed = await libraryViewModel.restoreFromTrash(entry) {
+                    failed += 1
+                } else {
+                    restored += 1
+                }
+            }
+            trashStatus =
+                failed == 0
+                ? "\(restored) book\(restored == 1 ? "" : "s") restored."
+                : "\(restored) restored, \(failed) failed."
+            selectedTrashIDs.removeAll()
+            await loadTrash()
+        }
+    }
+
+    private func escalateSelected() {
+        let entries = selectedEscalatableEntries
+        guard !entries.isEmpty else { return }
+        Task {
+            let result = await libraryViewModel.escalateTrashEntriesToDeviceDelete(entries)
+            let moved = "\(result.escalated) file\(result.escalated == 1 ? "" : "s") moved to Trash"
+            trashStatus =
+                result.failed == 0 ? "\(moved)." : "\(moved), \(result.failed) failed."
+            selectedTrashIDs.removeAll()
+            await loadTrash()
+        }
+    }
+
+    private func purgeSelected() {
+        let entries = selectedTrashEntries
+        guard !entries.isEmpty else { return }
+        Task {
+            for entry in entries {
+                await libraryViewModel.purgeTrashEntry(entry)
+            }
+            trashStatus =
+                "\(entries.count) item\(entries.count == 1 ? "" : "s") permanently deleted."
+            selectedTrashIDs.removeAll()
             await loadTrash()
         }
     }

@@ -118,6 +118,31 @@ struct TrashEntry: Identifiable, FetchableRecord, PersistableRecord {
     }
 }
 
+// MARK: - Escalation
+
+extension TrashEntry {
+    /// True when the book's file is still sitting on the user's drive — the
+    /// only case where "Delete File from Device" has anything to do. A
+    /// file-kind entry (or a catalog-kind row that somehow already names a
+    /// stored file) is left alone.
+    var canEscalateToDeviceDelete: Bool {
+        kind == .catalog && trashedFileName == nil
+    }
+
+    /// This entry rewritten for a file that has just been taken into the Trash
+    /// directory. `id`, `deletedAt`, `comicSnapshot`, `originalPath`,
+    /// `bookmarkData` and `coverThumb` are preserved deliberately: escalating
+    /// must not restart the purge clock, and the snapshot remains the restore
+    /// source of truth. `insertTrashEntry` upserts, so this replaces the row.
+    func escalated(storedName: String, fileSize: Int64) -> TrashEntry {
+        var copy = self
+        copy.kind = .file
+        copy.trashedFileName = storedName
+        copy.fileSize = fileSize
+        return copy
+    }
+}
+
 // MARK: - Retention math
 
 /// Pure retention arithmetic — unit-tested; no clock or store dependencies.

@@ -1145,6 +1145,32 @@ final class LibraryViewModel: ObservableObject {
         await loadFolders()
     }
 
+    /// Delete a catalog-only entry's file from the device too: its file moves
+    /// into the Trash directory and the entry becomes a full file entry,
+    /// keeping its original purge date. The library is untouched (the book left
+    /// it when it was trashed), so there is no reload here.
+    func escalateTrashEntryToDeviceDelete(_ entry: TrashEntry) async
+        -> TrashService.EscalateOutcome
+    {
+        // Sandbox: taking the file means writing under the library root, which
+        // needs the root's security scope — same reasoning as restore.
+        let scopedLibraryRoot = beginHomeLibraryScope()
+        defer { scopedLibraryRoot?.stopAccessingSecurityScopedResource() }
+
+        return await TrashService.shared.escalateToDeviceDelete(entry)
+    }
+
+    /// Bulk form of `escalateTrashEntryToDeviceDelete` — one security scope for
+    /// the whole batch, per-entry failure isolation inside the service.
+    func escalateTrashEntriesToDeviceDelete(_ entries: [TrashEntry]) async -> (
+        escalated: Int, failed: Int
+    ) {
+        let scopedLibraryRoot = beginHomeLibraryScope()
+        defer { scopedLibraryRoot?.stopAccessingSecurityScopedResource() }
+
+        return await TrashService.shared.escalateAll(entries)
+    }
+
     func purgeTrashEntry(_ entry: TrashEntry) async {
         await TrashService.shared.purge(entry)
     }

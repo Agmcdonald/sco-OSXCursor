@@ -61,7 +61,10 @@ final class TrashService {
 
             if deleteFiles && !Comic.isBundled(comic) {
                 do {
-                    let taken = try await takeFileResolvingBookmark(for: comic, entryID: entryID)
+                    let taken = try await takeFileResolvingBookmark(
+                        bookmarkData: comic.bookmarkData,
+                        originalURL: comic.filePath,
+                        entryID: entryID)
                     storedName = taken.storedName
                     fileSize = taken.fileSize
                     kind = .file
@@ -150,8 +153,13 @@ final class TrashService {
         return outcome
     }
 
-    /// Resolve the comic's security-scoped bookmark, hold access for exactly
-    /// the duration of the take, and hand the stored file back.
+    /// Resolve a security-scoped bookmark (falling back to the plain path when
+    /// there is none, or it no longer resolves), hold access for exactly the
+    /// duration of the take, and hand the stored file back.
+    ///
+    /// Takes the bookmark blob and URL rather than a `Comic` so both callers —
+    /// the trash batch (a live comic) and escalation (a manifest row whose
+    /// comic is long gone) — share one implementation.
     ///
     /// Runs off the main actor: a take is a `moveItem` that silently becomes a
     /// full copy across volumes, so a large "delete files" batch would otherwise
@@ -163,12 +171,12 @@ final class TrashService {
     /// purpose: Swift's `defer` fires when the *enclosing function* returns, so
     /// a `defer` written inside `trash(_:deleteFiles:folderIDs:)` would hold
     /// every book's security scope open until the whole batch finished.
-    private func takeFileResolvingBookmark(for comic: Comic, entryID: UUID) async throws -> (
+    private func takeFileResolvingBookmark(
+        bookmarkData: Data?, originalURL: URL, entryID: UUID
+    ) async throws -> (
         storedName: String, fileSize: Int64
     ) {
         let store = fileStore
-        let bookmarkData = comic.bookmarkData
-        let originalURL = comic.filePath
         return try await Task.detached(priority: .utility) {
             var fileURL = originalURL
             var didStartAccess = false
@@ -366,6 +374,97 @@ final class TrashService {
                 "[Trash] ⚠️ Downgrade failed for \(entry.displayTitle): \(error.localizedDescription)"
             )
         }
+    }
+
+    // MARK: - Escalate (catalog-only → file in Trash)
+
+    /// What `escalateToDeviceDelete` did. Richer than a Bool so the UI can tell
+    /// "nothing to do" (the file is already in the Trash) apart from "the file
+    /// is missing or locked", which is the case a status line must explain.
+    enum EscalateOutcome: Equatable {
+        /// The file is now in the Trash directory and the manifest row says so.
+        case escalated
+        /// The entry's file was never left on disk — nothing to take.
+        case notApplicable
+        /// The file couldn't be taken (moved, deleted, locked, unreadable) or
+        /// the manifest couldn't be updated. The entry is unchanged.
+        case failed(String)
+    }
+
+    /// Turn a catalog-only entry ("removed from library, file kept on disk")
+    /// into a full file entry by taking its file into the Trash directory.
+    ///
+    /// The row is updated in place — same id, same `deletedAt` (so the purge
+    /// clock does not restart), same snapshot and cover thumb — and the book
+    /// stays fully restorable, now with its file coming back too. A missing or
+    /// unreadable file leaves the entry exactly as it was.
+    func escalateToDeviceDelete(_ entry: TrashEntry) async -> EscalateOutcome {
+        guard entry.canEscalateToDeviceDelete else { return .notApplicable }
+
+        let taken: (storedName: String, fileSize: Int64)
+        do {
+            taken = try await takeFileResolvingBookmark(
+                bookmarkData: entry.bookmarkData,
+                originalURL: URL(fileURLWithPath: entry.originalPath),
+                entryID: entry.id)
+        } catch {
+            AppLog.trash.error(
+                "[Trash] ⚠️ Escalate could not take the file for \(entry.displayTitle): \(error.localizedDescription)"
+            )
+            return .failed(error.localizedDescription)
+        }
+
+        do {
+            try await database.insertTrashEntry(
+                entry.escalated(storedName: taken.storedName, fileSize: taken.fileSize))
+            AppLog.trash.info(
+                "[Trash] 📥 Escalated \(entry.displayTitle) to a device delete — its file is now in the Trash"
+            )
+            return .escalated
+        } catch {
+            // The file has moved but the row still says "catalog, no stored
+            // file", so nothing in the database points at it: it would be
+            // invisible to every UI and counted by totalSize() forever. Put it
+            // back where it came from; only if that fails do we retry the row
+            // update, so the file stays reachable from the Trash list.
+            let putBack = try? await restoreFileOffMain(
+                storedName: taken.storedName, toOriginalPath: entry.originalPath)
+            if putBack != nil && putBack != .failedParentMissing {
+                AppLog.trash.error(
+                    "[Trash] ⚠️ Escalate failed for \(entry.displayTitle) (\(error.localizedDescription)); its file was put back"
+                )
+                return .failed(error.localizedDescription)
+            }
+            do {
+                try await database.insertTrashEntry(
+                    entry.escalated(storedName: taken.storedName, fileSize: taken.fileSize))
+                AppLog.trash.error(
+                    "[Trash] ⚠️ Escalate couldn't put \(entry.displayTitle)'s file back; re-wrote its manifest row so the file stays reachable from the Trash"
+                )
+                return .escalated
+            } catch {
+                AppLog.trash.error(
+                    "[Trash] ⚠️ Escalate couldn't put \(entry.displayTitle)'s file back and the manifest row could not be written (\(error.localizedDescription)) — the file sits in the Trash directory WITHOUT a manifest row"
+                )
+                return .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    /// Bulk escalate with per-entry failure isolation — one missing file never
+    /// stops the rest. `notApplicable` entries are skipped silently (the UI
+    /// only ever offers this for catalog-kind rows).
+    func escalateAll(_ entries: [TrashEntry]) async -> (escalated: Int, failed: Int) {
+        var escalated = 0
+        var failed = 0
+        for entry in entries {
+            switch await escalateToDeviceDelete(entry) {
+            case .escalated: escalated += 1
+            case .failed: failed += 1
+            case .notApplicable: break
+            }
+        }
+        return (escalated, failed)
     }
 
     // MARK: - Purge / sweep

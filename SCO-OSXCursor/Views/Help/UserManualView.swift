@@ -643,7 +643,7 @@ struct UserManualView: View {
                             icon: "trash",
                             title: "Trash & Restore",
                             description:
-                                "Every book you delete lands in the Trash section here — with its file too, if you chose to delete that from your device. 'Restore' puts a book back in your library with its metadata, reading progress, and folder memberships intact (and returns its file to where it came from). The 'Keep deleted items' picker sets how long items wait: 7, 30 (the default), or 90 days, or 'Never Delete' to keep them until you clear them yourself — anything past the window is swept away the next time the app launches. 'Empty Trash' and a row's 'Delete Now' are the only actions that remove something for good."
+                                "Every book you delete lands in the Trash section here — with its file too, if you chose to delete that from your device. 'Restore' puts a book back in your library with its metadata, reading progress, and folder memberships intact (and returns its file to where it came from). The 'Keep deleted items' picker sets how long items wait: 7, 30 (the default), or 90 days, or 'Never Delete' to keep them until you clear them yourself — anything past the window is swept away the next time the app launches. 'Empty Trash' and a row's 'Delete Now' are the only actions that remove something for good. A book whose file stayed on your drive also offers 'Delete File from Device', which brings that file into the Trash without changing when the entry purges — and the row checkboxes (with 'Select All') let you restore, delete files for, or permanently delete several books at once."
                         )
 
                         FeatureRow(

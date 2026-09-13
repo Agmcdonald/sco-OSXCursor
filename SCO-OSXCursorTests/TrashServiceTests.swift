@@ -119,6 +119,63 @@ import Testing
     }
 }
 
+// MARK: - Escalation (catalog-only → file in Trash)
+
+/// The pure half of `TrashService.escalateToDeviceDelete`: which entries the
+/// action applies to, and what the rewritten manifest row must preserve. The
+/// disk/DB half needs a database seam the service doesn't have yet.
+@Suite struct TrashEscalationTests {
+
+    private func entry(kind: TrashKind, trashedFileName: String?) -> TrashEntry {
+        TrashEntry(
+            id: UUID(),
+            comicSnapshot: #"{"folderIDs":[]}"#,
+            originalPath: "/tmp/lib/Batman #001.cbz",
+            bookmarkData: Data([0x01, 0x02]),
+            trashedFileName: trashedFileName,
+            fileSize: trashedFileName == nil ? 0 : 4_096,
+            deletedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            kind: kind,
+            displayTitle: "Batman #001",
+            coverThumb: Data([0xFF, 0xD8])
+        )
+    }
+
+    @Test func onlyCatalogEntriesWithNoStoredFileCanEscalate() {
+        #expect(entry(kind: .catalog, trashedFileName: nil).canEscalateToDeviceDelete)
+        // Its file is already in the Trash — nothing left to take.
+        #expect(!entry(kind: .file, trashedFileName: "abc.cbz").canEscalateToDeviceDelete)
+        // Defensive: a mislabelled row that already names a stored file must
+        // not be taken a second time.
+        #expect(!entry(kind: .catalog, trashedFileName: "abc.cbz").canEscalateToDeviceDelete)
+    }
+
+    @Test func escalatedRowKeepsPurgeClockAndRestoreSource() {
+        let original = entry(kind: .catalog, trashedFileName: nil)
+        let escalated = original.escalated(storedName: "\(original.id.uuidString).cbz", fileSize: 9_001)
+
+        #expect(escalated.kind == .file)
+        #expect(escalated.trashedFileName == "\(original.id.uuidString).cbz")
+        #expect(escalated.fileSize == 9_001)
+        // The upsert replaces the row in place, so these must survive verbatim:
+        // a changed id would orphan the file, a changed deletedAt would restart
+        // the retention clock, and the snapshot/cover are what restore needs.
+        #expect(escalated.id == original.id)
+        #expect(escalated.deletedAt == original.deletedAt)
+        #expect(escalated.comicSnapshot == original.comicSnapshot)
+        #expect(escalated.originalPath == original.originalPath)
+        #expect(escalated.bookmarkData == original.bookmarkData)
+        #expect(escalated.coverThumb == original.coverThumb)
+        #expect(escalated.displayTitle == original.displayTitle)
+    }
+
+    @Test func escalatedRowIsNoLongerEscalatable() {
+        let escalated = entry(kind: .catalog, trashedFileName: nil)
+            .escalated(storedName: "stored.cbz", fileSize: 1)
+        #expect(!escalated.canEscalateToDeviceDelete)
+    }
+}
+
 // MARK: - TrashFileStore (temp-directory harness)
 
 @Suite struct TrashFileStoreTests {
