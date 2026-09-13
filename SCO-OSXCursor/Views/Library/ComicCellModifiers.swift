@@ -250,12 +250,12 @@ struct ComicCellInteraction: ViewModifier {
         // Online metadata — its own section so the destructive-ish network
         // actions sit apart from the everyday items above.
         // EPUB books fetch from Open Library / Google Books; comics from
-        // ComicVine. Same action — LibraryView routes by file type.
+        // the active provider. Same action — LibraryView routes by file type.
         Button(action: { actions.fetchMetadata(comic) }) {
             if comic.isEbook {
                 Label("Fetch Book Metadata", systemImage: "books.vertical")
             } else {
-                Label("Fetch from ComicVine", systemImage: "network")
+                Label("Fetch from \(ComicSource.current.displayName)", systemImage: "network")
             }
         }
 

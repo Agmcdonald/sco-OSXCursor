@@ -1050,9 +1050,11 @@ struct ComicVineMatchPicker: View {
     }
 
     /// True when the pending candidates came from Metron, so the link field
-    /// asks for a Metron ID rather than a ComicVine URL.
+    /// asks for a Metron ID rather than a ComicVine URL. With no candidates to
+    /// go on, falls back to the active provider — same rule as
+    /// `applyProviderLink`, which decides where the pasted link is sent.
     private var isMetronPicker: Bool {
-        candidates.first?.isMetron == true
+        candidates.first.map(\.isMetron) ?? (ComicSource.current == .metron)
     }
 
     /// Manual override: paste a provider link (or ID) to match a series that

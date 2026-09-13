@@ -295,7 +295,7 @@ enum HealthReviewMode: String, Identifiable {
 }
 
 /// Lists the books behind a Health issue and offers a fix:
-/// duplicates → per-copy delete; missing metadata → batch ComicVine fetch;
+/// duplicates → per-copy delete; missing metadata → batch provider fetch;
 /// missing covers → batch cover regeneration.
 struct HealthReviewSheet: View {
     @ObservedObject var libraryViewModel: LibraryViewModel
@@ -385,7 +385,7 @@ struct HealthReviewSheet: View {
             Spacer()
 
             if mode == .missingMetadata && !flatComics.isEmpty {
-                Button(isWorking ? "Fetching…" : "Fetch All from ComicVine") {
+                Button(isWorking ? "Fetching…" : "Fetch All from \(ComicSource.current.displayName)") {
                     fetchAllMetadata()
                 }
                 .disabled(isWorking)
@@ -461,7 +461,7 @@ struct HealthReviewSheet: View {
         let comics = flatComics
         isWorking = true
         Task {
-            let result = await libraryViewModel.fetchComicVineMetadataBatch(for: comics) {
+            let result = await libraryViewModel.fetchComicMetadataBatch(for: comics) {
                 done, total in
                 statusText = "Fetching… \(done) of \(total)"
             }

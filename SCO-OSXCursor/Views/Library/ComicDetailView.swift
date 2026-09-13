@@ -215,7 +215,7 @@ struct ComicDetailView: View {
             resyncDrafts()
             if liveComic.metadataFetchedAt != nil {
                 fetchMessage =
-                    "Metadata updated from \(draftIsBook ? "the book sources" : "ComicVine"). Review and Save to keep."
+                    "Metadata updated from \(draftIsBook ? "the book sources" : ComicSource.current.displayName). Review and Save to keep."
             }
         }) {
             if draftIsBook {
@@ -850,7 +850,7 @@ struct ComicDetailView: View {
                                     .foregroundColor(TextColors.primary)
                             }
                         }
-                        Text("From ComicVine — search your library by arc name to find related books.")
+                        Text("From the metadata provider — search your library by arc name to find related books.")
                             .font(Typography.caption)
                             .foregroundColor(TextColors.tertiary)
                     }
