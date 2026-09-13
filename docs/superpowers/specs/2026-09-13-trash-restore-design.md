@@ -181,3 +181,19 @@ tests can inject temps — that injection seam is part of the design):
 - System Trash integration ("Put Back" in Finder).
 - Size-capped trash (retention is time-based only).
 - Undo toast in the Library (the status pill copy points at Maintenance).
+
+## Addendum (2026-09-13, user-approved): escalate + multi-select
+
+- **Escalate:** catalog-kind entries gain "Delete File from Device": resolve
+  the entry's stored bookmark, take the file into the Trash directory under
+  the entry's ID (same TrashFileStore.takeFile), update the entry in place
+  (kind = file, trashedFileName, fileSize) keeping the ORIGINAL deletedAt so
+  the purge clock doesn't reset. Missing/moved file → entry unchanged,
+  status reports it. File-kind entries never show the action.
+- **Multi-select in the Trash section:** per-row checkboxes + Select All /
+  Clear; when the selection is non-empty the footer offers Restore Selected,
+  Delete Files from Device (catalog-kind members only, count in the
+  confirmation), and Delete Now Selected (destructive confirmation).
+  Single-row buttons remain for the empty-selection state.
+- Escalation runs under the home-library security scope with per-entry
+  failure isolation, and escalated entries stay fully restorable.
