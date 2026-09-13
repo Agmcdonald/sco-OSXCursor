@@ -327,6 +327,7 @@ enum LibraryQuery {
 /// Bounds for the user-adjustable cover size slider.
 enum LibraryCoverSize {
     static let minimum: Double = 120
-    static let maximum: Double = 260
+    /// Large enough that a wide desktop window can zoom to ~4 covers per row.
+    static let maximum: Double = 420
     static let `default`: Double = 160
 }
