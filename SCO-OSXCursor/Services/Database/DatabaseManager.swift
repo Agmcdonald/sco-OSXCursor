@@ -714,6 +714,33 @@ final class DatabaseManager {
             AppLog.database.info("[DatabaseManager] ✅ Migration v31_folder_position complete")
         }
 
+        // Version 32: Metron metadata. Characters / teams (JSON arrays) and the
+        // in-store date supplied by metron.cloud, plus the matched Metron
+        // series / issue ids so a fetch can be re-resolved or reverted.
+        migrator.registerMigration("v32_metron_metadata") { db in
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v32_metron_metadata")
+            if try db.tableExists("comics") {
+                let columns: [(String, Database.ColumnType)] = [
+                    ("characters", .text),          // JSON [String] (Metron)
+                    ("teams", .text),               // JSON [String] (Metron)
+                    ("store_date", .datetime),      // Metron store date
+                    ("metron_series_id", .integer),
+                    ("metron_issue_id", .integer),
+                ]
+                for (name, type) in columns {
+                    do {
+                        try db.alter(table: "comics") { t in
+                            t.add(column: name, type)
+                        }
+                        AppLog.database.info("[DatabaseManager] ✅ Added \(name) column")
+                    } catch {
+                        AppLog.database.error("[DatabaseManager] ℹ️ \(name) column may already exist: \(error.localizedDescription)")
+                    }
+                }
+            }
+            AppLog.database.info("[DatabaseManager] ✅ Migration v32_metron_metadata complete")
+        }
+
         return migrator
     }
 

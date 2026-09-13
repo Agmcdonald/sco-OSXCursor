@@ -94,6 +94,13 @@ struct Comic: Identifiable, Codable {
     /// Story arcs / events this issue belongs to (from ComicVine
     /// story_arc_credits), e.g. ["Civil War"]. Searchable alongside tags.
     var storyArcs: [String]
+    /// Characters appearing in this issue (from Metron). Searchable
+    /// alongside tags and story arcs. Empty for never-fetched books.
+    var characters: [String]
+    /// Teams appearing in this issue (from Metron). Searchable.
+    var teams: [String]
+    /// In-store (shipping) date from Metron, when known.
+    var storeDate: Date?
     /// ISBN-10 or ISBN-13 (digits only, no hyphens). Read from the EPUB's
     /// OPF metadata (dc:identifier) or confirmed by an Open Library match.
     /// Ebooks only — comic issues don't carry ISBNs.
@@ -101,6 +108,10 @@ struct Comic: Identifiable, Codable {
     /// Which provider supplied the last applied fetch ("ComicVine",
     /// "Open Library", "Google Books", "Hardcover"). Nil = never fetched.
     var metadataSource: String?
+
+    // MARK: - Metron Metadata
+    var metronSeriesID: Int?          // Matched Metron series id
+    var metronIssueID: Int?           // Matched Metron issue id (if resolved)
 
     // MARK: - File Info
     var fileSize: Int64  // in bytes
@@ -159,6 +170,11 @@ struct Comic: Identifiable, Codable {
         metadataCandidates: String? = nil,
         metadataBackup: String? = nil,
         storyArcs: [String] = [],
+        characters: [String] = [],
+        teams: [String] = [],
+        storeDate: Date? = nil,
+        metronSeriesID: Int? = nil,
+        metronIssueID: Int? = nil,
         isbn: String? = nil,
         metadataSource: String? = nil,
         contentRating: ContentRating = .allAges,
@@ -214,6 +230,11 @@ struct Comic: Identifiable, Codable {
         self.metadataCandidates = metadataCandidates
         self.metadataBackup = metadataBackup
         self.storyArcs = storyArcs
+        self.characters = characters
+        self.teams = teams
+        self.storeDate = storeDate
+        self.metronSeriesID = metronSeriesID
+        self.metronIssueID = metronIssueID
         self.isbn = isbn
         self.metadataSource = metadataSource
         self.contentRating = contentRating
@@ -775,6 +796,11 @@ extension Comic: FetchableRecord, PersistableRecord {
         static let metadataCandidates = Column("metadata_candidates")
         static let metadataBackup = Column("metadata_backup")
         static let storyArcs = Column("story_arcs")
+        static let characters = Column("characters")
+        static let teams = Column("teams")
+        static let storeDate = Column("store_date")
+        static let metronSeriesID = Column("metron_series_id")
+        static let metronIssueID = Column("metron_issue_id")
         static let isbn = Column("isbn")
         static let metadataSource = Column("metadata_source")
         static let contentRating = Column("content_rating")
@@ -833,6 +859,11 @@ extension Comic: FetchableRecord, PersistableRecord {
         container[Columns.metadataCandidates] = metadataCandidates
         container[Columns.metadataBackup] = metadataBackup
         container[Columns.storyArcs] = try? JSONEncoder().encode(storyArcs)  // Store as JSON
+        container[Columns.characters] = try? JSONEncoder().encode(characters)  // JSON array
+        container[Columns.teams] = try? JSONEncoder().encode(teams)  // JSON array
+        container[Columns.storeDate] = storeDate
+        container[Columns.metronSeriesID] = metronSeriesID
+        container[Columns.metronIssueID] = metronIssueID
         container[Columns.isbn] = isbn
         container[Columns.metadataSource] = metadataSource
         container[Columns.contentRating] = contentRating.rawValue
@@ -872,6 +903,16 @@ extension Comic: FetchableRecord, PersistableRecord {
         var decodedStoryArcs: [String] = []
         if let arcsData: Data = row["story_arcs"] {
             decodedStoryArcs = (try? JSONDecoder().decode([String].self, from: arcsData)) ?? []
+        }
+
+        // Decode characters / teams from JSON
+        var decodedCharacters: [String] = []
+        if let charData: Data = row["characters"] {
+            decodedCharacters = (try? JSONDecoder().decode([String].self, from: charData)) ?? []
+        }
+        var decodedTeams: [String] = []
+        if let teamData: Data = row["teams"] {
+            decodedTeams = (try? JSONDecoder().decode([String].self, from: teamData)) ?? []
         }
 
         self.init(
@@ -922,6 +963,11 @@ extension Comic: FetchableRecord, PersistableRecord {
             metadataCandidates: row["metadata_candidates"],
             metadataBackup: row["metadata_backup"],
             storyArcs: decodedStoryArcs,
+            characters: decodedCharacters,
+            teams: decodedTeams,
+            storeDate: row["store_date"],
+            metronSeriesID: row["metron_series_id"],
+            metronIssueID: row["metron_issue_id"],
             isbn: row["isbn"],
             metadataSource: row["metadata_source"],
             contentRating: ContentRating(rawValue: row["content_rating"] ?? 0) ?? .allAges,

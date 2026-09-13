@@ -200,6 +200,11 @@ struct CVMetadataSnapshot: Codable {
     var editor: String?
     var summary: String?
     var storyArcs: [String]?  // Optional so pre-v23 snapshots still decode
+    var characters: [String]?  // Optional so pre-v32 snapshots still decode (Metron)
+    var teams: [String]?       // Optional so pre-v32 snapshots still decode (Metron)
+    var storeDate: Date?
+    var metronSeriesID: Int?
+    var metronIssueID: Int?
     var isbn: String?  // Optional so pre-v24 snapshots still decode (Open Library)
     var metadataSource: String?  // Optional so pre-v25 snapshots still decode
     var comicVineVolumeID: Int?
@@ -220,6 +225,11 @@ struct CVMetadataSnapshot: Codable {
         editor = comic.editor
         summary = comic.summary
         storyArcs = comic.storyArcs
+        characters = comic.characters
+        teams = comic.teams
+        storeDate = comic.storeDate
+        metronSeriesID = comic.metronSeriesID
+        metronIssueID = comic.metronIssueID
         isbn = comic.isbn
         metadataSource = comic.metadataSource
         comicVineVolumeID = comic.comicVineVolumeID
@@ -242,6 +252,11 @@ struct CVMetadataSnapshot: Codable {
         comic.editor = editor
         comic.summary = summary
         comic.storyArcs = storyArcs ?? []
+        comic.characters = characters ?? []
+        comic.teams = teams ?? []
+        comic.storeDate = storeDate
+        comic.metronSeriesID = metronSeriesID
+        comic.metronIssueID = metronIssueID
         comic.isbn = isbn
         comic.metadataSource = metadataSource
         comic.comicVineVolumeID = comicVineVolumeID
