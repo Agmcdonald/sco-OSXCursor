@@ -189,6 +189,11 @@ import Testing
         #expect(MTLinkParser.parse("not a link") == nil)
         #expect(MTLinkParser.parse("") == nil)
     }
+
+    @Test func digitLeadingSlugRejected() {
+        #expect(MTLinkParser.parse("https://metron.cloud/series/2000-ad-1977/") == nil)
+        #expect(MTLinkParser.parse("https://metron.cloud/issue/52-2006-1/") == nil)
+    }
 }
 
 // MARK: - Metron dates

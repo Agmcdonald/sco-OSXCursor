@@ -431,8 +431,11 @@ enum MTLinkParser {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
-        // "series/<digits>" or "issue/<digits>" anywhere in the string.
-        if let range = trimmed.range(of: #"(series|issue)/(\d+)"#, options: .regularExpression) {
+        // "series/<digits>" or "issue/<digits>" anywhere in the string. The
+        // lookahead requires a path/query/fragment boundary (or end of input)
+        // after the digits, so digit-leading slugs like "series/2000-ad-1977/"
+        // are rejected rather than yielding a wrong ID.
+        if let range = trimmed.range(of: #"(series|issue)/(\d+)(?=/|$|[?#])"#, options: .regularExpression) {
             let token = trimmed[range]
             let parts = token.split(separator: "/")
             if parts.count == 2, let id = Int(parts[1]) {
