@@ -139,6 +139,16 @@ caller on blank-fill; only the forced/explicit paths pass `true`.
   `\s*\(\d{4}\)$` before the name is written. Only the trailing suffix goes:
   `"2000 AD"`, `"Superman (Rebirth)"`, and `"Superman (2016) Annual"` are all
   left alone. It's a static helper so it's unit-tested directly.
+- **Search queries strip the suffix as well.** Metron's `series/?name=` filter
+  matches the stored *plain* name, so `"Action Comics (2016)"` returns zero
+  rows; `MetronFetcher.searchQuery(for:)` (series → title → file name without
+  extension, then `cleanSeriesName`) builds every Metron query, in both the
+  library fetch and the Organize staging fetch.
+- **A forced re-fetch reuses the stored Metron series ID.** When `force` is set
+  and the book already has a `metronSeriesID`, `fetchMetronMetadata` skips the
+  search and goes straight to `series/<id>/` — the ID is stronger identity than
+  any query string. A 404 (series deleted or merged away) falls back to the
+  normal search path; 429/401 still surface as rate-limited/unauthorized.
 - **Scalars blank-fill (or replace).** `publisher`, `year`, `title`, `summary`,
   `storeDate`, and the creator fields are written only when the existing value
   is nil/empty — unless `overwrite`, in which case a **non-empty** Metron value

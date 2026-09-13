@@ -530,6 +530,19 @@ enum MetronFetcher {
         )
     }
 
+    /// The string to send to Metron's `series/?name=` filter for a book.
+    /// Series, else title, else the file name without its extension — and
+    /// always year-suffix-cleaned: Metron matches the stored plain name, so
+    /// "Action Comics (2016)" returns zero rows while "Action Comics" hits.
+    /// Books whose series field already carries the suffix would otherwise
+    /// never match on a re-fetch.
+    static func searchQuery(for comic: Comic) -> String {
+        let raw = comic.series
+            ?? comic.title
+            ?? (comic.fileName as NSString).deletingPathExtension
+        return cleanSeriesName(raw)
+    }
+
     /// Series-level fields: series name canonical (year suffix stripped);
     /// publisher/year fill blanks only unless `overwrite`; records the Metron
     /// series ID.
@@ -673,9 +686,38 @@ extension LibraryViewModel {
         if !force, comic.metadataFetchedAt != nil { return .alreadyFetched }
         if !force, comic.metadataCandidates != nil { return .needsChoice }
 
-        let query = comic.series
-            ?? comic.title
-            ?? (comic.fileName as NSString).deletingPathExtension
+        // A forced re-fetch of a book that already carries a Metron series ID
+        // goes straight to that series: the name search can't be trusted to
+        // find it again (a stored "(YYYY)" suffix matches nothing), and the
+        // stored ID is a stronger identity than any query string.
+        if force, let seriesID = comic.metronSeriesID {
+            do {
+                let detail = try await MetronService.shared.seriesDetail(id: seriesID)
+                return await applyMetronSeries(
+                    MTSeriesRef(detail: detail), to: comic, overwrite: true)
+            } catch MetronService.MTError.http(404) {
+                // Series deleted or merged away since we stored it — fall
+                // through to the normal search path rather than failing.
+                AppLog.metadata.info(
+                    "[Metron] Stored series \(seriesID) is gone (404) — falling back to search")
+            } catch let error as MetronService.MTError {
+                if case .rateLimited(let retryAfter) = error {
+                    return .rateLimited(retryAfter: retryAfter)
+                }
+                if case .unauthorized = error {
+                    return .unauthorized
+                }
+                AppLog.metadata.error(
+                    "[Metron] Series re-fetch failed: \(error.localizedDescription)")
+                return .failed(error.errorDescription ?? "Metron request failed.")
+            } catch {
+                AppLog.metadata.error(
+                    "[Metron] Series re-fetch failed: \(error.localizedDescription)")
+                return .failed(error.localizedDescription)
+            }
+        }
+
+        let query = MetronFetcher.searchQuery(for: comic)
 
         do {
             let rows = try await MetronService.shared.searchSeries(query)

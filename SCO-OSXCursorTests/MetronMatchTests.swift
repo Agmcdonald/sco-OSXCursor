@@ -504,3 +504,45 @@ import Testing
         #expect(!comicMatchesSearch(comic, "aquaman"))
     }
 }
+
+// MARK: - Search query derivation
+
+@Suite struct MetronSearchQueryTests {
+
+    private func makeComic(
+        fileName: String = "book.cbz", title: String? = nil, series: String? = nil
+    ) -> Comic {
+        Comic(
+            filePath: URL(fileURLWithPath: "/tmp/\(fileName)"),
+            fileName: fileName,
+            title: title,
+            series: series
+        )
+    }
+
+    @Test func seriesYearSuffixIsStrippedFromTheQuery() {
+        // Metron's series/?name= filter matches the plain stored name, so a
+        // query carrying "(YYYY)" returns zero rows.
+        let comic = makeComic(series: "Action Comics (2016)")
+        #expect(MetronFetcher.searchQuery(for: comic) == "Action Comics")
+    }
+
+    @Test func plainSeriesIsUsedVerbatim() {
+        #expect(MetronFetcher.searchQuery(for: makeComic(series: "2000 AD")) == "2000 AD")
+    }
+
+    @Test func titleIsTheFallbackAndIsAlsoCleaned() {
+        let comic = makeComic(title: "Superman (1987)", series: nil)
+        #expect(MetronFetcher.searchQuery(for: comic) == "Superman")
+    }
+
+    @Test func fileNameWithoutExtensionIsTheLastResort() {
+        let comic = makeComic(fileName: "Detective Comics (2016).cbz")
+        #expect(MetronFetcher.searchQuery(for: comic) == "Detective Comics")
+    }
+
+    @Test func seriesWinsOverTitle() {
+        let comic = makeComic(title: "Son of Superman", series: "Superman (2016)")
+        #expect(MetronFetcher.searchQuery(for: comic) == "Superman")
+    }
+}

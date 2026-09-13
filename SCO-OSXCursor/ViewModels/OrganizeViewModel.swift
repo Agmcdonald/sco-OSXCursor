@@ -763,16 +763,15 @@ final class OrganizeViewModel: ObservableObject {
             return .failed("File is no longer staged.")
         }
 
-        let query =
-            staged.series.isEmpty
-            ? (staged.originalFileName as NSString).deletingPathExtension
-            : staged.series
+        // Same derivation the library fetch uses — notably it strips a
+        // "(YYYY)" suffix, which Metron's name filter never matches.
+        let proxy = cvProxy(for: staged)
+        let query = MetronFetcher.searchQuery(for: proxy)
 
         do {
             let rows = try await MetronService.shared.searchSeries(query)
             guard !rows.isEmpty else { return .noMatches }
 
-            let proxy = cvProxy(for: staged)
             let refs = rows.map(MTSeriesRef.init(listRow:))
             let scored = refs
                 .map { (ref: $0, score: MetronMatcher.score($0, against: proxy, query: query)) }
