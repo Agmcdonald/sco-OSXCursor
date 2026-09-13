@@ -496,6 +496,8 @@ struct ComicDetailView: View {
                 fetchMessage = "No API key. Add one in Settings."
             case .noMatches:
                 fetchMessage = "No ComicVine matches found for this book."
+            case .rateLimited:
+                fetchMessage = outcome.rateLimitMessage
             case .failed(let reason):
                 fetchMessage = "Fetch failed: \(reason)"
             }

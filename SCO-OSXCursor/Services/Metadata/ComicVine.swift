@@ -446,7 +446,19 @@ enum ComicVineFetchOutcome {
     case alreadyFetched
     case noKey
     case noMatches
+    case rateLimited(retryAfter: Date?)
     case failed(String)
+}
+
+extension ComicVineFetchOutcome {
+    /// User-facing text for the rate-limited case.
+    var rateLimitMessage: String {
+        if case .rateLimited(let retryAfter) = self, let retryAfter {
+            let time = retryAfter.formatted(date: .omitted, time: .shortened)
+            return "Rate limit reached — try again after \(time)."
+        }
+        return "Rate limit reached — try again shortly."
+    }
 }
 
 extension LibraryViewModel {
@@ -572,6 +584,7 @@ extension LibraryViewModel {
             case .noMatches: result.noMatch += 1
             case .failed: result.failed += 1
             case .noKey: result.noKey = true
+            case .rateLimited: result.failed += 1
             }
             onProgress(index + 1, total)
         }

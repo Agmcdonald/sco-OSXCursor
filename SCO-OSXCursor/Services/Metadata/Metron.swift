@@ -565,3 +565,187 @@ enum MetronFetcher {
         return updated
     }
 }
+
+// MARK: - Fetch Flow
+
+extension LibraryViewModel {
+
+    /// Route a comic fetch to the user's chosen provider.
+    @MainActor
+    func fetchComicMetadata(
+        for comic: Comic, force: Bool, autoApplyConfident: Bool = true
+    ) async -> ComicVineFetchOutcome {
+        switch ComicSource.current {
+        case .comicVine:
+            return await fetchComicVineMetadata(
+                for: comic, force: force, autoApplyConfident: autoApplyConfident)
+        case .metron:
+            return await fetchMetronMetadata(
+                for: comic, force: force, autoApplyConfident: autoApplyConfident)
+        }
+    }
+
+    /// Fetch Metron metadata for one book. Mirrors fetchComicVineMetadata:
+    /// never re-fetches unless forced, stores top-5 candidates (tagged
+    /// "Metron") when ambiguous, honors autoApplyConfident.
+    @MainActor
+    func fetchMetronMetadata(
+        for comic: Comic, force: Bool, autoApplyConfident: Bool = true
+    ) async -> ComicVineFetchOutcome {
+        guard MetronConfig.hasCredentials else { return .noKey }
+        if !force, comic.metadataFetchedAt != nil { return .alreadyFetched }
+        if !force, comic.metadataCandidates != nil { return .needsChoice }
+
+        let query = comic.series
+            ?? comic.title
+            ?? (comic.fileName as NSString).deletingPathExtension
+
+        do {
+            let rows = try await MetronService.shared.searchSeries(query)
+            guard !rows.isEmpty else { return .noMatches }
+
+            let refs = rows.map(MTSeriesRef.init(listRow:))
+            let scored = refs
+                .map { (ref: $0, score: MetronMatcher.score($0, against: comic, query: query)) }
+                .sorted { $0.score > $1.score }
+
+            let best = scored[0]
+            let second = scored.count > 1 ? scored[1].score : 0
+            let confident = scored.count == 1 || (best.score >= 0.75 && best.score - second >= 0.2)
+
+            if confident && autoApplyConfident {
+                return await applyMetronSeries(best.ref, to: comic)
+            }
+
+            let candidates = scored.prefix(5).map { item in
+                CVCandidate(
+                    id: item.ref.id,
+                    name: item.ref.name ?? "Unknown",
+                    startYear: item.ref.yearBegan,
+                    publisher: item.ref.publisher,
+                    issueCount: item.ref.issueCount,
+                    provider: "Metron"
+                )
+            }
+            var updated = comic
+            updated.metadataCandidates = CVCandidate.encodeList(Array(candidates))
+            updated.dateModified = Date()
+            updateComic(updated)
+            return .needsChoice
+        } catch let error as MetronService.MTError {
+            if case .rateLimited(let retryAfter) = error {
+                return .rateLimited(retryAfter: retryAfter)
+            }
+            AppLog.metadata.error("[Metron] Fetch failed: \(error.localizedDescription)")
+            return .failed(error.errorDescription ?? "Metron request failed.")
+        } catch {
+            AppLog.metadata.error("[Metron] Fetch failed: \(error.localizedDescription)")
+            return .failed(error.localizedDescription)
+        }
+    }
+
+    /// Provider-routed batch fetch. Stops early when Metron rate-limits.
+    @MainActor
+    func fetchComicMetadataBatch(
+        for comics: [Comic],
+        onProgress: @MainActor (Int, Int) -> Void = { _, _ in }
+    ) async -> BatchResult {
+        guard ComicSource.current == .metron else {
+            return await fetchComicVineMetadataBatch(for: comics, onProgress: onProgress)
+        }
+
+        var result = BatchResult()
+        guard MetronConfig.hasCredentials else {
+            result.noKey = true
+            return result
+        }
+        let autoApply = UserDefaults.standard.object(forKey: "autoApplyConfidentMatches") as? Bool ?? true
+        let total = comics.count
+        for (index, comic) in comics.enumerated() {
+            let latest = self.comics.first(where: { $0.id == comic.id }) ?? comic
+            let outcome = await fetchMetronMetadata(
+                for: latest, force: false, autoApplyConfident: autoApply
+            )
+            switch outcome {
+            case .updated: result.updated += 1
+            case .needsChoice:
+                result.needChoice += 1
+                result.pendingReviewIDs.append(latest.id)
+            case .alreadyFetched: result.skipped += 1
+            case .noMatches: result.noMatch += 1
+            case .failed: result.failed += 1
+            case .noKey: result.noKey = true
+            case .rateLimited:
+                // Budget gone — stop burning the queue; the rest stay unfetched.
+                result.failed += comics.count - index
+                onProgress(total, total)
+                return result
+            }
+            onProgress(index + 1, total)
+        }
+        return result
+    }
+
+    /// Apply a stored candidate through the provider that produced it.
+    @MainActor
+    func applyMetadataCandidate(_ candidate: CVCandidate, to comic: Comic) async -> ComicVineFetchOutcome {
+        if candidate.isMetron {
+            let ref = MTSeriesRef(
+                id: candidate.id, name: candidate.name,
+                yearBegan: candidate.startYear, publisher: candidate.publisher,
+                issueCount: candidate.issueCount
+            )
+            return await applyMetronSeries(ref, to: comic)
+        }
+        return await applyComicVineCandidate(candidate, to: comic)
+    }
+
+    /// Apply a pasted metron.cloud link/ID (match-picker override).
+    @MainActor
+    func applyMetronLink(_ raw: String, to comic: Comic) async -> ComicVineFetchOutcome {
+        guard MetronConfig.hasCredentials else { return .noKey }
+        guard let ref = MTLinkParser.parse(raw) else {
+            return .failed("Paste a numeric Metron ID or an api/series/<id> link — Metron's site URLs (slugs) don't carry the ID.")
+        }
+        do {
+            let seriesID: Int
+            switch ref {
+            case .series(let id):
+                seriesID = id
+            case .issue(let id):
+                guard let resolved = try await MetronService.shared.seriesID(forIssueID: id) else {
+                    return .failed("Couldn't find the series for that issue.")
+                }
+                seriesID = resolved
+            }
+            let detail = try await MetronService.shared.seriesDetail(id: seriesID)
+            return await applyMetronSeries(MTSeriesRef(detail: detail), to: comic)
+        } catch {
+            AppLog.metadata.error("[Metron] Link match failed: \(error.localizedDescription)")
+            return .failed(error.localizedDescription)
+        }
+    }
+
+    /// Link override routed by the active provider (used by pickers when
+    /// the pending candidates are provider-tagged; falls back to setting).
+    @MainActor
+    func applyProviderLink(_ raw: String, to comic: Comic) async -> ComicVineFetchOutcome {
+        let pending = CVCandidate.decodeList(comic.metadataCandidates)
+        let useMetron = pending.first?.isMetron ?? (ComicSource.current == .metron)
+        return useMetron
+            ? await applyMetronLink(raw, to: comic)
+            : await applyComicVineLink(raw, to: comic)
+    }
+
+    @MainActor
+    private func applyMetronSeries(_ ref: MTSeriesRef, to comic: Comic) async -> ComicVineFetchOutcome {
+        let current = comics.first(where: { $0.id == comic.id }) ?? comic
+        let snapshot = CVMetadataSnapshot(of: current)
+        var updated = await MetronFetcher.fill(current, from: ref)
+        updated.metadataBackup = snapshot.encoded()
+        updated.metadataSource = "Metron"
+        updated.dateModified = Date()
+        updateComic(updated)
+        return .updated
+    }
+}

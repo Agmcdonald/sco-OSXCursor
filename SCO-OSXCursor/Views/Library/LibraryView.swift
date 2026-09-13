@@ -1426,6 +1426,8 @@ struct LibraryView: View {
                 flashComicVineStatus("Add a ComicVine API key in Settings first.")
             case .noMatches:
                 flashComicVineStatus("\(comic.displayTitle): no ComicVine match found.")
+            case .rateLimited:
+                flashComicVineStatus(outcome.rateLimitMessage)
             case .failed(let reason):
                 flashComicVineStatus("Fetch failed: \(reason)")
             }
