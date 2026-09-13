@@ -520,43 +520,68 @@ enum MetronMatcher {
 /// orchestrates the network calls, mirroring `ComicVineFetcher.fill`.
 enum MetronFetcher {
 
-    /// Series-level fields: series name canonical; publisher/year fill
-    /// blanks only; records the Metron series ID.
-    static func applySeries(_ ref: MTSeriesRef, to comic: Comic) -> Comic {
+    /// Strips one trailing "(YYYY)" suffix from a Metron series display name:
+    /// "Action Comics (2016)" -> "Action Comics". The issue year already shows
+    /// separately on the card, so the suffix is pure duplication. Only the
+    /// trailing suffix goes — "2000 AD" and mid-name parentheticals survive.
+    static func cleanSeriesName(_ name: String) -> String {
+        name.replacingOccurrences(
+            of: #"\s*\(\d{4}\)$"#, with: "", options: .regularExpression
+        )
+    }
+
+    /// Series-level fields: series name canonical (year suffix stripped);
+    /// publisher/year fill blanks only unless `overwrite`; records the Metron
+    /// series ID.
+    /// - Parameter overwrite: when `true` (forced re-fetch / explicit match
+    ///   pick), a non-empty provider value replaces the existing field. Fields
+    ///   the provider has no value for are always left alone.
+    static func applySeries(_ ref: MTSeriesRef, to comic: Comic, overwrite: Bool = false) -> Comic {
         var updated = comic
-        if let name = ref.name, !name.isEmpty { updated.series = name }
-        if updated.publisher == nil || updated.publisher?.isEmpty == true {
-            updated.publisher = ref.publisher
+        if let name = ref.name.map(cleanSeriesName), !name.isEmpty { updated.series = name }
+        if let publisher = ref.publisher, !publisher.isEmpty,
+           overwrite || updated.publisher == nil || updated.publisher?.isEmpty == true {
+            updated.publisher = publisher
         }
-        if updated.year == nil {
-            updated.year = ref.yearBegan
+        if let year = ref.yearBegan, overwrite || updated.year == nil {
+            updated.year = year
         }
         updated.metronSeriesID = ref.id
         return updated
     }
 
     /// Issue-level fields from a list row + optional detail. Blank-fill
-    /// scalars; replace-but-never-wipe arcs/characters/teams.
-    static func applyIssue(list: MTIssueResult, detail: MTIssueDetail?, to comic: Comic) -> Comic {
+    /// scalars (or replace them when `overwrite`); replace-but-never-wipe
+    /// arcs/characters/teams in both modes.
+    /// - Parameter overwrite: when `true` (forced re-fetch / explicit match
+    ///   pick), a non-empty provider value replaces the existing field. A field
+    ///   the provider has no value for keeps what it already had.
+    static func applyIssue(
+        list: MTIssueResult, detail: MTIssueDetail?, to comic: Comic, overwrite: Bool = false
+    ) -> Comic {
         var updated = comic
         updated.metronIssueID = list.id
 
-        if updated.year == nil {
-            updated.year = MetronDates.year(from: list.coverDate ?? detail?.coverDate)
+        if let year = MetronDates.year(from: list.coverDate ?? detail?.coverDate),
+           overwrite || updated.year == nil {
+            updated.year = year
         }
-        if updated.storeDate == nil {
-            updated.storeDate = MetronDates.parse(list.storeDate ?? detail?.storeDate)
+        if let storeDate = MetronDates.parse(list.storeDate ?? detail?.storeDate),
+           overwrite || updated.storeDate == nil {
+            updated.storeDate = storeDate
         }
 
         guard let detail else { return updated }
 
-        if updated.title == nil || updated.title?.isEmpty == true {
-            let storyTitle = detail.storyTitles?.first(where: { !$0.isEmpty })
-            let collection = (detail.collectionTitle?.isEmpty == false) ? detail.collectionTitle : nil
-            updated.title = storyTitle ?? collection
+        let storyTitle = detail.storyTitles?.first(where: { !$0.isEmpty })
+        let collection = (detail.collectionTitle?.isEmpty == false) ? detail.collectionTitle : nil
+        if let title = storyTitle ?? collection, !title.isEmpty,
+           overwrite || updated.title == nil || updated.title?.isEmpty == true {
+            updated.title = title
         }
-        if updated.summary == nil || updated.summary?.isEmpty == true {
-            updated.summary = ComicVineMatcher.stripHTML(detail.desc)
+        if let summary = ComicVineMatcher.stripHTML(detail.desc),
+           overwrite || updated.summary == nil || updated.summary?.isEmpty == true {
+            updated.summary = summary
         }
 
         // Credits: adapt Metron's structured roles to the shared role-name
@@ -565,7 +590,7 @@ enum MetronFetcher {
             let flat = credits.flatMap { credit in
                 credit.roles.map { CVPersonCredit(name: credit.creator, role: $0.name) }
             }
-            ComicVineMatcher.applyCredits(flat, to: &updated)
+            ComicVineMatcher.applyCredits(flat, to: &updated, overwrite: overwrite)
         }
 
         // Metron authoritative when non-empty; never wipe with empty.
@@ -581,8 +606,8 @@ enum MetronFetcher {
 
     /// Full fill: series fields, then (when the issue number is known)
     /// issue list + detail. 1–3 API calls. Marks the comic fetched.
-    static func fill(_ comic: Comic, from ref: MTSeriesRef) async -> Comic {
-        var updated = applySeries(ref, to: comic)
+    static func fill(_ comic: Comic, from ref: MTSeriesRef, overwrite: Bool = false) async -> Comic {
+        var updated = applySeries(ref, to: comic, overwrite: overwrite)
 
         if let issueNumber = ComicVineMatcher.normalizedIssueNumber(comic.issueNumber) {
             do {
@@ -601,7 +626,7 @@ enum MetronFetcher {
                 }
                 if let issue = issues.first {
                     let detail = try? await MetronService.shared.issueDetail(id: issue.id)
-                    updated = applyIssue(list: issue, detail: detail, to: updated)
+                    updated = applyIssue(list: issue, detail: detail, to: updated, overwrite: overwrite)
                     AppLog.metadata.info("[Metron] Issue #\(issueNumber) matched (id \(issue.id)) for series \(ref.id) — writer:\(updated.writer ?? "–") artist:\(updated.artist ?? "–")")
                 } else {
                     AppLog.metadata.info("[Metron] No issue #\(issueNumber) found in series \(ref.id)")
@@ -666,7 +691,9 @@ extension LibraryViewModel {
             let confident = scored.count == 1 || (best.score >= 0.75 && best.score - second >= 0.2)
 
             if confident && autoApplyConfident {
-                return await applyMetronSeries(best.ref, to: comic)
+                // A forced re-fetch is a deliberate repair — let provider values
+                // replace what's there instead of only filling blanks.
+                return await applyMetronSeries(best.ref, to: comic, overwrite: force)
             }
 
             let candidates = scored.prefix(5).map { item in
@@ -766,9 +793,11 @@ extension LibraryViewModel {
                 yearBegan: candidate.startYear, publisher: candidate.publisher,
                 issueCount: candidate.issueCount
             )
-            return await applyMetronSeries(ref, to: comic)
+            // An explicit pick is a deliberate user choice — replace, don't
+            // just blank-fill.
+            return await applyMetronSeries(ref, to: comic, overwrite: true)
         }
-        return await applyComicVineCandidate(candidate, to: comic)
+        return await applyComicVineCandidate(candidate, to: comic, overwrite: true)
     }
 
     /// Apply a pasted metron.cloud link/ID (match-picker override).
@@ -805,7 +834,7 @@ extension LibraryViewModel {
                 }
                 detail = try await MetronService.shared.seriesDetail(id: resolved)
             }
-            return await applyMetronSeries(MTSeriesRef(detail: detail), to: comic)
+            return await applyMetronSeries(MTSeriesRef(detail: detail), to: comic, overwrite: true)
         } catch {
             // Don't downgrade a 429 to a generic failure — the caller shows a
             // "try again after …" message for the rate-limited case.
@@ -834,10 +863,12 @@ extension LibraryViewModel {
     }
 
     @MainActor
-    private func applyMetronSeries(_ ref: MTSeriesRef, to comic: Comic) async -> ComicVineFetchOutcome {
+    private func applyMetronSeries(
+        _ ref: MTSeriesRef, to comic: Comic, overwrite: Bool = false
+    ) async -> ComicVineFetchOutcome {
         let current = comics.first(where: { $0.id == comic.id }) ?? comic
         let snapshot = CVMetadataSnapshot(of: current)
-        var updated = await MetronFetcher.fill(current, from: ref)
+        var updated = await MetronFetcher.fill(current, from: ref, overwrite: overwrite)
         updated.metadataBackup = snapshot.encoded()
         updated.metadataSource = "Metron"
         updated.dateModified = Date()

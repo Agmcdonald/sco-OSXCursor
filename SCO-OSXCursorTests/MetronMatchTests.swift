@@ -285,10 +285,37 @@ import Testing
         comic.year = nil
         let ref = MTSeriesRef(id: 2658, name: "Superman (2016)", yearBegan: 2016, publisher: "DC Comics", issueCount: 52)
         let filled = MetronFetcher.applySeries(ref, to: comic)
-        #expect(filled.series == "Superman (2016)")   // canonical
+        #expect(filled.series == "Superman")          // canonical, year suffix stripped
         #expect(filled.publisher == "DC Comics")      // blank-filled
         #expect(filled.year == 2016)                  // blank-filled
         #expect(filled.metronSeriesID == 2658)
+    }
+
+    // MARK: Series-name year-suffix cleaning
+
+    @Test func cleanSeriesNameStripsTrailingYearSuffix() {
+        #expect(MetronFetcher.cleanSeriesName("Action Comics (2016)") == "Action Comics")
+        #expect(MetronFetcher.cleanSeriesName("Superman(1987)") == "Superman")
+        #expect(MetronFetcher.cleanSeriesName("Batman   (2011)") == "Batman")
+    }
+
+    @Test func cleanSeriesNameLeavesPlainNamesAlone() {
+        #expect(MetronFetcher.cleanSeriesName("Action Comics") == "Action Comics")
+        #expect(MetronFetcher.cleanSeriesName("2000 AD") == "2000 AD")
+        #expect(MetronFetcher.cleanSeriesName("Superman (Rebirth)") == "Superman (Rebirth)")
+        #expect(MetronFetcher.cleanSeriesName("Action Comics (12345)") == "Action Comics (12345)")
+    }
+
+    @Test func cleanSeriesNameOnlyStripsTheTrailingSuffix() {
+        // Mid-name parenthetical survives; only one trailing suffix goes.
+        #expect(MetronFetcher.cleanSeriesName("Superman (2016) Annual") == "Superman (2016) Annual")
+        #expect(MetronFetcher.cleanSeriesName("(2016) Superman") == "(2016) Superman")
+        #expect(MetronFetcher.cleanSeriesName("Superman (1987) (2016)") == "Superman (1987)")
+    }
+
+    @Test func cleanSeriesNameKeepsEmptyEmpty() {
+        #expect(MetronFetcher.cleanSeriesName("") == "")
+        #expect(MetronFetcher.cleanSeriesName("(2016)") == "")
     }
 
     @Test func applySeriesNeverClobbersExistingPublisherOrYear() {
@@ -351,6 +378,96 @@ import Testing
         #expect(filled.storyArcs == ["Existing Arc"])
         #expect(filled.characters == ["Existing Character"])
         #expect(filled.teams == ["Existing Team"])
+    }
+
+    // MARK: Overwrite mode (forced re-fetch / explicit match pick)
+
+    /// Non-empty provider values replace pre-existing (wrong) data.
+    @Test func applyIssueOverwriteReplacesExistingScalars() {
+        var comic = makeComic()
+        comic.title = "Wrong Title"
+        comic.summary = "Junk summary from ComicInfo.xml"
+        comic.writer = "Not The Writer"
+        comic.artist = "Not The Artist"
+        comic.storyArcs = ["Old Arc"]
+        let list = MTIssueResult(
+            id: 38181, number: "6", issueName: "Superman (2016) #6",
+            coverDate: "2016-11-01", storeDate: "2016-09-07"
+        )
+        let detail = MTIssueDetail(
+            id: 38181, number: "6", collectionTitle: "",
+            storyTitles: ["Son of Superman, Part Six"],
+            coverDate: "2016-11-01", storeDate: "2016-09-07",
+            desc: "Superman and son face the Eradicator.",
+            image: nil,
+            credits: [
+                MTCredit(creator: "Peter J. Tomasi", roles: [MTGenericItem(id: 30, name: "Writer")]),
+                MTCredit(creator: "Patrick Gleason", roles: [MTGenericItem(id: 1, name: "Penciller")]),
+            ],
+            arcs: [MTGenericItem(id: 93, name: "Son of Superman")],
+            characters: nil, teams: nil
+        )
+        let filled = MetronFetcher.applyIssue(list: list, detail: detail, to: comic, overwrite: true)
+        #expect(filled.title == "Son of Superman, Part Six")
+        #expect(filled.summary == "Superman and son face the Eradicator.")
+        #expect(filled.writer == "Peter J. Tomasi")
+        #expect(filled.artist == "Patrick Gleason")
+        #expect(filled.storyArcs == ["Son of Superman"])
+    }
+
+    /// A field the provider has no value for keeps what's already there.
+    @Test func applyIssueOverwriteKeepsFieldsTheProviderLacks() {
+        var comic = makeComic()
+        comic.writer = "Existing Writer"
+        comic.summary = "Existing summary"
+        comic.storyArcs = ["Existing Arc"]
+        let list = MTIssueResult(id: 1, number: "6", issueName: nil, coverDate: nil, storeDate: nil)
+        let detail = MTIssueDetail(
+            id: 1, number: "6", collectionTitle: nil, storyTitles: nil,
+            coverDate: nil, storeDate: nil, desc: nil, image: nil,
+            credits: nil, arcs: [], characters: [], teams: []
+        )
+        let filled = MetronFetcher.applyIssue(list: list, detail: detail, to: comic, overwrite: true)
+        #expect(filled.writer == "Existing Writer")
+        #expect(filled.summary == "Existing summary")
+        #expect(filled.storyArcs == ["Existing Arc"])   // arrays never wiped in either mode
+    }
+
+    /// A credit list that carries some roles but not others only replaces
+    /// the roles it actually provides.
+    @Test func applyIssueOverwriteKeepsRolesMissingFromCredits() {
+        var comic = makeComic()
+        comic.writer = "Old Writer"
+        comic.inker = "Old Inker"
+        let list = MTIssueResult(id: 1, number: "6", issueName: nil, coverDate: nil, storeDate: nil)
+        let detail = MTIssueDetail(
+            id: 1, number: "6", collectionTitle: nil, storyTitles: nil,
+            coverDate: nil, storeDate: nil, desc: nil, image: nil,
+            credits: [MTCredit(creator: "New Writer", roles: [MTGenericItem(id: 30, name: "Writer")])],
+            arcs: nil, characters: nil, teams: nil
+        )
+        let filled = MetronFetcher.applyIssue(list: list, detail: detail, to: comic, overwrite: true)
+        #expect(filled.writer == "New Writer")
+        #expect(filled.inker == "Old Inker")
+    }
+
+    @Test func applySeriesOverwriteReplacesPublisherAndYear() {
+        let comic = makeComic(year: 1999, publisher: "My Publisher")
+        let ref = MTSeriesRef(id: 1, name: "Superman (2016)", yearBegan: 2016, publisher: "DC Comics", issueCount: 52)
+        let filled = MetronFetcher.applySeries(ref, to: comic, overwrite: true)
+        #expect(filled.publisher == "DC Comics")
+        #expect(filled.year == 2016)
+        #expect(filled.series == "Superman")
+        #expect(filled.metronSeriesID == 1)
+    }
+
+    @Test func applySeriesOverwriteKeepsValuesTheProviderLacks() {
+        let comic = makeComic(year: 1999, publisher: "My Publisher")
+        let ref = MTSeriesRef(id: 1, name: nil, yearBegan: nil, publisher: nil, issueCount: nil)
+        let filled = MetronFetcher.applySeries(ref, to: comic, overwrite: true)
+        #expect(filled.publisher == "My Publisher")
+        #expect(filled.year == 1999)
+        #expect(filled.series == "Superman")
     }
 }
 

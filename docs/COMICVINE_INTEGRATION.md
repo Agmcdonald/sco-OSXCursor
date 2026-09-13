@@ -102,3 +102,24 @@ Pulls publisher, creators, summary, and cover dates for comics from the
   request `image`; would set `coverImageData`).
 - Smarter issue matching (cover-date year tie-breaks among same-number issues).
 - Google Books / Open Library for the eBook side.
+
+## June 2026 update — forced fetches replace, they don't just blank-fill
+
+- **`overwrite` mode.** `ComicVineFetcher.fill(_:from:overwrite:)` and
+  `ComicVineMatcher.applyCredits(_:to:overwrite:)` take an `overwrite` flag
+  (default `false`, so nothing else changes). When it's on, a **non-empty**
+  ComicVine value replaces `title`, `publisher`, `year`, `summary`, and the
+  creator fields instead of only filling a blank. A field ComicVine has no
+  value for is never nil-ed out, and `storyArcs` keeps its existing
+  replace-but-never-wipe behavior in both modes.
+- **Who turns it on.** `fetchComicVineMetadata(for:force:)` passes
+  `overwrite: force`, so the selection bar's Re-fetch now repairs wrong data
+  (junk credits from an embedded `ComicInfo.xml`, say) instead of skipping
+  fields that already had something in them. Picking a candidate in the match
+  sheet and pasting a ComicVine link both overwrite too — a deliberate choice
+  should win. First-time fetches, normal batches, the Dashboard health batch,
+  and Organize staging fetches are unchanged: still blank-fill only.
+- **Still revertible.** The pre-fetch `metadataBackup` snapshot is taken before
+  every apply, so Undo restores whatever a replacement overwrote.
+- Same semantics on the Metron side; see `docs/METRON_INTEGRATION.md` →
+  "Fill semantics" for the full rules.

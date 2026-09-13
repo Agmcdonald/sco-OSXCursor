@@ -116,19 +116,54 @@ rather than `.formatted()`.
 
 ## Fill semantics
 
-Deliberately conservative — a fetch should never destroy something you typed.
+Two modes. An **automatic** fetch (first-time fetch, normal batch, Dashboard
+health batch, Organize staging) is deliberately conservative — it should never
+destroy something you typed. A **deliberate** fetch (Re-fetch with `force`, or
+an explicit match pick / pasted link) **replaces** the provider-managed fields,
+because that's the only way to heal wrong pre-existing data such as junk
+credits carried in from an embedded `ComicInfo.xml`. The undo snapshot
+(`metadataBackup`) is captured before every apply either way, so a replacement
+is always revertible from the same Undo action.
+
+The switch is an `overwrite: Bool = false` parameter threaded through
+`MetronFetcher.fill/applySeries/applyIssue`, `ComicVineFetcher.fill`, and
+`ComicVineMatcher.applyCredits`. Defaulting to `false` keeps every existing
+caller on blank-fill; only the forced/explicit paths pass `true`.
 
 - **Series name is canonical.** A non-empty Metron series name always
-  overwrites `series` (this is the one exception, same as ComicVine).
-- **Scalars blank-fill only.** `publisher`, `year`, `title`, `summary`,
+  overwrites `series` (this is the one exception, same as ComicVine) — in
+  both modes.
+- **Series name loses its "(YYYY)" suffix.** Metron display names are
+  `"Action Comics (2016)"`; the issue year already shows separately on the
+  card, so `MetronFetcher.cleanSeriesName(_:)` strips **one** trailing
+  `\s*\(\d{4}\)$` before the name is written. Only the trailing suffix goes:
+  `"2000 AD"`, `"Superman (Rebirth)"`, and `"Superman (2016) Annual"` are all
+  left alone. It's a static helper so it's unit-tested directly.
+- **Scalars blank-fill (or replace).** `publisher`, `year`, `title`, `summary`,
   `storeDate`, and the creator fields are written only when the existing value
-  is nil/empty. Credits go through the shared
-  `ComicVineMatcher.applyCredits`, with Metron's structured
+  is nil/empty — unless `overwrite`, in which case a **non-empty** Metron value
+  replaces whatever is there. A field Metron has no value for always keeps its
+  existing value: overwrite never nil-outs or blanks a field. Credits go
+  through the shared `ComicVineMatcher.applyCredits`, with Metron's structured
   `{creator, role[]}` credits flattened to one `CVPersonCredit` per
-  creator-role pair so the same role-name matcher handles both providers.
+  creator-role pair so the same role-name matcher handles both providers; under
+  `overwrite` only the roles the credit list actually provides are replaced,
+  so a detail with just a writer leaves the existing inker alone.
 - **`storyArcs` / `characters` / `teams` replace but never wipe.** When Metron
   returns a non-empty list it becomes the value (Metron is authoritative for
-  these); when it returns nothing, the existing list is left alone.
+  these); when it returns nothing, the existing list is left alone. Identical
+  in both modes — `overwrite` changes nothing here.
+- **IDs always written.** `metronSeriesID` / `metronIssueID` (and
+  `comicVineVolumeID` / `comicVineIssueID` on the other side) are set on every
+  successful apply regardless of mode.
+- **Which callers overwrite.** `fetchMetronMetadata(for:force:)` and
+  `fetchComicVineMetadata(for:force:)` pass `overwrite: force`, so the
+  selection bar's Re-fetch (and `fetchComicMetadataBatch(force: true)`, which
+  forwards its `force` per book) replaces. `applyMetadataCandidate` →
+  `applyMetronSeries` / `applyComicVineCandidate`, `applyMetronLink`, and
+  `applyComicVineLink` always pass `true`. Normal batches and the Dashboard
+  health batch run with `force: false`, so they stay blank-fill. Organize
+  staging fetches keep the default `false` — that's an initial import.
 - **Titles.** `title` prefers the first non-empty per-issue story title
   (JSON `name`), falling back to the collection/TPB title (JSON `title`).
 - **Covers are never downloaded.** `MTIssueDetail.image` is decoded but

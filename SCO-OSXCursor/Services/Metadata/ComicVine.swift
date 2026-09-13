@@ -502,7 +502,9 @@ extension LibraryViewModel {
             let confident = scored.count == 1 || (best.score >= 0.75 && best.score - second >= 0.2)
 
             if confident && autoApplyConfident {
-                return await applyVolume(best.volume, to: comic)
+                // A forced re-fetch is a deliberate repair — let provider values
+                // replace what's there instead of only filling blanks.
+                return await applyVolume(best.volume, to: comic, overwrite: force)
             }
 
             // Either ambiguous, or a confident match the caller wants confirmed:
@@ -604,7 +606,9 @@ extension LibraryViewModel {
 
     /// User picked a candidate from the match sheet.
     @MainActor
-    func applyComicVineCandidate(_ candidate: CVCandidate, to comic: Comic) async -> ComicVineFetchOutcome {
+    func applyComicVineCandidate(
+        _ candidate: CVCandidate, to comic: Comic, overwrite: Bool = true
+    ) async -> ComicVineFetchOutcome {
         let volume = CVVolumeResult(
             id: candidate.id,
             name: candidate.name,
@@ -612,7 +616,9 @@ extension LibraryViewModel {
             publisher: CVPublisher(name: candidate.publisher),
             countOfIssues: candidate.issueCount
         )
-        return await applyVolume(volume, to: comic)
+        // An explicit pick is a deliberate user choice — replace, don't just
+        // blank-fill.
+        return await applyVolume(volume, to: comic, overwrite: overwrite)
     }
 
     /// Apply a match from a pasted ComicVine link, slug, or numeric ID.
@@ -637,7 +643,7 @@ extension LibraryViewModel {
                 volumeID = resolved
             }
             let volume = try await ComicVineService.shared.volume(id: volumeID)
-            return await applyVolume(volume, to: comic)
+            return await applyVolume(volume, to: comic, overwrite: true)
         } catch {
             AppLog.metadata.error("[ComicVine] Link match failed: \(error.localizedDescription)")
             return .failed(error.localizedDescription)
@@ -654,12 +660,14 @@ extension LibraryViewModel {
     }
 
     @MainActor
-    private func applyVolume(_ volume: CVVolumeResult, to comic: Comic) async -> ComicVineFetchOutcome {
+    private func applyVolume(
+        _ volume: CVVolumeResult, to comic: Comic, overwrite: Bool = false
+    ) async -> ComicVineFetchOutcome {
         // Work from the freshest copy so the pre-fetch snapshot captures any
         // edits made since the caller grabbed its reference.
         let current = comics.first(where: { $0.id == comic.id }) ?? comic
         let snapshot = CVMetadataSnapshot(of: current)
-        var updated = await ComicVineFetcher.fill(current, from: volume)
+        var updated = await ComicVineFetcher.fill(current, from: volume, overwrite: overwrite)
         updated.metadataBackup = snapshot.encoded()
         updated.metadataSource = "ComicVine"
         updated.dateModified = Date()
@@ -694,17 +702,23 @@ extension LibraryViewModel {
 /// creator credits when the issue number is known). Pure — no persistence —
 /// so both the Library fetch and the Organize staging fetch can share it.
 enum ComicVineFetcher {
-    static func fill(_ comic: Comic, from volume: CVVolumeResult) async -> Comic {
+    /// - Parameter overwrite: when `true` (forced re-fetch / explicit match
+    ///   pick), a non-empty ComicVine value replaces the existing field instead
+    ///   of only filling a blank. Fields ComicVine has no value for are never
+    ///   nil-ed out, and arrays keep replace-but-never-wipe in both modes.
+    static func fill(_ comic: Comic, from volume: CVVolumeResult, overwrite: Bool = false) async -> Comic {
         var updated = comic
 
         // Volume-level fields: series is canonical from ComicVine; the rest
-        // fill only when missing so user edits are never clobbered
+        // fill only when missing (or replace, when overwriting) so user edits
+        // are never clobbered by an ordinary fetch.
         if let name = volume.name, !name.isEmpty { updated.series = name }
-        if updated.publisher == nil || updated.publisher?.isEmpty == true {
-            updated.publisher = volume.publisher?.name
+        if let publisher = volume.publisher?.name, !publisher.isEmpty,
+           overwrite || updated.publisher == nil || updated.publisher?.isEmpty == true {
+            updated.publisher = publisher
         }
-        if updated.year == nil {
-            updated.year = volume.startYear.flatMap { Int($0) }
+        if let year = volume.startYear.flatMap({ Int($0) }), overwrite || updated.year == nil {
+            updated.year = year
         }
         updated.comicVineVolumeID = volume.id
 
@@ -727,23 +741,28 @@ enum ComicVineFetcher {
                 }
                 if let issue = issues.first {
                     updated.comicVineIssueID = issue.id
-                    if updated.title == nil || updated.title?.isEmpty == true {
-                        updated.title = issue.name
+                    if let title = issue.name, !title.isEmpty,
+                       overwrite || updated.title == nil || updated.title?.isEmpty == true {
+                        updated.title = title
                     }
-                    if updated.summary == nil || updated.summary?.isEmpty == true {
-                        updated.summary = ComicVineMatcher.stripHTML(issue.description)
+                    if let summary = ComicVineMatcher.stripHTML(issue.description),
+                       overwrite || updated.summary == nil || updated.summary?.isEmpty == true {
+                        updated.summary = summary
                     }
-                    if updated.year == nil, let coverDate = issue.coverDate, coverDate.count >= 4 {
-                        updated.year = Int(coverDate.prefix(4))
+                    if overwrite || updated.year == nil,
+                       let coverDate = issue.coverDate, coverDate.count >= 4,
+                       let coverYear = Int(coverDate.prefix(4)) {
+                        updated.year = coverYear
                     }
 
                     // Creators + story arcs (single detail call)
                     if let detail = try? await ComicVineService.shared.issueDetail(id: issue.id) {
                         if let credits = detail.personCredits {
-                            ComicVineMatcher.applyCredits(credits, to: &updated)
+                            ComicVineMatcher.applyCredits(credits, to: &updated, overwrite: overwrite)
                         }
-                        if updated.summary == nil || updated.summary?.isEmpty == true {
-                            updated.summary = ComicVineMatcher.stripHTML(detail.description)
+                        if let summary = ComicVineMatcher.stripHTML(detail.description),
+                           overwrite || updated.summary == nil || updated.summary?.isEmpty == true {
+                            updated.summary = summary
                         }
                         // Story arcs: ComicVine is authoritative — replace,
                         // but never wipe existing arcs with an empty result.
@@ -903,21 +922,29 @@ enum ComicVineMatcher {
     }
 
     /// Fill creator fields that are currently empty.
-    static func applyCredits(_ credits: [CVPersonCredit], to comic: inout Comic) {
+    /// - Parameter overwrite: when `true` (forced re-fetch / explicit match
+    ///   pick), a role the credit list actually provides replaces the existing
+    ///   field. Roles absent from the credits keep their existing value.
+    static func applyCredits(
+        _ credits: [CVPersonCredit], to comic: inout Comic, overwrite: Bool = false
+    ) {
         func names(for role: String) -> String? {
             let matches = credits
                 .filter { ($0.role ?? "").lowercased().contains(role) }
                 .compactMap { $0.name }
+                .filter { !$0.isEmpty }
             return matches.isEmpty ? nil : matches.joined(separator: ", ")
         }
-        if comic.writer?.isEmpty != false { comic.writer = names(for: "writer") }
-        if comic.artist?.isEmpty != false {
-            comic.artist = names(for: "penciller") ?? names(for: "penciler") ?? names(for: "artist")
+        func assign(_ field: inout String?, _ value: String?) {
+            guard let value, !value.isEmpty else { return }
+            if overwrite || field?.isEmpty != false { field = value }
         }
-        if comic.coverArtist?.isEmpty != false { comic.coverArtist = names(for: "cover") }
-        if comic.colorist?.isEmpty != false { comic.colorist = names(for: "colorist") }
-        if comic.inker?.isEmpty != false { comic.inker = names(for: "inker") }
-        if comic.editor?.isEmpty != false { comic.editor = names(for: "editor") }
+        assign(&comic.writer, names(for: "writer"))
+        assign(&comic.artist, names(for: "penciller") ?? names(for: "penciler") ?? names(for: "artist"))
+        assign(&comic.coverArtist, names(for: "cover"))
+        assign(&comic.colorist, names(for: "colorist"))
+        assign(&comic.inker, names(for: "inker"))
+        assign(&comic.editor, names(for: "editor"))
     }
 }
 
