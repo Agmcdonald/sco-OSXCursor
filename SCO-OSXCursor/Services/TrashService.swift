@@ -115,10 +115,31 @@ final class TrashService {
                     // A missing/uncreatable parent reports rather than throws,
                     // so nil *and* .failedParentMissing mean "still in trash".
                     filePutBack = destination != nil && destination != .failedParentMissing
-                    if !filePutBack {
+                    if !filePutBack && manifestRowWritten {
                         AppLog.trash.error(
                             "[Trash] ⚠️ Rollback could not put \(comic.fileName) back; keeping its manifest row so the file stays reachable"
                         )
+                    } else if !filePutBack {
+                        // Double failure: the *insert* is what threw, so there
+                        // is no manifest row to keep. Without one the file sits
+                        // in the Trash directory with nothing in the database
+                        // pointing at it — invisible to every UI and counted
+                        // forever by totalSize(). Retry the insert once so the
+                        // entry appears in the Trash list and the file stays
+                        // restorable. (The book is still in the catalog, so this
+                        // row is a visible ghost — the lesser failure, per the
+                        // ordering rationale above.)
+                        do {
+                            try await database.insertTrashEntry(entry)
+                            manifestRowWritten = true
+                            AppLog.trash.error(
+                                "[Trash] ⚠️ Rollback could not put \(comic.fileName) back; re-wrote its manifest row so the file stays reachable from the Trash"
+                            )
+                        } catch {
+                            AppLog.trash.error(
+                                "[Trash] ⚠️ Rollback could not put \(comic.fileName) back and the manifest row could not be written (\(error.localizedDescription)) — the file remains in the Trash directory WITHOUT a manifest row and will not appear in the Trash list"
+                            )
+                        }
                     }
                 }
                 if manifestRowWritten && filePutBack {

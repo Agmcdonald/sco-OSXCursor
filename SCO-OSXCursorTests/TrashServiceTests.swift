@@ -213,6 +213,30 @@ import Testing
         #expect(FileManager.default.fileExists(atPath: store.storedFileURL(taken.storedName).path))
     }
 
+    @Test func restoreIntoUnwritableParentReportsFallback() throws {
+        let (store, sandbox) = try makeStore()
+        let lib = sandbox.appendingPathComponent("lib")
+        let source = try writeFile("X.cbz", in: lib)
+        let originalPath = source.path
+        let taken = try store.takeFile(at: source, entryID: UUID())
+
+        // The original folder still EXISTS — it just won't accept a write any
+        // more (read-only volume / revoked permission / sandbox refusal). That
+        // must report the fallback, not throw out of the restore.
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o555], ofItemAtPath: lib.path)
+        defer {
+            // Restore write permission so the temp sandbox can be cleaned up.
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o755], ofItemAtPath: lib.path)
+        }
+
+        let dest = try store.restoreFile(storedName: taken.storedName, toOriginalPath: originalPath)
+        #expect(dest == .failedParentMissing)
+        // File still safely in the trash, ready for home-library re-filing:
+        #expect(FileManager.default.fileExists(atPath: store.storedFileURL(taken.storedName).path))
+    }
+
     @Test func purgeAndTotalSize() throws {
         let (store, sandbox) = try makeStore()
         let a = try writeFile("A.cbz", in: sandbox.appendingPathComponent("lib"), contents: "12345")

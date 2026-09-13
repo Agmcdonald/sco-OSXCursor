@@ -36,6 +36,24 @@ struct TrashFileStore {
         !name.isEmpty && !name.contains("/") && !name.contains("..")
     }
 
+    /// A write the sandbox (or the file system) refuses is the caller's
+    /// *fallback* signal, not a hard error: the stored file stays put and
+    /// TrashService re-files the book into the home library instead. Matched
+    /// both as `CocoaError` and via the bridged `NSError` codes, because the
+    /// same underlying EACCES/EROFS surfaces either way depending on which
+    /// FileManager call produced it.
+    private func isDestinationUnwritable(_ error: Error) -> Bool {
+        if let cocoa = error as? CocoaError,
+            cocoa.code == .fileWriteNoPermission || cocoa.code == .fileWriteVolumeReadOnly
+        {
+            return true
+        }
+        let ns = error as NSError
+        return ns.domain == NSCocoaErrorDomain
+            && (ns.code == NSFileWriteNoPermissionError
+                || ns.code == NSFileWriteVolumeReadOnlyError)
+    }
+
     /// `attributesOfItem[.size]` is an `Any?` inside a throwing call — bound in
     /// two steps so the cast isn't a double optional. Missing/unreadable = 0.
     private func fileSize(atPath path: String) -> Int64 {
@@ -95,12 +113,19 @@ struct TrashFileStore {
     enum RestoreDestination: Equatable {
         case originalPath(URL)
         case renamed(URL)
+        /// The original destination can't take the file back: its parent is
+        /// missing and uncreatable, something other than a directory sits at
+        /// the parent's path, or the parent (or its volume) is unwritable —
+        /// a read-only folder, a read-only volume, or a path the sandbox
+        /// refuses. The stored file stays in the Trash and the caller falls
+        /// back to filing the book into the home library.
         case failedParentMissing
     }
 
     /// Move a stored file back toward its original path. Never overwrites an
-    /// existing file; never throws for a missing/uncreatable parent (reports
-    /// it so the caller can fall back to home-library filing).
+    /// existing file; never throws for a missing/uncreatable/unwritable
+    /// destination (reports it so the caller can fall back to home-library
+    /// filing).
     func restoreFile(storedName: String, toOriginalPath originalPath: String) throws
         -> RestoreDestination
     {
@@ -116,6 +141,9 @@ struct TrashFileStore {
         let parentExists = FileManager.default.fileExists(atPath: parent.path, isDirectory: &isDir)
         if !parentExists {
             do {
+                // Any failure here — including a permission-denied or
+                // read-only-volume write — is the fallback signal, never a
+                // throw: the book gets filed into the home library instead.
                 try FileManager.default.createDirectory(
                     at: parent, withIntermediateDirectories: true)
             } catch {
@@ -126,7 +154,18 @@ struct TrashFileStore {
         }
 
         if !FileManager.default.fileExists(atPath: target.path) {
-            try FileManager.default.moveItem(at: stored, to: target)
+            do {
+                try FileManager.default.moveItem(at: stored, to: target)
+            } catch let error where isDestinationUnwritable(error) {
+                // The parent exists but won't take a write (read-only folder or
+                // volume, or a sandbox refusal). Same outcome as an uncreatable
+                // parent: leave the file in the Trash and let the caller re-file
+                // it, rather than failing the restore outright.
+                AppLog.trash.info(
+                    "[Trash] ↪️ Original location is unwritable for \(target.lastPathComponent); falling back: \(error.localizedDescription)"
+                )
+                return .failedParentMissing
+            }
             AppLog.trash.info("[Trash] ♻️ Restored to original path: \(target.lastPathComponent)")
             return .originalPath(target)
         }
@@ -142,7 +181,14 @@ struct TrashFileStore {
             if !ext.isEmpty { candidate = candidate.appendingPathExtension(ext) }
             n += 1
         }
-        try FileManager.default.moveItem(at: stored, to: candidate)
+        do {
+            try FileManager.default.moveItem(at: stored, to: candidate)
+        } catch let error where isDestinationUnwritable(error) {
+            AppLog.trash.info(
+                "[Trash] ↪️ Original folder is unwritable for \(candidate.lastPathComponent); falling back: \(error.localizedDescription)"
+            )
+            return .failedParentMissing
+        }
         AppLog.trash.info(
             "[Trash] ♻️ Restored beside occupied original: \(candidate.lastPathComponent)")
         return .renamed(candidate)

@@ -973,6 +973,12 @@ final class LibraryViewModel: ObservableObject {
         // only if the read fails.
         let membership = (try? await database.fetchFolderMembership()) ?? folderMembership
 
+        // Sandbox: a take that fails mid-batch is rolled back by putting the
+        // file back at its original path, which is a plain write under the
+        // library root — blocked without the root's security scope.
+        let scopedLibraryRoot = beginHomeLibraryScope()
+        defer { scopedLibraryRoot?.stopAccessingSecurityScopedResource() }
+
         let outcome = await TrashService.shared.trash(
             toDelete, deleteFiles: deleteFiles,
             folderIDs: { comic in
@@ -1026,6 +1032,13 @@ final class LibraryViewModel: ObservableObject {
     /// Put a trashed book back. On success the library and folders are
     /// reloaded so the restored book reappears immediately.
     func restoreFromTrash(_ entry: TrashEntry) async -> TrashService.RestoreOutcome {
+        // Sandbox: the restore moves the file out of the Trash directory and
+        // back under the library root (recreating intermediate folders on the
+        // way). Those writes need the root's security scope — see
+        // `beginHomeLibraryScope()`.
+        let scopedLibraryRoot = beginHomeLibraryScope()
+        defer { scopedLibraryRoot?.stopAccessingSecurityScopedResource() }
+
         let outcome = await TrashService.shared.restore(entry) { storedFile, comic in
             await self.fileTrashedFileIntoHomeLibrary(storedFile, comic: comic)
         }
@@ -1035,6 +1048,27 @@ final class LibraryViewModel: ObservableObject {
         // there would keep that row invisible until the next full load.
         await reloadAfterRestore()
         return outcome
+    }
+
+    /// Resolve the home-library ROOT (same stored security-scoped bookmark the
+    /// re-filing fallback below uses) and start accessing it.
+    ///
+    /// The app is sandboxed, so every file-system write under the library root
+    /// is blocked unless that root's scope is being accessed — the rule
+    /// `LibraryFileService.moveToLibrary` documents. `TrashService` does its
+    /// moves in detached tasks and takes no URLs from us, but a started scope
+    /// is process-wide: holding it across the `await` covers the service's
+    /// off-main work for any path beneath the root.
+    ///
+    /// Returns the root ONLY when access actually started, so the caller's
+    /// `defer` always has a matching `stopAccessingSecurityScopedResource()`.
+    /// nil means no home library is configured (or the scope couldn't be
+    /// started) — the operation then proceeds exactly as it did before, and
+    /// `TrashFileStore` reports an unwritable destination as a fallback rather
+    /// than a hard failure.
+    private func beginHomeLibraryScope() -> URL? {
+        guard let root = SettingsViewModel().resolveHomeLibraryURL() else { return nil }
+        return root.startAccessingSecurityScopedResource() ? root : nil
     }
 
     /// Last-resort filing for a restore whose original folder can't take the
