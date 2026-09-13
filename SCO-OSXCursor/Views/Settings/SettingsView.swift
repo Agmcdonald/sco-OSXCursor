@@ -188,9 +188,19 @@ struct SettingsView: View {
                     }
                 }
 
+                // Comic metadata source (routes every comic fetch)
+                settingsSection(title: "Comic Metadata Source", icon: "arrow.triangle.branch") {
+                    comicSourceSettings
+                }
+
                 // ComicVine Metadata Section
                 settingsSection(title: "ComicVine Metadata", icon: "network") {
                     comicVineSettings
+                }
+
+                // Metron Metadata Section
+                settingsSection(title: "Metron Metadata", icon: "books.vertical") {
+                    metronSettings
                 }
 
                 // Feedback & Support Section
@@ -426,6 +436,139 @@ struct SettingsView: View {
     @AppStorage("autoApplyConfidentMatches") private var autoApplyConfidentMatches = true
     @AppStorage("singleTapConfirmMatch") private var singleTapConfirmMatch = false
     @ObservedObject private var comicVineQuota = ComicVineQuota.shared
+
+    @AppStorage(ComicSource.defaultsKey) private var comicMetadataProvider: String = ComicSource.comicVine.rawValue
+    @AppStorage(MetronConfig.usernameDefaultsKey) private var metronUsername: String = ""
+    @AppStorage(MetronConfig.passwordDefaultsKey) private var metronPassword: String = ""
+    @ObservedObject private var metronQuota = MetronQuota.shared
+
+    // MARK: - Comic Source Settings
+
+    private var comicSourceSettings: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            Text("Which database comic fetches use — everywhere: the edit sheet, right-click fetch, batch fetch, and the Organize tab. Book (EPUB) lookups are separate and unaffected.")
+                .font(Typography.bodySmall)
+                .foregroundColor(TextColors.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Picker("Comic metadata source", selection: $comicMetadataProvider) {
+                ForEach(ComicSource.allCases) { source in
+                    Text(source.displayName).tag(source.rawValue)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            if ComicSource(rawValue: comicMetadataProvider) == .metron && !MetronConfig.hasCredentials {
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: "exclamationmark.circle")
+                        .font(.system(size: 11))
+                    Text("Metron is selected but has no sign-in below — fetching is disabled until you add one.")
+                        .font(Typography.caption)
+                }
+                .foregroundColor(AccentColors.warning)
+            }
+        }
+    }
+
+    // MARK: - Metron Settings
+
+    private var metronSettings: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            Text("Pull publisher, creators, summary, story arcs, characters, and teams from the Metron Comic Book Database. Free account; community-run.")
+                .font(Typography.bodySmall)
+                .foregroundColor(TextColors.secondary)
+
+            Link(destination: URL(string: "https://metron.cloud")!) {
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: "arrow.up.right.square")
+                        .font(.system(size: 12))
+                    Text("Create a free Metron account")
+                        .font(Typography.bodySmall)
+                }
+                .foregroundColor(AccentColors.primary)
+            }
+
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("Username")
+                    .font(Typography.h3)
+                    .foregroundColor(TextColors.primary)
+
+                TextField("Your metron.cloud username", text: $metronUsername)
+                    .textFieldStyle(.plain)
+                    .font(Typography.body)
+                    .foregroundColor(TextColors.primary)
+                    .padding(Spacing.md)
+                    .background(BackgroundColors.secondary)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(BorderColors.subtle, lineWidth: 1)
+                    )
+                    #if os(iOS)
+                    .autocorrectionDisabled(true)
+                    .textInputAutocapitalization(.never)
+                    #endif
+
+                Text("Password")
+                    .font(Typography.h3)
+                    .foregroundColor(TextColors.primary)
+
+                SecureField("Your metron.cloud password", text: $metronPassword)
+                    .textFieldStyle(.plain)
+                    .font(Typography.body)
+                    .foregroundColor(TextColors.primary)
+                    .padding(Spacing.md)
+                    .background(BackgroundColors.secondary)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(BorderColors.subtle, lineWidth: 1)
+                    )
+
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: MetronConfig.hasCredentials ? "checkmark.circle.fill" : "exclamationmark.circle")
+                        .font(.system(size: 11))
+                    Text(MetronConfig.hasCredentials ? "Sign-in saved" : "No sign-in — Metron fetching is disabled")
+                        .font(Typography.caption)
+                }
+                .foregroundColor(MetronConfig.hasCredentials ? AccentColors.success : TextColors.tertiary)
+            }
+
+            Divider()
+                .background(BorderColors.subtle)
+                .padding(.vertical, Spacing.xs)
+
+            // Daily usage
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                HStack {
+                    Text("API Calls (Last 24h)")
+                        .font(Typography.h3)
+                        .foregroundColor(TextColors.primary)
+                    Spacer()
+                    Text("\(metronQuota.callsInLastDay) / \(MetronQuota.dailyLimit)")
+                        .font(Typography.bodySmall)
+                        .foregroundColor(TextColors.secondary)
+                }
+
+                ProgressView(
+                    value: Double(min(metronQuota.callsInLastDay, MetronQuota.dailyLimit)),
+                    total: Double(MetronQuota.dailyLimit)
+                )
+                .tint(metronQuota.callsInLastDay >= MetronQuota.dailyLimit ? AccentColors.error : AccentColors.primary)
+
+                if let reset = metronQuota.nextReset {
+                    Text("Budget starts returning \(reset.formatted(date: .abbreviated, time: .shortened))")
+                        .font(Typography.caption)
+                        .foregroundColor(TextColors.tertiary)
+                }
+
+                Text("Limited to 20 requests/minute and 5,000 calls/day per Metron's terms.")
+                    .font(Typography.caption)
+                    .foregroundColor(TextColors.tertiary)
+            }
+        }
+    }
 
     private var comicVineSettings: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
