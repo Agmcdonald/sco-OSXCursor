@@ -55,6 +55,9 @@ struct TrashFileStore {
         let storedName = ext.isEmpty ? entryID.uuidString : "\(entryID.uuidString).\(ext)"
         let destination = directory.appendingPathComponent(storedName)
         let size = fileSize(atPath: source.path)
+        // If something is already stored under this name (the same entry taken
+        // twice), it is not ours to clean up — it may be the user's only copy.
+        let destinationPreexisted = FileManager.default.fileExists(atPath: destination.path)
         do {
             try FileManager.default.moveItem(at: source, to: destination)
         } catch {
@@ -71,8 +74,11 @@ struct TrashFileStore {
                 // Anything that fails once the copy has started (the copy itself,
                 // or the source removal) must not leave bytes in the trash
                 // directory: the caller is throwing, so no manifest row will ever
-                // reference them and totalSize() would count them forever.
-                try? FileManager.default.removeItem(at: destination)
+                // reference them and totalSize() would count them forever. Only
+                // ever remove a file this call put there.
+                if !destinationPreexisted {
+                    try? FileManager.default.removeItem(at: destination)
+                }
                 AppLog.trash.error(
                     "[Trash] ⚠️ Take failed for \(source.lastPathComponent), trash copy discarded: \(error.localizedDescription)"
                 )

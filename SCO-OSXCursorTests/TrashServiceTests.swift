@@ -229,6 +229,24 @@ import Testing
         #expect(store.totalSize() == 0)
     }
 
+    @Test func failedTakeNeverDeletesAPreexistingStoredFile() throws {
+        let (store, sandbox) = try makeStore()
+        let lib = sandbox.appendingPathComponent("lib")
+        let entryID = UUID()
+        let first = try writeFile("X.cbz", in: lib, contents: "the only copy")
+        let taken = try store.takeFile(at: first, entryID: entryID)
+
+        // Same entryID again → the stored name is already occupied. The take must
+        // fail without destroying what is already in the trash.
+        let second = try writeFile("X2.cbz", in: lib, contents: "newer file")
+        #expect(throws: (any Error).self) {
+            _ = try store.takeFile(at: second, entryID: entryID)
+        }
+        let stored = store.storedFileURL(taken.storedName)
+        #expect(FileManager.default.fileExists(atPath: stored.path))
+        #expect(try String(contentsOf: stored, encoding: .utf8) == "the only copy")
+    }
+
     @Test func unsafeStoredNamesAreRejected() throws {
         let (store, sandbox) = try makeStore()
         let outsider = try writeFile("outsider.cbz", in: sandbox, contents: "keep me")
