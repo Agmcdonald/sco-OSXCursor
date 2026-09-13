@@ -1076,6 +1076,16 @@ struct LibraryView: View {
             }
             return .ignored
         }
+        // Escape → clear the selection and drop out of selection mode
+        .onKeyPress(.escape) {
+            guard editingComicID == nil, !showingFilters, !isSearchFieldFocused else { return .ignored }
+            guard isSelectionMode else { return .ignored }
+            withAnimation {
+                selectedComics.removeAll()
+                isSelectionMode = false
+            }
+            return .handled
+        }
         // ⌘E → edit metadata, ⌘I → info panel for the highlighted book
         .onKeyPress(phases: .down) { press in
             guard editingComicID == nil, !showingFilters, !isSearchFieldFocused else {
