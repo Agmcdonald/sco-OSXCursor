@@ -51,6 +51,8 @@ final class LibraryViewModel: ObservableObject {
     private let database: DatabaseManager
     private let progressTracker = ReadingProgressTracker.shared
     private var cancellables = Set<AnyCancellable>()
+    /// One Trash sweep per launch (see `sweepTrashOnLaunch()`).
+    private var didSweepTrash = false
 
     init(database: DatabaseManager) {
         self.database = database
@@ -80,6 +82,8 @@ final class LibraryViewModel: ObservableObject {
             }
             // Check for missing files on launch
             await checkMissingFiles()
+            // Initial load is done — purge anything past the retention window.
+            sweepTrashOnLaunch()
         }
 
         // Listen for refreshed security-scoped bookmarks from ReaderViewModel
@@ -844,6 +848,9 @@ final class LibraryViewModel: ObservableObject {
     private static let retiredSampleFiles: Set<String> = [
         "x-men infinity comic 011 (2026) (digital) (marika-empire).cbz",
         "the_avenger_01 (1955).cbr",
+        "adventures into darkness #13 1954.cbz",
+        "billy_bunny_01.cbz",
+        "the adventures of captain havoc and the phantom knight #04 (1949).cbz",
     ]
 
     /// Scans the app bundle for comic files and imports them if not already present
@@ -865,7 +872,9 @@ final class LibraryViewModel: ObservableObject {
             AppLog.library.info(
                 "[LibraryViewModel] 🗑️ Removing \(retired.count) retired sample book(s): \(retired.map(\.fileName))"
             )
-            await deleteComicsFromApp(retired)
+            // Housekeeping the user never asked for — hard-delete rather than
+            // filling their Trash with books the app itself retired.
+            await hardDeleteComicsFromApp(retired)
         }
 
         let extensions = ["cbz", "pdf", "cbr", "epub"]
@@ -928,14 +937,64 @@ final class LibraryViewModel: ObservableObject {
 
     // MARK: - Delete Comics
 
-    /// Remove books from the app (database + library list). Files on disk are
-    /// left untouched. Folder-membership rows cascade away in the database.
+    /// Remove books from the app — the catalog rows move to the Trash
+    /// (restorable from Maintenance). Files on disk are untouched.
     func deleteComics(_ comics: [Comic]) {
         Task { await deleteComicsFromApp(comics) }
     }
 
-    /// Async core: delete from the database and the in-memory list.
+    /// Remove books from the app — the catalog rows move to the Trash
+    /// (restorable from Maintenance). Files on disk are untouched.
     func deleteComicsFromApp(_ toDelete: [Comic]) async {
+        await trashComics(toDelete, deleteFiles: false)
+    }
+
+    /// Delete the underlying files from disk too — both the files and the
+    /// catalog rows move to the Trash (restorable from Maintenance).
+    /// Bundled samples keep their files; TrashService skips the take for them.
+    func deleteComicsFromDevice(_ toDelete: [Comic]) async {
+        await trashComics(toDelete, deleteFiles: true)
+    }
+
+    /// Shared body: snapshot each book (with its folder memberships) into the
+    /// Trash, then drop it from the in-memory library.
+    private func trashComics(_ toDelete: [Comic], deleteFiles: Bool) async {
+        guard !toDelete.isEmpty else { return }
+
+        for comic in toDelete {
+            await logActivity(.deleted, comic: comic, old: comic.fileName)
+        }
+
+        // Per-comic folder memberships for the restore snapshot. The junction
+        // table is keyed folderID → comic IDs, so invert it per book. Read it
+        // fresh rather than trusting the published `folderMembership` cache:
+        // a stale map would silently drop a book's folders from its snapshot
+        // and the restore would put it back unfiled. The cache is the fallback
+        // only if the read fails.
+        let membership = (try? await database.fetchFolderMembership()) ?? folderMembership
+
+        let outcome = await TrashService.shared.trash(
+            toDelete, deleteFiles: deleteFiles,
+            folderIDs: { comic in
+                membership.compactMap { folderID, comicIDs in
+                    comicIDs.contains(comic.id) ? folderID : nil
+                }
+            }
+        )
+
+        let ids = Set(toDelete.map(\.id))
+        comics.removeAll { ids.contains($0.id) }
+        // Refresh folder counts (membership rows cascaded in the database).
+        await loadFolders()
+        AppLog.trash.info(
+            "[Trash] 🗑️ Moved \(outcome.trashed) book(s) to Trash (fileProblems: \(outcome.fileProblems))"
+        )
+    }
+
+    /// True hard delete — catalog rows dropped outright, no Trash entry, files
+    /// untouched. For app-internal housekeeping only (retired bundled samples);
+    /// every user-facing delete goes through the Trash.
+    private func hardDeleteComicsFromApp(_ toDelete: [Comic]) async {
         guard !toDelete.isEmpty else { return }
         for comic in toDelete {
             await logActivity(.deleted, comic: comic, old: comic.fileName)
@@ -955,62 +1014,121 @@ final class LibraryViewModel: ObservableObject {
             "[LibraryViewModel] 🗑️ Removed \(toDelete.count) book(s) from the app")
     }
 
-    /// Delete the underlying files from disk (best-effort, skipping bundled
-    /// samples), then remove the books from the app.
-    func deleteComicsFromDevice(_ toDelete: [Comic]) async {
-        guard !toDelete.isEmpty else { return }
-        for comic in toDelete {
-            if Comic.isBundled(comic) {
-                AppLog.library.error(
-                    "[LibraryViewModel] ℹ️ Skipping on-disk delete of bundled sample: \(comic.fileName)"
-                )
-                continue
-            }
-            deleteFileOnDisk(for: comic)
-        }
-        await deleteComicsFromApp(toDelete)
+    // MARK: - Trash (restore / purge / sweep)
+
+    /// `UserDefaults` key for the retention window in days (0 = Never).
+    static let trashRetentionDefaultsKey = "trashRetentionDays"
+
+    func trashEntries() async -> [TrashEntry] {
+        await TrashService.shared.entries()
     }
 
-    /// Remove a single comic's file from disk, honouring its security-scoped
-    /// bookmark. Failures are logged but don't block app removal.
-    private func deleteFileOnDisk(for comic: Comic) {
-        var fileURL = comic.filePath
-        var didStartAccess = false
-        if let bookmarkData = comic.bookmarkData {
-            var isStale = false
-            #if os(macOS)
-                if let resolved = try? URL(
-                    resolvingBookmarkData: bookmarkData,
-                    options: .withSecurityScope,
-                    relativeTo: nil,
-                    bookmarkDataIsStale: &isStale
-                ) {
-                    fileURL = resolved
-                    didStartAccess = resolved.startAccessingSecurityScopedResource()
-                }
-            #else
-                if let resolved = try? URL(
-                    resolvingBookmarkData: bookmarkData,
-                    options: [],
-                    relativeTo: nil,
-                    bookmarkDataIsStale: &isStale
-                ) {
-                    fileURL = resolved
-                    didStartAccess = resolved.startAccessingSecurityScopedResource()
-                }
-            #endif
+    /// Put a trashed book back. On success the library and folders are
+    /// reloaded so the restored book reappears immediately.
+    func restoreFromTrash(_ entry: TrashEntry) async -> TrashService.RestoreOutcome {
+        let outcome = await TrashService.shared.restore(entry) { storedFile, comic in
+            await self.fileTrashedFileIntoHomeLibrary(storedFile, comic: comic)
         }
-        defer { if didStartAccess { fileURL.stopAccessingSecurityScopedResource() } }
+        if case .failed = outcome { return outcome }
+        await reloadAfterRestore()
+        return outcome
+    }
 
-        do {
-            try FileManager.default.removeItem(at: fileURL)
-            AppLog.library.info(
-                "[LibraryViewModel] 🗑️ Deleted file from disk: \(comic.fileName)")
-        } catch {
-            AppLog.library.error(
-                "[LibraryViewModel] ⚠️ Could not delete file \(comic.fileName): \(error.localizedDescription)"
-            )
+    /// Last-resort filing for a restore whose original folder can't take the
+    /// file back: drop it into the canonical home-library hierarchy (the same
+    /// destination an import would pick) and mint a fresh security-scoped
+    /// bookmark for its new home.
+    ///
+    /// Returns nil when no home library is configured or the move fails —
+    /// TrashService then reports the restore as failed and leaves the file
+    /// safely in the Trash directory.
+    ///
+    /// This deliberately does not call `LibraryFileService.moveToLibrary`: that
+    /// moves `comic.filePath` (the *original* location, which is exactly what's
+    /// unreachable here) and writes the catalog row itself, while during a
+    /// restore the row doesn't exist yet — TrashService saves it afterwards.
+    /// Destination + conflict resolution are reused from the service so the
+    /// layout matches every other filed book.
+    private func fileTrashedFileIntoHomeLibrary(_ storedFile: URL, comic: Comic) async -> (
+        URL, Data?
+    )? {
+        guard let libraryRoot = SettingsViewModel().resolveHomeLibraryURL() else {
+            AppLog.trash.error(
+                "[Trash] ⚠️ No home library is set — can't re-file \(comic.fileName)")
+            return nil
         }
+
+        // Sandbox: every file-system call below needs the library root's
+        // security scope. Held until this function returns, which is after the
+        // detached move has finished.
+        let accessing = libraryRoot.startAccessingSecurityScopedResource()
+        defer { if accessing { libraryRoot.stopAccessingSecurityScopedResource() } }
+
+        let service = LibraryFileService.shared
+        let destination = service.resolveConflict(
+            at: service.destinationURL(for: comic, in: libraryRoot))
+
+        // Off the main actor: the Trash directory and the home library can sit
+        // on different volumes, which turns the move into a full copy of a
+        // possibly multi-gigabyte file. Only URLs cross over.
+        return await Task.detached(priority: .utility) { () -> (URL, Data?)? in
+            let fm = FileManager.default
+            do {
+                try fm.createDirectory(
+                    at: destination.deletingLastPathComponent(),
+                    withIntermediateDirectories: true)
+                try fm.moveItem(at: storedFile, to: destination)
+            } catch {
+                AppLog.trash.error(
+                    "[Trash] ⚠️ Couldn't re-file into the home library: \(error.localizedDescription)"
+                )
+                return nil
+            }
+            #if os(macOS)
+                let bookmark = try? destination.bookmarkData(
+                    options: .withSecurityScope,
+                    includingResourceValuesForKeys: nil,
+                    relativeTo: nil)
+            #else
+                let bookmark = try? destination.bookmarkData(
+                    options: .minimalBookmark,
+                    includingResourceValuesForKeys: nil,
+                    relativeTo: nil)
+            #endif
+            AppLog.trash.info(
+                "[Trash] 📚 Re-filed into the home library: \(destination.lastPathComponent)")
+            return (destination, bookmark)
+        }.value
+    }
+
+    /// A restored book is a new catalog row plus recreated folder memberships,
+    /// so refetch both — the same pair the initial load and the import flow use.
+    private func reloadAfterRestore() async {
+        await loadComics()
+        await loadFolders()
+    }
+
+    func purgeTrashEntry(_ entry: TrashEntry) async {
+        await TrashService.shared.purge(entry)
+    }
+
+    func emptyTrash() async {
+        await TrashService.shared.purgeAll()
+    }
+
+    func trashTotalSize() -> Int64 {
+        TrashService.shared.totalSize()
+    }
+
+    /// Launch sweep — purge entries past the retention window. Called once from
+    /// the initial load; fire-and-forget.
+    func sweepTrashOnLaunch() {
+        guard !didSweepTrash else { return }
+        didSweepTrash = true
+        let stored =
+            UserDefaults.standard.object(forKey: Self.trashRetentionDefaultsKey) as? Int ?? 30
+        let days = TrashRetention.days(fromStoredValue: stored)
+        Task { await TrashService.shared.sweepExpired(retentionDays: days) }
     }
 
     // MARK: - Relink (Locate File)
