@@ -308,3 +308,17 @@ import Testing
         #expect(filled.teams == ["Existing Team"])
     }
 }
+
+// MARK: - Search over characters/teams
+
+@Suite struct MetronSearchTests {
+    @Test func searchMatchesCharactersAndTeams() {
+        var comic = Comic(filePath: URL(fileURLWithPath: "/tmp/x.cbz"), fileName: "x.cbz", series: "X")
+        comic.characters = ["Booster Gold"]
+        comic.teams = ["Birds of Prey"]
+        // Use the same predicate the library search uses.
+        #expect(comicMatchesSearch(comic, "booster"))
+        #expect(comicMatchesSearch(comic, "birds of prey"))
+        #expect(!comicMatchesSearch(comic, "zatanna"))
+    }
+}

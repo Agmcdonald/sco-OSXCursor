@@ -6,6 +6,7 @@ struct DashboardOverviewView: View {
     /// Navigates to the Knowledge tab (wired up in ContentView).
     var onOpenKnowledge: () -> Void = {}
     @ObservedObject private var comicVineQuota = ComicVineQuota.shared
+    @ObservedObject private var metronQuota = MetronQuota.shared
     @State private var topPublishers: [(String, Int)] = []
     @State private var showingFilePicker = false
     @State private var showingFolderScanner = false
@@ -108,11 +109,18 @@ struct DashboardOverviewView: View {
     // MARK: - Cards
 
     private var comicVineQuotaCard: some View {
-        DashboardSectionCard(
-            title: "ComicVine API",
-            subtitle: "Metadata calls used this hour."
+        let source = ComicSource.current
+        return DashboardSectionCard(
+            title: source == .metron ? "Metron API" : "ComicVine API",
+            subtitle: source == .metron
+                ? "Metadata calls used in the last 24 hours."
+                : "Metadata calls used this hour."
         ) {
-            comicVineQuotaContent
+            if source == .metron {
+                metronQuotaContent
+            } else {
+                comicVineQuotaContent
+            }
         }
     }
 
@@ -288,6 +296,48 @@ struct DashboardOverviewView: View {
             AppLog.library.error(
                 "Dashboard file import failed: \(error.localizedDescription)")
         }
+    }
+
+    /// Metron variant of the quota bar: same layout, 24-hour window.
+    private var metronQuotaContent: some View {
+        HStack(spacing: Spacing.md) {
+            HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
+                Text("\(metronQuota.callsInLastDay)")
+                    .font(.system(size: 28, weight: .bold))
+                    .foregroundColor(
+                        metronQuota.callsInLastDay >= MetronQuota.dailyLimit
+                            ? AccentColors.error : TextColors.primary
+                    )
+                Text("/ \(MetronQuota.dailyLimit) calls (24h)")
+                    .font(Typography.caption)
+                    .foregroundColor(TextColors.secondary)
+            }
+            .fixedSize()
+
+            ProgressView(
+                value: Double(min(metronQuota.callsInLastDay, MetronQuota.dailyLimit)),
+                total: Double(MetronQuota.dailyLimit)
+            )
+            .tint(
+                metronQuota.callsInLastDay >= MetronQuota.dailyLimit
+                    ? AccentColors.error : AccentColors.primary
+            )
+            .frame(maxWidth: .infinity)
+
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: 11))
+                Text(
+                    metronQuota.nextReset.map {
+                        "More budget at \($0.formatted(date: .omitted, time: .shortened))"
+                    } ?? "No calls yet today."
+                )
+                .font(Typography.caption)
+            }
+            .foregroundColor(TextColors.tertiary)
+            .fixedSize()
+        }
+        .padding(.top, Spacing.sm)
     }
 
     /// Laid out for the full-width bar: count | progress | reset time.

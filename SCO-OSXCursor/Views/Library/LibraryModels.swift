@@ -130,6 +130,26 @@ struct PublisherGroup: Identifiable {
     }
 }
 
+// MARK: - Search Predicate
+
+/// One place for the library search predicate, so tests cover it.
+func comicMatchesSearch(_ comic: Comic, _ searchText: String) -> Bool {
+    comic.displayTitle.localizedCaseInsensitiveContains(searchText)
+        || comic.fileName.localizedCaseInsensitiveContains(searchText)
+        || comic.title?.localizedCaseInsensitiveContains(searchText) == true
+        || comic.publisher?.localizedCaseInsensitiveContains(searchText) == true
+        || comic.series?.localizedCaseInsensitiveContains(searchText) == true
+        || comic.writer?.localizedCaseInsensitiveContains(searchText) == true
+        || comic.artist?.localizedCaseInsensitiveContains(searchText) == true
+        || comic.coverArtist?.localizedCaseInsensitiveContains(searchText) == true
+        || comic.summary?.localizedCaseInsensitiveContains(searchText) == true
+        || comic.issueNumber?.localizedCaseInsensitiveContains(searchText) == true
+        || comic.tags.contains(where: { $0.localizedCaseInsensitiveContains(searchText) })
+        || comic.storyArcs.contains(where: { $0.localizedCaseInsensitiveContains(searchText) })
+        || comic.characters.contains(where: { $0.localizedCaseInsensitiveContains(searchText) })
+        || comic.teams.contains(where: { $0.localizedCaseInsensitiveContains(searchText) })
+}
+
 // MARK: - Query Pipeline
 
 enum LibraryQuery {
@@ -156,24 +176,7 @@ enum LibraryQuery {
 
         // Search across all metadata fields
         if !searchText.isEmpty {
-            result = result.filter { comic in
-                comic.displayTitle.localizedCaseInsensitiveContains(searchText)
-                    || comic.fileName.localizedCaseInsensitiveContains(searchText)
-                    || comic.title?.localizedCaseInsensitiveContains(searchText) == true
-                    || comic.publisher?.localizedCaseInsensitiveContains(searchText) == true
-                    || comic.series?.localizedCaseInsensitiveContains(searchText) == true
-                    || comic.writer?.localizedCaseInsensitiveContains(searchText) == true
-                    || comic.artist?.localizedCaseInsensitiveContains(searchText) == true
-                    || comic.coverArtist?.localizedCaseInsensitiveContains(searchText) == true
-                    || comic.summary?.localizedCaseInsensitiveContains(searchText) == true
-                    || comic.issueNumber?.localizedCaseInsensitiveContains(searchText) == true
-                    || comic.tags.contains(where: {
-                        $0.localizedCaseInsensitiveContains(searchText)
-                    })
-                    || comic.storyArcs.contains(where: {
-                        $0.localizedCaseInsensitiveContains(searchText)
-                    })
-            }
+            result = result.filter { comicMatchesSearch($0, searchText) }
         }
 
         // Multi-select groups: empty set = "All"; values OR within a group.

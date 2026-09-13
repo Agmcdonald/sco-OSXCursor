@@ -857,6 +857,48 @@ struct ComicDetailView: View {
                 }
             }
 
+            // Characters Section (read-only, from Metron)
+            if !editedComic.characters.isEmpty {
+                metadataSection(title: "Characters", icon: "person.2") {
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        ForEach(editedComic.characters, id: \.self) { name in
+                            HStack(spacing: Spacing.xs) {
+                                Image(systemName: "person")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(AccentColors.primary)
+                                Text(name)
+                                    .font(Typography.body)
+                                    .foregroundColor(TextColors.primary)
+                            }
+                        }
+                        Text("From Metron — search your library by character name to find related books.")
+                            .font(Typography.caption)
+                            .foregroundColor(TextColors.tertiary)
+                    }
+                }
+            }
+
+            // Teams Section (read-only, from Metron)
+            if !editedComic.teams.isEmpty {
+                metadataSection(title: "Teams", icon: "person.3") {
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        ForEach(editedComic.teams, id: \.self) { name in
+                            HStack(spacing: Spacing.xs) {
+                                Image(systemName: "person.3.sequence")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(AccentColors.primary)
+                                Text(name)
+                                    .font(Typography.body)
+                                    .foregroundColor(TextColors.primary)
+                            }
+                        }
+                        Text("From Metron — search your library by team name to find related books.")
+                            .font(Typography.caption)
+                            .foregroundColor(TextColors.tertiary)
+                    }
+                }
+            }
+
             // Summary Section
             metadataSection(title: "Summary", icon: "text.alignleft") {
                 VStack(alignment: .leading, spacing: Spacing.sm) {

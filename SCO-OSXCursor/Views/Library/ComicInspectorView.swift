@@ -100,6 +100,12 @@ struct ComicInspectorView: View {
                     if let year = comic.year {
                         InspectorField(title: "Year", value: String(year))
                     }
+                    if let storeDate = comic.storeDate {
+                        // In-store (shipping) date from Metron
+                        InspectorField(
+                            title: "In Stores",
+                            value: storeDate.formatted(date: .abbreviated, time: .omitted))
+                    }
                     
                     InspectorField(title: "Content Rating", value: comic.contentRating.label)
 
