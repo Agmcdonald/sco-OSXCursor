@@ -45,6 +45,14 @@ struct MaintenanceView: View {
     @State private var imageCacheDiskBytes: Int64?
     @State private var cacheStatus: String?
 
+    // ── Trash ──
+    @State private var trashEntries: [TrashEntry] = []
+    @State private var trashSize: Int64 = 0
+    @State private var trashStatus: String?
+    @State private var showingEmptyTrashConfirm = false
+    @State private var pendingPurgeEntry: TrashEntry?
+    @AppStorage(LibraryViewModel.trashRetentionDefaultsKey) private var trashRetentionDays: Int = 30
+
     // Shared error alert
     @State private var maintenanceError: String?
 
@@ -90,12 +98,16 @@ struct MaintenanceView: View {
                 integritySection
                 databaseSection
                 storageSection
+                trashSection
             }
             .padding(.horizontal, Spacing.xl)
             .padding(.bottom, Spacing.xxl)
         }
         .background(BackgroundColors.primary)
-        .task { await refreshSizes() }
+        .task {
+            await refreshSizes()
+            await loadTrash()
+        }
         .onAppear { patternCount = OrganizationLearner.shared.getPatternCount() }
         // Issue review sheets (shared with the old Health tab flow)
         .sheet(item: $reviewMode) { mode in
@@ -149,6 +161,26 @@ struct MaintenanceView: View {
             Text(
                 "All \(patternCount) learned organization pattern\(patternCount == 1 ? "" : "s") will be forgotten. The app will re-learn from your future corrections."
             )
+        }
+        .alert("Empty Trash?", isPresented: $showingEmptyTrashConfirm) {
+            Button("Cancel", role: .cancel) {}
+            Button("Empty Trash", role: .destructive) { emptyTrash() }
+        } message: {
+            Text(
+                "Permanently delete \(trashEntries.count) item\(trashEntries.count == 1 ? "" : "s") (\(Self.formatBytes(trashSize)))? This cannot be undone."
+            )
+        }
+        .alert(
+            "Permanently Delete?",
+            isPresented: Binding(
+                get: { pendingPurgeEntry != nil },
+                set: { if !$0 { pendingPurgeEntry = nil } }),
+            presenting: pendingPurgeEntry
+        ) { entry in
+            Button("Cancel", role: .cancel) { pendingPurgeEntry = nil }
+            Button("Delete", role: .destructive) { purgeEntry(entry) }
+        } message: { entry in
+            Text("Permanently delete \(entry.displayTitle)? This cannot be undone.")
         }
         .alert(
             "Something Went Wrong",
@@ -389,6 +421,149 @@ struct MaintenanceView: View {
         }
     }
 
+    // MARK: - Trash
+
+    private var trashSection: some View {
+        DashboardSectionCard(title: "Trash", subtitle: trashSummary) {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                if trashEntries.isEmpty {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Trash is empty.")
+                            .font(Typography.bodySmall)
+                            .foregroundColor(TextColors.primary)
+                        Text(
+                            "Deleted books are kept here and can be restored with their metadata, reading progress, and folders."
+                        )
+                        .font(Typography.caption)
+                        .foregroundColor(TextColors.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, Spacing.xs)
+                } else {
+                    ForEach(trashEntries) { entry in
+                        trashRow(entry)
+                        Divider()
+                    }
+                }
+
+                // Footer: empty-all + retention window
+                HStack {
+                    Button("Empty Trash") { showingEmptyTrashConfirm = true }
+                        .foregroundColor(AccentColors.error)
+                        .disabled(trashEntries.isEmpty)
+                    Spacer()
+                }
+                .padding(.vertical, Spacing.xs)
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Picker("Keep deleted items", selection: $trashRetentionDays) {
+                        Text("7 Days").tag(7)
+                        Text("30 Days").tag(30)
+                        Text("90 Days").tag(90)
+                        Text("Never Delete").tag(0)
+                    }
+                    .pickerStyle(.segmented)
+
+                    Text(
+                        "Items older than this are removed automatically when the app launches. 'Never Delete' keeps everything until you empty the Trash."
+                    )
+                    .font(Typography.caption)
+                    .foregroundColor(TextColors.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.vertical, Spacing.xs)
+
+                if let trashStatus {
+                    Text(trashStatus)
+                        .font(Typography.caption)
+                        .foregroundColor(TextColors.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    /// One trashed book: cover thumb, title, what was deleted, and when it goes.
+    private func trashRow(_ entry: TrashEntry) -> some View {
+        HStack(spacing: Spacing.sm) {
+            trashThumbnail(for: entry)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.displayTitle)
+                    .font(Typography.bodySmall)
+                    .foregroundColor(TextColors.primary)
+                    .lineLimit(2)
+                Text(
+                    entry.kind == .file
+                        ? "File in Trash" : "Removed from library — file kept on disk"
+                )
+                .font(Typography.caption)
+                .foregroundColor(TextColors.secondary)
+                Text(
+                    "Deleted \(entry.deletedAt.formatted(date: .abbreviated, time: .omitted)) · \(remainingLabel(for: entry))"
+                )
+                .font(Typography.caption)
+                .foregroundColor(TextColors.secondary)
+            }
+
+            Spacer()
+
+            Button("Restore") { restoreEntry(entry) }
+            Button("Delete Now", role: .destructive) { pendingPurgeEntry = entry }
+        }
+        .padding(.vertical, Spacing.xs)
+    }
+
+    @ViewBuilder
+    private func trashThumbnail(for entry: TrashEntry) -> some View {
+        Group {
+            #if os(macOS)
+                if let data = entry.coverThumb, let image = NSImage(data: data) {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    trashThumbnailPlaceholder
+                }
+            #else
+                if let data = entry.coverThumb, let image = UIImage(data: data) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    trashThumbnailPlaceholder
+                }
+            #endif
+        }
+        .frame(width: 32, height: 48)
+        .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+
+    private var trashThumbnailPlaceholder: some View {
+        Rectangle()
+            .fill(BackgroundColors.secondary)
+            .overlay(
+                Image(systemName: "book.closed")
+                    .font(.system(size: 14))
+                    .foregroundColor(TextColors.tertiary)
+            )
+    }
+
+    private var trashSummary: String {
+        "\(trashEntries.count) item\(trashEntries.count == 1 ? "" : "s") · \(Self.formatBytes(trashSize))"
+    }
+
+    private func remainingLabel(for entry: TrashEntry) -> String {
+        let days = TrashRetention.days(fromStoredValue: trashRetentionDays)
+        guard let remaining = TrashRetention.daysRemaining(for: entry, retentionDays: days) else {
+            return "Kept until emptied"
+        }
+        return remaining == 0 ? "Purges today" : "Purges in \(remaining) day\(remaining == 1 ? "" : "s")"
+    }
+
     // MARK: - Row helper
 
     /// A standard maintenance row: icon, title + description, trailing control.
@@ -589,6 +764,49 @@ struct MaintenanceView: View {
                 PageImageCache.shared.diskCacheSizeBytes()
             }.value
             cacheStatus = "Caches cleared."
+        }
+    }
+
+    // MARK: - Trash actions
+
+    private func loadTrash() async {
+        trashEntries = await libraryViewModel.trashEntries()
+        trashSize = libraryViewModel.trashTotalSize()
+    }
+
+    private func restoreEntry(_ entry: TrashEntry) {
+        Task {
+            let outcome = await libraryViewModel.restoreFromTrash(entry)
+            switch outcome {
+            case .originalPath:
+                trashStatus = "\(entry.displayTitle) restored to its original location."
+            case .renamed:
+                trashStatus = "\(entry.displayTitle) restored next to a newer file with the same name."
+            case .homeLibrary:
+                trashStatus =
+                    "\(entry.displayTitle) restored into your home library (its original folder is gone)."
+            case .catalogOnly:
+                trashStatus = "\(entry.displayTitle) restored to your library."
+            case .failed(let reason):
+                trashStatus = "Restore failed: \(reason)"
+            }
+            await loadTrash()
+        }
+    }
+
+    private func purgeEntry(_ entry: TrashEntry) {
+        Task {
+            await libraryViewModel.purgeTrashEntry(entry)
+            trashStatus = "\(entry.displayTitle) permanently deleted."
+            await loadTrash()
+        }
+    }
+
+    private func emptyTrash() {
+        Task {
+            await libraryViewModel.emptyTrash()
+            trashStatus = "Trash emptied."
+            await loadTrash()
         }
     }
 }
