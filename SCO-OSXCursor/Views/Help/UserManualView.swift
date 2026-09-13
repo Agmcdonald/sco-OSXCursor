@@ -75,7 +75,7 @@ struct UserManualView: View {
                             icon: "folder.badge.plus",
                             title: "Organize & Add Books: Review First (Mac)",
                             description:
-                                "The Organize & Add Books button routes to the Organize tab, which stages files BEFORE they enter your library. You review what was detected for each book, correct anything that's wrong, fetch metadata (comics from ComicVine, eBooks from the book sources), and optionally group the batch into a folder — then press Apply to import. Best for big batches or messy filenames you want to verify first."
+                                "The Organize & Add Books button routes to the Organize tab, which stages files BEFORE they enter your library. You review what was detected for each book, correct anything that's wrong, fetch metadata (comics from ComicVine or Metron, eBooks from the book sources), and optionally group the batch into a folder — then press Apply to import. Best for big batches or messy filenames you want to verify first."
                         )
 
                         FeatureRow(
@@ -198,7 +198,7 @@ struct UserManualView: View {
                             icon: "checklist",
                             title: "Selecting Many Books at Once",
                             description:
-                                "Enter selection mode with the Select button. 'Select All' grabs everything matching your current search or filter — search a series first to target it precisely. On Mac, shift-click selects every book between your last click and the new one. On iPad, tap one book, then long-press another and choose 'Select Range to Here'."
+                                "Enter selection mode with the Select button — or, on Mac, simply long-click any cover to jump straight into selection mode with that book selected. 'Select All' grabs everything matching your current search or filter — search a series first to target it precisely. On Mac, shift-click selects every book between your last click and the new one, and Escape clears the selection and exits selection mode. On iPad, tap one book, then long-press another and choose 'Select Range to Here'."
                         )
 
                         FeatureRow(
@@ -507,9 +507,16 @@ struct UserManualView: View {
 
                         FeatureRow(
                             icon: "sparkle.magnifyingglass",
-                            title: "Fetching from ComicVine",
+                            title: "Comic Metadata: ComicVine or Metron",
                             description:
-                                "Add a ComicVine API key in Settings, then right-click a book (or select several and use 'Fetch Metadata') to pull publisher, creators, summary, and cover dates automatically."
+                                "Comics can fetch from two databases: ComicVine (free API key) or Metron (free account, username & password). Pick your preferred source under Settings → Comic Metadata Source — it drives the fetch buttons, right-click fetch, and batch fetch. Both pull publisher, creators, summary, and cover dates; Metron also fills story arcs, characters, teams, and the in-store date. The edit sheet always offers the other source too ('Fetch from … instead'), so you can try both on a stubborn book."
+                        )
+
+                        FeatureRow(
+                            icon: "arrow.clockwise",
+                            title: "Re-fetch Replaces Wrong Data",
+                            description:
+                                "A book's first fetch only fills in blanks, so anything already entered is preserved. A Re-fetch (from the edit sheet, a right-click on an already-fetched book, or the selection bar's Re-fetch option) deliberately replaces the fetched fields with fresh data from the source — perfect for healing wrong or junk metadata that came embedded in the file. Every fetch is still undoable with Revert."
                         )
 
                         FeatureRow(
@@ -535,9 +542,9 @@ struct UserManualView: View {
 
                         FeatureRow(
                             icon: "arrow.uturn.backward",
-                            title: "Reverting a ComicVine Fetch",
+                            title: "Reverting a Metadata Fetch",
                             description:
-                                "Applied the wrong match? Right-click (or long-press) the book and choose 'Revert ComicVine Fetch' to restore exactly the metadata it had before the fetch. Your reading progress, tags, covers, and reader preferences are never touched by a fetch, so they're always safe."
+                                "Applied the wrong match? Right-click (or long-press) the book and choose the Revert option to restore exactly the metadata it had before the last fetch — whichever source it came from. Your reading progress, tags, covers, and reader preferences are never touched by a fetch, so they're always safe."
                         )
 
                         FeatureRow(
@@ -712,8 +719,8 @@ struct UserManualView: View {
                                 detail: "PDFs only — switch between paged comic reading and reflowable book reading.")
                             MenuItemRow(icon: "ipad.and.arrow.forward", name: "Send to Device…",
                                 detail: "Package the book — file, metadata, and reading progress — to AirDrop or save for another device.")
-                            MenuItemRow(icon: "network", name: "Fetch from ComicVine · Fetch Book Metadata",
-                                detail: "In its own section near the bottom. Look the book up online and fill in details automatically — ComicVine for comics, Open Library / Google Books / Hardcover for eBooks. The wording changes to match the item type.")
+                            MenuItemRow(icon: "network", name: "Fetch from ComicVine/Metron · Fetch Book Metadata",
+                                detail: "In its own section near the bottom. Look the book up online and fill in details automatically — your chosen comic source (ComicVine or Metron) for comics, Open Library / Google Books / Hardcover for eBooks. The wording changes to match the item type.")
                             MenuItemRow(icon: "arrow.uturn.backward", name: "Revert ComicVine Fetch · Revert Metadata Fetch",
                                 detail: "Shown only after a fetch — puts back the details the book had before you fetched. The wording follows the item type.")
                             MenuItemRow(icon: "arrow.clockwise.circle", name: "Regenerate Cover",
