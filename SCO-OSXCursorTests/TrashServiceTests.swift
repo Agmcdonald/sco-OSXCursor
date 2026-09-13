@@ -178,6 +178,27 @@ import Testing
         #expect(try String(contentsOf: URL(fileURLWithPath: originalPath), encoding: .utf8) == "newcomer")
     }
 
+    @Test func restoreIntoDoublyOccupiedPathNumbersTheSuffix() throws {
+        let (store, sandbox) = try makeStore()
+        let lib = sandbox.appendingPathComponent("lib")
+        let source = try writeFile("X.cbz", in: lib)
+        let originalPath = source.path
+        let taken = try store.takeFile(at: source, entryID: UUID())
+        // Both the original spot AND the first " (restored)" name are occupied.
+        _ = try writeFile("X.cbz", in: lib, contents: "newcomer")
+        _ = try writeFile("X (restored).cbz", in: lib, contents: "earlier restore")
+
+        let dest = try store.restoreFile(storedName: taken.storedName, toOriginalPath: originalPath)
+        let expected = lib.appendingPathComponent("X (restored 2).cbz")
+        #expect(dest == .renamed(expected))
+        #expect(FileManager.default.fileExists(atPath: expected.path))
+        // Neither occupier was touched:
+        #expect(try String(contentsOf: URL(fileURLWithPath: originalPath), encoding: .utf8) == "newcomer")
+        #expect(
+            try String(contentsOf: lib.appendingPathComponent("X (restored).cbz"), encoding: .utf8)
+                == "earlier restore")
+    }
+
     @Test func restoreWithMissingParentReportsFallback() throws {
         let (store, sandbox) = try makeStore()
         let source = try writeFile("X.cbz", in: sandbox.appendingPathComponent("lib"))
@@ -203,7 +224,27 @@ import Testing
         store.purgeFile(ta.storedName)
         #expect(store.totalSize() == 10)
         store.purgeFile(nil)  // no-op, no crash
+        store.purgeFile(ta.storedName)  // already gone → idempotent no-op
         store.purgeFile(tb.storedName)
         #expect(store.totalSize() == 0)
+    }
+
+    @Test func unsafeStoredNamesAreRejected() throws {
+        let (store, sandbox) = try makeStore()
+        let outsider = try writeFile("outsider.cbz", in: sandbox, contents: "keep me")
+        let source = try writeFile("X.cbz", in: sandbox.appendingPathComponent("lib"))
+        let taken = try store.takeFile(at: source, entryID: UUID())
+
+        // A traversing name would reach a file outside the trash directory.
+        store.purgeFile("../outsider.cbz")
+        #expect(FileManager.default.fileExists(atPath: outsider.path))
+        #expect(throws: (any Error).self) {
+            try store.restoreFile(
+                storedName: "../outsider.cbz",
+                toOriginalPath: sandbox.appendingPathComponent("lib/Y.cbz").path)
+        }
+        #expect(FileManager.default.fileExists(atPath: outsider.path))
+        // The legitimate entry is untouched by the rejected calls.
+        #expect(FileManager.default.fileExists(atPath: store.storedFileURL(taken.storedName).path))
     }
 }

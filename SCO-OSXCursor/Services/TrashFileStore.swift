@@ -29,6 +29,13 @@ struct TrashFileStore {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 
+    /// Stored names are `"<uuid>[.ext]"` by construction. A name carrying a path
+    /// separator or a parent reference would let a corrupted/hand-edited manifest
+    /// row reach outside the trash directory, so both callers reject it.
+    private func isSafeStoredName(_ name: String) -> Bool {
+        !name.isEmpty && !name.contains("/") && !name.contains("..")
+    }
+
     /// `attributesOfItem[.size]` is an `Any?` inside a throwing call — bound in
     /// two steps so the cast isn't a double optional. Missing/unreadable = 0.
     private func fileSize(atPath path: String) -> Int64 {
@@ -51,9 +58,26 @@ struct TrashFileStore {
         do {
             try FileManager.default.moveItem(at: source, to: destination)
         } catch {
-            // Cross-volume (or other move failure): copy then remove.
-            try FileManager.default.copyItem(at: source, to: destination)
-            try FileManager.default.removeItem(at: source)
+            // Cross-volume (or other move failure): copy then remove. Log the
+            // move error rather than swallowing it — when the fallback succeeds
+            // this is the only record of why the move didn't work.
+            AppLog.trash.info(
+                "[Trash] ↪️ Move failed for \(source.lastPathComponent), trying copy+remove: \(error.localizedDescription)"
+            )
+            do {
+                try FileManager.default.copyItem(at: source, to: destination)
+                try FileManager.default.removeItem(at: source)
+            } catch {
+                // Anything that fails once the copy has started (the copy itself,
+                // or the source removal) must not leave bytes in the trash
+                // directory: the caller is throwing, so no manifest row will ever
+                // reference them and totalSize() would count them forever.
+                try? FileManager.default.removeItem(at: destination)
+                AppLog.trash.error(
+                    "[Trash] ⚠️ Take failed for \(source.lastPathComponent), trash copy discarded: \(error.localizedDescription)"
+                )
+                throw error
+            }
         }
         AppLog.trash.info(
             "[Trash] 📥 Took file into trash: \(source.lastPathComponent) → \(storedName)")
@@ -74,6 +98,10 @@ struct TrashFileStore {
     func restoreFile(storedName: String, toOriginalPath originalPath: String) throws
         -> RestoreDestination
     {
+        guard isSafeStoredName(storedName) else {
+            AppLog.trash.error("[Trash] ⚠️ Refusing to restore unsafe stored name: \(storedName)")
+            throw CocoaError(.fileNoSuchFile)
+        }
         let stored = directory.appendingPathComponent(storedName)
         let target = URL(fileURLWithPath: originalPath)
         let parent = target.deletingLastPathComponent()
@@ -122,7 +150,13 @@ struct TrashFileStore {
 
     func purgeFile(_ storedName: String?) {
         guard let storedName else { return }
+        guard isSafeStoredName(storedName) else {
+            AppLog.trash.error("[Trash] ⚠️ Refusing to purge unsafe stored name: \(storedName)")
+            return
+        }
         let url = directory.appendingPathComponent(storedName)
+        // Already gone is the idempotent case, not a failure worth logging.
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
         do {
             try FileManager.default.removeItem(at: url)
             AppLog.trash.info("[Trash] 🔥 Purged trashed file: \(storedName)")
