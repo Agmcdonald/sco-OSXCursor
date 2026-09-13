@@ -22,7 +22,13 @@ Books / Hardcover. This setting only decides where *comic* fetches go.
    before. Selecting Metron without a sign-in shows an inline warning.
    Everything comic-side reads this one setting: the Edit Metadata sheet,
    right-click "Fetch from …", the selection-bar batch fetch, Dashboard →
-   Health "Fetch All from …", and the Organize tab.
+   Health "Fetch All from …", and the Organize tab. **Exception:** the Edit
+   Metadata sheet also offers a secondary "Fetch from \<other\> instead"
+   button whenever the *inactive* provider has credentials, so either source
+   can be tried on a single book without changing the Settings picker.
+   `runFetch(force:via:)` dispatches straight to `fetchComicVineMetadata` /
+   `fetchMetronMetadata`; candidates stay provider-tagged, so a `needsChoice`
+   picker still applies through the service that produced them.
 3. **Fetch.** `LibraryViewModel.fetchComicMetadata(for:force:)` is the single
    dispatcher — it switches on `ComicSource.current` and calls either
    `fetchComicVineMetadata` or `fetchMetronMetadata`. The Metron flow:
@@ -33,7 +39,7 @@ Books / Hardcover. This setting only decides where *comic* fetches go.
    runner-up) apply it; otherwise store the top 5 candidates and show the
    match picker.
 4. **Apply.** `MetronFetcher.fill` writes series-level fields, then — when the
-   issue number is known — calls `issue/?series=<id>&number=<n>` and
+   issue number is known — calls `issue/?series_id=<id>&number=<n>` and
    `issue/<id>/` for credits, arcs, characters, teams, and dates. **1–3 API
    calls** per book (search + issue list + issue detail), plus one extra when
    the fallback lookup runs. `applySeries` / `applyIssue` are pure functions
@@ -152,7 +158,12 @@ volume ID.
 
 `MTLinkParser.parse` accepts:
 
-- a bare number → treated as a **series** ID;
+- a bare number → tried as a **series** ID first; if `series/<id>/` answers
+  404 the same number is retried as an **issue** ID (`issue/<id>/` → parent
+  series → `series/<id>/`), since users paste both kinds. Only when both come
+  back 404 does the paste fail, with "No Metron series or issue found with ID
+  \<n\>." Typed 429/401 outcomes still pass through untouched, so a
+  rate-limited paste never gets downgraded to "not found";
 - `…/series/<digits>` or `…/issue/<digits>` — the API-style URLs, e.g.
   `https://metron.cloud/api/series/2658/`. An issue reference costs one extra
   call (`issue/<id>/`) to resolve its parent series.
@@ -177,6 +188,15 @@ A rejected paste returns a `failed` outcome with the explanatory text:
 - **DRF pagination** (`{count, next, results}`) — the client reads page 1 only.
 - **401/403 → a sign-in error** ("check username/password in Settings") rather
   than a generic HTTP failure; 429 → the typed rate-limited case.
+- **Filter parameter names are exact.** Metron's `IssueFilter` declares
+  `series_id = NumberFilter(field_name="series__id")`, and django-filter
+  **silently ignores** params it does not know. Sending `series=<id>` therefore
+  returned page 1 of *every* issue with that number across the whole database,
+  and the fill applied a stranger's title/credits/summary even when the user
+  had picked the right series. `MetronService.issueQuery(seriesID:issueNumber:)`
+  is a pure static helper pinned by unit tests so the name can't drift again;
+  issue list rows also decode their nested `series.name` as a second layer of
+  defense.
 - **Key-name quirks handled**: the series *list* row carries the display name
   under the JSON key `series`, while the series *detail* uses `name`; the issue
   detail's `title` is the collection/TPB title while `name` is an array of
@@ -249,7 +269,7 @@ A rejected paste returns a `failed` outcome with the explanatory text:
   the message text is still correct (it comes from `MTError`), but the Organize
   UI can't offer the "try again after …" treatment the library path does.
 - **Metron's fallback issue lookup reads only the first DRF page.** If a
-  filtered `issue/?series=…&number=…` call comes back empty and the issue sits
+  filtered `issue/?series_id=…&number=…` call comes back empty and the issue sits
   past page 1 of the series' issue list, the local number match won't find it.
 - **The throttle actor is advisory under concurrency.** `MetronThrottle.wait()`
   serializes callers correctly today only because fetches are issued

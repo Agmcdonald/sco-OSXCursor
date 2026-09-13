@@ -128,6 +128,7 @@ import Testing
         #expect(page.results.first?.number == "6")
         #expect(page.results.first?.coverDate == "2016-11-01")
         #expect(page.results.first?.storeDate == "2016-09-07")
+        #expect(page.results.first?.series?.name == "Superman")
     }
 
     @Test func decodesIssueDetail() throws {
@@ -162,6 +163,34 @@ import Testing
         #expect(detail.credits?.count == 3)
         #expect(detail.credits?[1].roles.map(\.name) == ["Penciller", "Cover"])
         #expect(detail.storeDate == "2016-09-07")
+    }
+}
+
+// MARK: - Issue list query building
+
+/// Metron's `IssueFilter` declares the series filter as
+/// `series_id = NumberFilter(field_name="series__id")`. django-filter
+/// silently ignores unknown params, so sending `series=<id>` returns page 1
+/// of EVERY issue with that number database-wide — the wrong issue's credits
+/// then get applied. These pin the parameter names.
+@Suite struct MetronQueryTests {
+
+    @Test func issueQueryUsesSeriesIDAndNumber() {
+        let items = MetronService.issueQuery(seriesID: 2658, issueNumber: "4")
+        #expect(items.map(\.name) == ["series_id", "number"])
+        #expect(items.map(\.value) == ["2658", "4"])
+    }
+
+    @Test func issueQueryWithoutNumberIsSeriesOnly() {
+        let items = MetronService.issueQuery(seriesID: 2658, issueNumber: nil)
+        #expect(items.count == 1)
+        #expect(items.first?.name == "series_id")
+        #expect(items.first?.value == "2658")
+    }
+
+    @Test func issueQueryTreatsEmptyNumberAsAbsent() {
+        let items = MetronService.issueQuery(seriesID: 7, issueNumber: "")
+        #expect(items.map(\.name) == ["series_id"])
     }
 }
 

@@ -217,19 +217,40 @@ struct MTSeriesRef {
     }
 }
 
-/// Issue LIST row (`issue/?series=<id>&number=<n>`).
+/// The `series` object embedded in an issue list row. Decoded so the
+/// caller can sanity-check that the rows really belong to the series it
+/// asked for (a mis-named filter param used to return the whole database).
+struct MTIssueSeriesInfo: Decodable {
+    let name: String?
+}
+
+/// Issue LIST row (`issue/?series_id=<id>&number=<n>`).
 struct MTIssueResult: Decodable {
     let id: Int
     let number: String?
     let issueName: String?      // "Superman (2016) #6"
     let coverDate: String?      // "2016-11-01"
     let storeDate: String?
+    let series: MTIssueSeriesInfo?
 
     enum CodingKeys: String, CodingKey {
-        case id, number
+        case id, number, series
         case issueName = "issue"
         case coverDate = "cover_date"
         case storeDate = "store_date"
+    }
+
+    init(
+        id: Int, number: String?, issueName: String?,
+        coverDate: String?, storeDate: String?,
+        series: MTIssueSeriesInfo? = nil
+    ) {
+        self.id = id
+        self.number = number
+        self.issueName = issueName
+        self.coverDate = coverDate
+        self.storeDate = storeDate
+        self.series = series
     }
 }
 
@@ -397,13 +418,28 @@ final class MetronService {
         return page.results
     }
 
-    /// Issues of a series, optionally filtered to one issue number. 1 call.
-    func issues(seriesID: Int, issueNumber: String?) async throws -> [MTIssueResult] {
-        var query = [URLQueryItem(name: "series", value: String(seriesID))]
+    /// Query items for the issue list endpoint.
+    ///
+    /// Metron's `IssueFilter` names the series filter `series_id`
+    /// (`NumberFilter(field_name="series__id")`) — django-filter silently
+    /// DROPS unknown params, so the older `series=<id>` spelling returned
+    /// page 1 of every issue with that number in the whole database and the
+    /// fill applied a stranger's credits. Pure + static so it can be tested
+    /// without touching the network.
+    static func issueQuery(seriesID: Int, issueNumber: String?) -> [URLQueryItem] {
+        var query = [URLQueryItem(name: "series_id", value: String(seriesID))]
         if let issueNumber, !issueNumber.isEmpty {
             query.append(URLQueryItem(name: "number", value: issueNumber))
         }
-        let page: MTPage<MTIssueResult> = try await request(path: "issue/", query: query)
+        return query
+    }
+
+    /// Issues of a series, optionally filtered to one issue number. 1 call.
+    func issues(seriesID: Int, issueNumber: String?) async throws -> [MTIssueResult] {
+        let page: MTPage<MTIssueResult> = try await request(
+            path: "issue/",
+            query: Self.issueQuery(seriesID: seriesID, issueNumber: issueNumber)
+        )
         return page.results
     }
 
@@ -738,17 +774,32 @@ extension LibraryViewModel {
             return .failed("Paste a numeric Metron ID or an api/series/<id> link — Metron's site URLs (slugs) don't carry the ID.")
         }
         do {
-            let seriesID: Int
+            let detail: MTSeriesDetail
             switch ref {
             case .series(let id):
-                seriesID = id
+                // A bare number is ambiguous — the parser assumes a series ID,
+                // but users paste issue IDs too. Try series first; on a 404,
+                // retry the same number as an issue ID (one extra request pair).
+                do {
+                    detail = try await MetronService.shared.seriesDetail(id: id)
+                } catch MetronService.MTError.http(404) {
+                    do {
+                        guard let resolved = try await MetronService.shared.seriesID(forIssueID: id) else {
+                            return .failed("No Metron series or issue found with ID \(id).")
+                        }
+                        detail = try await MetronService.shared.seriesDetail(id: resolved)
+                    } catch MetronService.MTError.http {
+                        // Neither a series nor an issue carries this ID.
+                        return .failed("No Metron series or issue found with ID \(id).")
+                    }
+                    // rateLimited / unauthorized fall through to the outer catch.
+                }
             case .issue(let id):
                 guard let resolved = try await MetronService.shared.seriesID(forIssueID: id) else {
                     return .failed("Couldn't find the series for that issue.")
                 }
-                seriesID = resolved
+                detail = try await MetronService.shared.seriesDetail(id: resolved)
             }
-            let detail = try await MetronService.shared.seriesDetail(id: seriesID)
             return await applyMetronSeries(MTSeriesRef(detail: detail), to: comic)
         } catch {
             // Don't downgrade a 429 to a generic failure — the caller shows a

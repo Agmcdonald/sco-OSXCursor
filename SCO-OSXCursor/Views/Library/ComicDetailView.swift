@@ -458,6 +458,20 @@ struct ComicDetailView: View {
                 .buttonStyle(.plain)
                 .disabled(isFetchingMetadata || !ComicSource.current.hasCredentials)
 
+                // Either provider is fetchable from here, whatever the
+                // Settings picker says — as long as it has credentials.
+                if let other = inactiveComicSource, other.hasCredentials {
+                    Button {
+                        runFetch(force: liveComic.metadataFetchedAt != nil, via: other)
+                    } label: {
+                        Label("Fetch from \(other.displayName) instead", systemImage: "arrow.triangle.branch")
+                            .font(Typography.button)
+                            .foregroundColor(AccentColors.primary)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isFetchingMetadata)
+                }
+
                 // Offer the picker whenever ambiguous candidates are pending
                 if !CVCandidate.decodeList(liveComic.metadataCandidates).isEmpty {
                     Button {
@@ -479,29 +493,44 @@ struct ComicDetailView: View {
         }
     }
 
-    private func runFetch(force: Bool) {
+    /// The provider the user did NOT select in Settings, offered as a
+    /// secondary fetch so both are reachable from this sheet.
+    private var inactiveComicSource: ComicSource? {
+        ComicSource.allCases.first { $0 != ComicSource.current }
+    }
+
+    /// Fetch through `source` (the active provider unless told otherwise).
+    /// Candidates are provider-tagged, so a `needsChoice` picker still
+    /// applies through whichever service produced the rows.
+    private func runFetch(force: Bool, via source: ComicSource = ComicSource.current) {
         guard !isFetchingMetadata else { return }
         isFetchingMetadata = true
         fetchMessage = nil
         Task {
-            let outcome = await libraryViewModel.fetchComicMetadata(for: liveComic, force: force)
+            let outcome: ComicVineFetchOutcome
+            switch source {
+            case .comicVine:
+                outcome = await libraryViewModel.fetchComicVineMetadata(for: liveComic, force: force)
+            case .metron:
+                outcome = await libraryViewModel.fetchMetronMetadata(for: liveComic, force: force)
+            }
             isFetchingMetadata = false
             switch outcome {
             case .updated:
                 resyncDrafts()
-                fetchMessage = "Metadata updated from \(ComicSource.current.displayName). Review and Save to keep."
+                fetchMessage = "Metadata updated from \(source.displayName). Review and Save to keep."
             case .needsChoice:
                 showingMatchPicker = true
             case .alreadyFetched:
                 fetchMessage = "Already fetched — use Re-fetch to update."
             case .noKey:
-                fetchMessage = ComicSource.current.credentialsHint
+                fetchMessage = source.credentialsHint
             case .noMatches:
-                fetchMessage = "No \(ComicSource.current.displayName) matches found for this book."
+                fetchMessage = "No \(source.displayName) matches found for this book."
             case .rateLimited:
                 fetchMessage = outcome.rateLimitMessage
             case .unauthorized:
-                fetchMessage = "Metron sign-in failed — check username/password in Settings."
+                fetchMessage = "\(source.displayName) sign-in failed — check your credentials in Settings."
             case .failed(let reason):
                 fetchMessage = "Fetch failed: \(reason)"
             }
