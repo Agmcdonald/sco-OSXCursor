@@ -741,6 +741,26 @@ final class DatabaseManager {
             AppLog.database.info("[DatabaseManager] ✅ Migration v32_metron_metadata complete")
         }
 
+        // Version 33: Trash manifest. One row per recoverable delete — the full
+        // catalog snapshot (comic + folder memberships) plus where the file was
+        // parked inside the Trash directory, so a restore can put both back.
+        migrator.registerMigration("v33_trash_entries") { db in
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v33_trash_entries")
+            try db.create(table: "trash_entries", ifNotExists: true) { t in
+                t.column("id", .text).primaryKey()
+                t.column("comic_snapshot", .text).notNull()
+                t.column("original_path", .text).notNull()
+                t.column("bookmark_data", .blob)
+                t.column("trashed_file_name", .text)
+                t.column("file_size", .integer).notNull().defaults(to: 0)
+                t.column("deleted_at", .datetime).notNull()
+                t.column("kind", .text).notNull()
+                t.column("display_title", .text).notNull()
+                t.column("cover_thumb", .blob)
+            }
+            AppLog.database.info("[DatabaseManager] ✅ Migration v33_trash_entries complete")
+        }
+
         return migrator
     }
 
@@ -1481,6 +1501,42 @@ extension DatabaseManager {
         guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
         _ = try await dbQueue.write { db in
             try LearnedPattern.deleteAll(db)
+        }
+    }
+
+    // MARK: - Trash Manifest
+
+    func insertTrashEntry(_ entry: TrashEntry) async throws {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+        try await dbQueue.write { db in
+            try entry.save(db)
+            AppLog.database.info(
+                "[DatabaseManager] 🗑️ Trash manifest row added: \(entry.displayTitle)")
+        }
+    }
+
+    /// All trash entries, newest first.
+    func fetchTrashEntries() async throws -> [TrashEntry] {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+        return try await dbQueue.read { db in
+            try TrashEntry
+                .order(TrashEntry.Columns.deletedAt.desc)
+                .fetchAll(db)
+        }
+    }
+
+    func deleteTrashEntry(withID id: UUID) async throws {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+        try await dbQueue.write { db in
+            _ = try TrashEntry.deleteOne(db, key: id.uuidString)
+        }
+    }
+
+    /// Does a folder still exist? (Restore recreates memberships only for these.)
+    func folderExists(id: UUID) async throws -> Bool {
+        guard let dbQueue = dbQueue else { throw DatabaseError.notInitialized }
+        return try await dbQueue.read { db in
+            try Folder.exists(db, key: id.uuidString)
         }
     }
 

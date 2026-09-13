@@ -55,6 +55,8 @@ enum AppLog {
     static let learning = AppLogger(category: "Learning")
     /// File operations (LibraryFileService, LibraryRelocator, progress files)
     static let files = AppLogger(category: "Files")
+    /// Recoverable deletes (TrashService, TrashFileStore, Trash UI)
+    static let trash = AppLogger(category: "Trash")
     /// App lifecycle, settings, everything else
     static let app = AppLogger(category: "App")
 }
