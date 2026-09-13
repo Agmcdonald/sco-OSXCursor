@@ -89,6 +89,7 @@ so the Trash list never decodes the full snapshot for display.
 - `purge(_ entry: TrashEntry) async` — remove trashed file (if any) +
   manifest row. Permanent.
 - `purgeAll() async`, `sweepExpired(retentionDays: Int?) async -> Int` —
+  callers map the stored `trashRetentionDays` value 0 (Never) to `nil`;
   sweep runs on app launch (fire-and-forget task from the app init or
   first Library load); `nil` retention = Never = no-op.
 - `entries() async -> [TrashEntry]`, `totalSize` for the header.
@@ -149,6 +150,9 @@ Follows the existing Maintenance section pattern (Database / Storage):
   entry remains restorable; per-book outcome reports the file problem.
 - Restore failure (trash file missing — e.g. user dug into the container):
   keep the manifest row, surface an error status; offer Delete Now.
+- Restoring a book whose file was meanwhile re-imported as a new catalog
+  entry: restore proceeds anyway (original UUID never collides — its row
+  was deleted); the existing duplicate-detection surfaces the twin.
 - Sweep and purge failures log via `AppLog` (new `AppLog.trash` category
   or reuse `library`) and never crash the launch path.
 
