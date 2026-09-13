@@ -206,6 +206,22 @@ import Testing
         #expect(MetronDates.parse(nil) == nil)
         #expect(MetronDates.year(from: "bad") == nil)
     }
+
+    /// Store dates are UTC midnight; display must not slide a day west of UTC.
+    @Test func displayRendersTheUTCCalendarDay() throws {
+        let date = try #require(MetronDates.parse("2016-09-07"))
+
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = try #require(TimeZone(identifier: "UTC"))
+        let parts = utc.dateComponents([.year, .month, .day], from: date)
+        #expect(parts.year == 2016)
+        #expect(parts.month == 9)
+        #expect(parts.day == 7)
+
+        let shown = MetronDates.display(date)
+        #expect(shown.contains("2016"))
+        #expect(shown.contains("7"))
+    }
 }
 
 // MARK: - Metron scoring & fill
@@ -320,5 +336,25 @@ import Testing
         #expect(comicMatchesSearch(comic, "booster"))
         #expect(comicMatchesSearch(comic, "birds of prey"))
         #expect(!comicMatchesSearch(comic, "zatanna"))
+    }
+
+    /// Pins the clauses that moved out of LibraryQuery.apply into the free function.
+    @Test func searchStillMatchesPreExistingFields() {
+        var comic = Comic(filePath: URL(fileURLWithPath: "/tmp/y.cbz"), fileName: "y.cbz", series: "Blue Beetle")
+        comic.title = "Kord Industries"
+        comic.publisher = "Charlton"
+        comic.issueNumber = "12"
+        comic.writer = "Steve Ditko"
+        comic.tags = ["Silver Age"]
+        comic.storyArcs = ["Crisis on Infinite Earths"]
+
+        #expect(comicMatchesSearch(comic, "blue beetle"))
+        #expect(comicMatchesSearch(comic, "kord"))
+        #expect(comicMatchesSearch(comic, "charlton"))
+        #expect(comicMatchesSearch(comic, "ditko"))
+        #expect(comicMatchesSearch(comic, "silver age"))
+        #expect(comicMatchesSearch(comic, "infinite earths"))
+        #expect(comicMatchesSearch(comic, "y.cbz"))
+        #expect(!comicMatchesSearch(comic, "aquaman"))
     }
 }

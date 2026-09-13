@@ -101,10 +101,11 @@ struct ComicInspectorView: View {
                         InspectorField(title: "Year", value: String(year))
                     }
                     if let storeDate = comic.storeDate {
-                        // In-store (shipping) date from Metron
+                        // In-store (shipping) date from Metron — stored as UTC
+                        // midnight, so it must be rendered in UTC.
                         InspectorField(
                             title: "In Stores",
-                            value: storeDate.formatted(date: .abbreviated, time: .omitted))
+                            value: MetronDates.display(storeDate))
                     }
                     
                     InspectorField(title: "Content Rating", value: comic.contentRating.label)

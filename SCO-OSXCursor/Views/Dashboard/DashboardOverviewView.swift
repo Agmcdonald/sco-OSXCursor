@@ -7,6 +7,8 @@ struct DashboardOverviewView: View {
     var onOpenKnowledge: () -> Void = {}
     @ObservedObject private var comicVineQuota = ComicVineQuota.shared
     @ObservedObject private var metronQuota = MetronQuota.shared
+    @AppStorage(ComicSource.defaultsKey) private var comicMetadataProvider: String =
+        ComicSource.comicVine.rawValue
     @State private var topPublishers: [(String, Int)] = []
     @State private var showingFilePicker = false
     @State private var showingFolderScanner = false
@@ -109,7 +111,7 @@ struct DashboardOverviewView: View {
     // MARK: - Cards
 
     private var comicVineQuotaCard: some View {
-        let source = ComicSource.current
+        let source = ComicSource(rawValue: comicMetadataProvider) ?? .comicVine
         return DashboardSectionCard(
             title: source == .metron ? "Metron API" : "ComicVine API",
             subtitle: source == .metron

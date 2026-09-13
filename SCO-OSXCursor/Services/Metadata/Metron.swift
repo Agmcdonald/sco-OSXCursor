@@ -295,6 +295,22 @@ enum MetronDates {
         guard let s, s.count >= 4, let year = Int(s.prefix(4)) else { return nil }
         return year
     }
+
+    /// Metron dates are calendar days pinned to UTC midnight, so they must be
+    /// rendered in UTC too — local formatting slides them a day west of UTC.
+    private static let displayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .none
+        f.locale = .autoupdatingCurrent
+        f.timeZone = TimeZone(identifier: "UTC")
+        return f
+    }()
+
+    /// The calendar day of `date` as stored, formatted for the user's locale.
+    static func display(_ date: Date) -> String {
+        displayFormatter.string(from: date)
+    }
 }
 
 // MARK: - API Client
