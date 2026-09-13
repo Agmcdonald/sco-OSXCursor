@@ -137,7 +137,7 @@ struct ComicDetailView: View {
                         .background(BorderColors.subtle)
 
                     // Metadata fetch: books use Open Library / Google Books /
-                    // Hardcover; comic issues use ComicVine.
+                    // Hardcover; comic issues use the active comic provider.
                     if draftIsBook {
                         openLibrarySection
                     } else {
@@ -246,7 +246,7 @@ struct ComicDetailView: View {
             }
             .pickerStyle(.segmented)
             .frame(maxWidth: 260)
-            .help("Books fetch metadata from \(Self.bookSourceList); comics fetch from ComicVine. Changing this applies immediately.")
+            .help("Books fetch metadata from \(Self.bookSourceList); comics fetch from \(ComicSource.current.displayName). Changing this applies immediately.")
 
             // Comic format — one-shots and graphic novels don't need an
             // issue number; volumes are collected editions/manga.
@@ -264,7 +264,7 @@ struct ComicDetailView: View {
             Text(
                 draftIsBook
                     ? "Treated as a book — metadata comes from \(Self.bookSourceList). Applied immediately."
-                    : "Treated as a \(draftComicFormat.displayName.lowercased()) comic — metadata comes from ComicVine. Applied immediately."
+                    : "Treated as a \(draftComicFormat.displayName.lowercased()) comic — metadata comes from \(ComicSource.current.displayName). Applied immediately."
             )
             .font(Typography.caption)
             .foregroundColor(TextColors.tertiary)
@@ -410,14 +410,14 @@ struct ComicDetailView: View {
         }
     }
 
-    // MARK: - ComicVine Section
+    // MARK: - Comic Metadata Section (ComicVine / Metron)
 
     private var comicVineSection: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             HStack(spacing: Spacing.sm) {
                 Image(systemName: "network")
                     .foregroundColor(AccentColors.primary)
-                Text("ComicVine Metadata")
+                Text("\(ComicSource.current.displayName) Metadata")
                     .font(Typography.h3)
                     .foregroundColor(TextColors.primary)
                 Spacer()
@@ -428,8 +428,8 @@ struct ComicDetailView: View {
                 }
             }
 
-            if !ComicVineConfig.hasKey {
-                Text("Add a ComicVine API key in Settings to fetch publisher, creators, and summary automatically.")
+            if !ComicSource.current.hasCredentials {
+                Text(ComicSource.current.credentialsHint)
                     .font(Typography.caption)
                     .foregroundColor(TextColors.secondary)
             }
@@ -444,17 +444,19 @@ struct ComicDetailView: View {
                         } else {
                             Image(systemName: "arrow.down.circle")
                         }
-                        Text(liveComic.metadataFetchedAt != nil ? "Re-fetch from ComicVine" : "Fetch from ComicVine")
+                        Text(liveComic.metadataFetchedAt != nil
+                            ? "Re-fetch from \(ComicSource.current.displayName)"
+                            : "Fetch from \(ComicSource.current.displayName)")
                             .font(Typography.button)
                     }
                     .foregroundColor(.white)
                     .padding(.horizontal, Spacing.md)
                     .padding(.vertical, Spacing.sm)
-                    .background(ComicVineConfig.hasKey ? AccentColors.primary : TextColors.tertiary)
+                    .background(ComicSource.current.hasCredentials ? AccentColors.primary : TextColors.tertiary)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.plain)
-                .disabled(isFetchingMetadata || !ComicVineConfig.hasKey)
+                .disabled(isFetchingMetadata || !ComicSource.current.hasCredentials)
 
                 // Offer the picker whenever ambiguous candidates are pending
                 if !CVCandidate.decodeList(liveComic.metadataCandidates).isEmpty {
@@ -482,20 +484,20 @@ struct ComicDetailView: View {
         isFetchingMetadata = true
         fetchMessage = nil
         Task {
-            let outcome = await libraryViewModel.fetchComicVineMetadata(for: liveComic, force: force)
+            let outcome = await libraryViewModel.fetchComicMetadata(for: liveComic, force: force)
             isFetchingMetadata = false
             switch outcome {
             case .updated:
                 resyncDrafts()
-                fetchMessage = "Metadata updated from ComicVine. Review and Save to keep."
+                fetchMessage = "Metadata updated from \(ComicSource.current.displayName). Review and Save to keep."
             case .needsChoice:
                 showingMatchPicker = true
             case .alreadyFetched:
                 fetchMessage = "Already fetched — use Re-fetch to update."
             case .noKey:
-                fetchMessage = "No API key. Add one in Settings."
+                fetchMessage = ComicSource.current.credentialsHint
             case .noMatches:
-                fetchMessage = "No ComicVine matches found for this book."
+                fetchMessage = "No \(ComicSource.current.displayName) matches found for this book."
             case .rateLimited:
                 fetchMessage = outcome.rateLimitMessage
             case .failed(let reason):
@@ -505,7 +507,7 @@ struct ComicDetailView: View {
     }
 
     /// Pull the on-disk values back into the editable drafts. Called after a
-    /// ComicVine fetch/pick updates the stored comic, so the open sheet shows
+    /// metadata fetch/pick updates the stored comic, so the open sheet shows
     /// the new data — and, critically, so pressing Save writes the fetched
     /// values rather than the stale drafts captured when the sheet opened.
     private func resyncDrafts() {

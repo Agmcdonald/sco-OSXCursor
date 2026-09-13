@@ -677,6 +677,7 @@ extension LibraryViewModel {
             case .noKey: result.noKey = true
             case .rateLimited:
                 // Budget gone — stop burning the queue; the rest stay unfetched.
+                AppLog.metadata.error("[Metron] Rate limited — stopping batch with \(comics.count - index) books unattempted")
                 result.failed += comics.count - index
                 onProgress(total, total)
                 return result
@@ -721,6 +722,12 @@ extension LibraryViewModel {
             let detail = try await MetronService.shared.seriesDetail(id: seriesID)
             return await applyMetronSeries(MTSeriesRef(detail: detail), to: comic)
         } catch {
+            // Don't downgrade a 429 to a generic failure — the caller shows a
+            // "try again after …" message for the rate-limited case.
+            if let mtError = error as? MetronService.MTError,
+               case .rateLimited(let retryAfter) = mtError {
+                return .rateLimited(retryAfter: retryAfter)
+            }
             AppLog.metadata.error("[Metron] Link match failed: \(error.localizedDescription)")
             return .failed(error.localizedDescription)
         }
@@ -747,5 +754,27 @@ extension LibraryViewModel {
         updated.dateModified = Date()
         updateComic(updated)
         return .updated
+    }
+}
+
+// MARK: - Provider UI helpers
+
+extension ComicSource {
+    /// True when the active provider has usable credentials.
+    var hasCredentials: Bool {
+        switch self {
+        case .comicVine: return ComicVineConfig.hasKey
+        case .metron: return MetronConfig.hasCredentials
+        }
+    }
+
+    /// "Add a ComicVine API key…" / "Add your Metron username…" hint.
+    var credentialsHint: String {
+        switch self {
+        case .comicVine:
+            return "Add a ComicVine API key in Settings first."
+        case .metron:
+            return "Add your Metron username and password in Settings first."
+        }
     }
 }

@@ -314,14 +314,16 @@ struct OrganizeInspectorView: View {
                             } else {
                                 Image(systemName: "sparkles")
                             }
-                            Text(bookFormat == .ebook ? "Fetch Book Metadata" : "Fetch from ComicVine")
+                            Text(bookFormat == .ebook
+                                ? "Fetch Book Metadata"
+                                : "Fetch from \(ComicSource.current.displayName)")
                         }
                     }
                     .disabled(isFetchingCV)
                     .help(
                         bookFormat == .ebook
                             ? "Looks this book up on Open Library, Google Books, and Hardcover — no API key needed."
-                            : "Looks this comic up on ComicVine (API key required, set in Settings).")
+                            : "Looks this comic up on \(ComicSource.current.displayName) (credentials required, set in Settings).")
 
                     Button("Import to Library") {
                         Task {
@@ -358,7 +360,7 @@ struct OrganizeInspectorView: View {
             id: "organizeDetails",
             icon: "checkmark.circle",
             title: "Review, then import",
-            message: "Check the detected details — fields marked in orange decide whether a book is Ready or Pending. Fetch from ComicVine fills them for you. Import books one at a time here, or all at once with Apply All Ready."
+            message: "Check the detected details — fields marked in orange decide whether a book is Ready or Pending. Fetch from \(ComicSource.current.displayName) fills them for you. Import books one at a time here, or all at once with Apply All Ready."
         )
         .sheet(isPresented: $showingCoverZoom) {
             CoverZoomView(
@@ -376,7 +378,7 @@ struct OrganizeInspectorView: View {
                     showingCVPicker = false
                     isFetchingCV = true
                     Task {
-                        let outcome = await viewModel.applyComicVineCandidate(
+                        let outcome = await viewModel.applyStagingCandidate(
                             candidate, to: comic.id)
                         isFetchingCV = false
                         handleCVOutcome(outcome)
@@ -394,7 +396,8 @@ struct OrganizeInspectorView: View {
         isFetchingCV = true
         cvMessage = nil
         Task {
-            // Routed by format: eBooks -> book sources, comics -> ComicVine.
+            // Routed by format: eBooks -> book sources, comics -> the
+            // active comic provider (ComicVine or Metron).
             let outcome = await viewModel.fetchMetadata(for: comic.id)
             isFetchingCV = false
             handleCVOutcome(outcome)
@@ -410,12 +413,12 @@ struct OrganizeInspectorView: View {
             cvCandidates = candidates
             showingCVPicker = true
         case .noKey:
-            cvMessage = "Add a ComicVine API key in Settings first."
+            cvMessage = ComicSource.current.credentialsHint
         case .noMatches:
             cvMessage =
                 bookFormat == .ebook
                 ? "No confident match — you can import and use Search Matches from the Library."
-                : "No ComicVine matches found for this series."
+                : "No \(ComicSource.current.displayName) matches found for this series."
         case .failed(let message):
             cvMessage = message
         }
@@ -574,7 +577,7 @@ struct OrganizeInspectorView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Pending — still missing: \(missingForReady.joined(separator: ", "))")
                         .font(.caption.weight(.semibold))
-                    Text("These aren't required to import, but the book stays Pending until they're filled. Fetch from ComicVine can fill them automatically.")
+                    Text("These aren't required to import, but the book stays Pending until they're filled. Fetch from \(ComicSource.current.displayName) can fill them automatically.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -672,9 +675,9 @@ struct CoverZoomView: View {
     }
 }
 
-// MARK: - ComicVine Match Picker (staging)
+// MARK: - Match Picker (staging)
 
-/// Candidate chooser shown when a staging ComicVine search is ambiguous.
+/// Candidate chooser shown when a staging provider search is ambiguous.
 /// Picking a volume fills the inspector fields for review — nothing is
 /// imported to the library until the user confirms.
 struct StagingMatchPickerSheet: View {
@@ -733,6 +736,8 @@ struct StagingMatchPickerSheet: View {
         if let year = candidate.startYear { parts.append(String(year)) }
         if let publisher = candidate.publisher, !publisher.isEmpty { parts.append(publisher) }
         if let count = candidate.issueCount { parts.append("\(count) issues") }
-        return parts.isEmpty ? "ComicVine volume \(candidate.id)" : parts.joined(separator: " · ")
+        return parts.isEmpty
+            ? "\(candidate.isMetron ? "Metron series" : "ComicVine volume") \(candidate.id)"
+            : parts.joined(separator: " · ")
     }
 }

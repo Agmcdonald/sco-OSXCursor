@@ -1401,14 +1401,16 @@ struct LibraryView: View {
 
     /// Context-menu fetch on a single book: fills and saves directly. If the
     /// search is ambiguous, opens the match picker. EPUB books route to
-    /// Open Library / Google Books; everything else to ComicVine.
+    /// Open Library / Google Books; everything else to the active comic
+    /// metadata provider (ComicVine or Metron).
     private func fetchMetadataSingle(_ comic: Comic) {
         if comic.isEbook {
             fetchBookMetadataSingle(comic)
             return
         }
+        let source = ComicSource.current
         Task {
-            let outcome = await viewModel.fetchComicVineMetadata(for: comic, force: false)
+            let outcome = await viewModel.fetchComicMetadata(for: comic, force: false)
             switch outcome {
             case .updated:
                 flashComicVineStatus("\(comic.displayTitle): metadata updated.")
@@ -1416,16 +1418,16 @@ struct LibraryView: View {
                 pendingPickerComicID = ComicID(id: comic.id)
             case .alreadyFetched:
                 // Explicit single action → user likely wants a refresh
-                let forced = await viewModel.fetchComicVineMetadata(for: comic, force: true)
+                let forced = await viewModel.fetchComicMetadata(for: comic, force: true)
                 if case .needsChoice = forced {
                     pendingPickerComicID = ComicID(id: comic.id)
                 } else {
                     flashComicVineStatus("\(comic.displayTitle): metadata refreshed.")
                 }
             case .noKey:
-                flashComicVineStatus("Add a ComicVine API key in Settings first.")
+                flashComicVineStatus(source.credentialsHint)
             case .noMatches:
-                flashComicVineStatus("\(comic.displayTitle): no ComicVine match found.")
+                flashComicVineStatus("\(comic.displayTitle): no \(source.displayName) match found.")
             case .rateLimited:
                 flashComicVineStatus(outcome.rateLimitMessage)
             case .failed(let reason):
@@ -1477,7 +1479,7 @@ struct LibraryView: View {
 
     /// Selection-bar batch fetch across every selected book. Routes each
     /// file to the provider that supports it: EPUB books go to Open Library
-    /// (no key needed), everything else to ComicVine.
+    /// (no key needed), everything else to the active comic provider.
     private func fetchMetadataForSelected() {
         guard !selectedComics.isEmpty, !isBatchFetching else { return }
         let comics = viewModel.comics.filter { selectedComics.contains($0.id) }
@@ -1490,7 +1492,7 @@ struct LibraryView: View {
             var summaries: [String] = []
 
             if !issues.isEmpty {
-                let result = await viewModel.fetchComicVineMetadataBatch(for: issues) { done, total in
+                let result = await viewModel.fetchComicMetadataBatch(for: issues) { done, total in
                     comicVineStatus = "Fetching comic metadata… \(done) of \(total)"
                 }
                 summaries.append(

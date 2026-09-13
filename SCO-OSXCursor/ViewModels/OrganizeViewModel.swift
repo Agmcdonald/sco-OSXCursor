@@ -699,10 +699,14 @@ final class OrganizeViewModel: ObservableObject {
         case failed(String)
     }
 
-    /// Search ComicVine for a staged file. A confident match is applied to the
-    /// staged metadata immediately (nothing touches the library); an ambiguous
-    /// search returns candidates for the user to pick from.
+    /// Search the active comic provider for a staged file. A confident match
+    /// is applied to the staged metadata immediately (nothing touches the
+    /// library); an ambiguous search returns candidates for the user to pick
+    /// from.
     func fetchComicVine(for id: UUID) async -> StagingCVOutcome {
+        if ComicSource.current == .metron {
+            return await fetchMetronStaging(for: id)
+        }
         guard ComicVineConfig.hasKey else { return .noKey }
         guard let staged = stagedComics.first(where: { $0.id == id }) else {
             return .failed("File is no longer staged.")
@@ -750,9 +754,62 @@ final class OrganizeViewModel: ObservableObject {
         }
     }
 
+    /// Metron equivalent of `fetchComicVine(for:)`. Same shape: confident
+    /// match applied straight to the staged metadata, ambiguous search returns
+    /// Metron-tagged candidates for the picker.
+    func fetchMetronStaging(for id: UUID) async -> StagingCVOutcome {
+        guard MetronConfig.hasCredentials else { return .noKey }
+        guard let staged = stagedComics.first(where: { $0.id == id }) else {
+            return .failed("File is no longer staged.")
+        }
+
+        let query =
+            staged.series.isEmpty
+            ? (staged.originalFileName as NSString).deletingPathExtension
+            : staged.series
+
+        do {
+            let rows = try await MetronService.shared.searchSeries(query)
+            guard !rows.isEmpty else { return .noMatches }
+
+            let proxy = cvProxy(for: staged)
+            let refs = rows.map(MTSeriesRef.init(listRow:))
+            let scored = refs
+                .map { (ref: $0, score: MetronMatcher.score($0, against: proxy, query: query)) }
+                .sorted { $0.score > $1.score }
+
+            let best = scored[0]
+            let second = scored.count > 1 ? scored[1].score : 0
+            let confident = scored.count == 1 || (best.score >= 0.75 && best.score - second >= 0.2)
+
+            guard confident else {
+                let candidates = scored.prefix(5).map { item in
+                    CVCandidate(
+                        id: item.ref.id,
+                        name: item.ref.name ?? "Unknown",
+                        startYear: item.ref.yearBegan,
+                        publisher: item.ref.publisher,
+                        issueCount: item.ref.issueCount,
+                        provider: "Metron"
+                    )
+                }
+                return .needsChoice(Array(candidates))
+            }
+
+            let filled = await MetronFetcher.fill(proxy, from: best.ref)
+            guard let merged = mergeCVResult(filled, into: id) else {
+                return .failed("File is no longer staged.")
+            }
+            return .applied(merged)
+        } catch {
+            AppLog.organize.error("[OrganizeViewModel] Metron fetch failed: \(error.localizedDescription)")
+            return .failed(error.localizedDescription)
+        }
+    }
+
     /// Routes a staged file to the right provider by its format: eBooks go
     /// to the book sources (Open Library / Google Books / Hardcover — no key
-    /// needed), everything else to ComicVine.
+    /// needed), everything else to the active comic provider.
     func fetchMetadata(for id: UUID) async -> StagingCVOutcome {
         if stagedComics.first(where: { $0.id == id })?.bookFormat == .ebook {
             return await fetchBookSources(for: id)
@@ -900,7 +957,8 @@ final class OrganizeViewModel: ObservableObject {
     @Published private(set) var metadataRevision = 0
 
     /// Fetch metadata for every CHECKED staged file, routed by format:
-    /// eBooks use the book sources, everything else uses ComicVine.
+    /// eBooks use the book sources, everything else uses the active comic
+    /// provider (ComicVine or Metron).
     /// Confident matches are applied to the staged metadata; ambiguous ones
     /// are left untouched for the per-file Fetch button.
     func fetchComicVineForChecked() async {
@@ -909,10 +967,11 @@ final class OrganizeViewModel: ObservableObject {
         guard !items.isEmpty else { return }
 
         // Only block outright when EVERY checked file would need the
-        // (missing) ComicVine key — eBooks fetch without one.
+        // (missing) provider credentials — eBooks fetch without them.
+        let source = ComicSource.current
         let comicsNeedKey = items.contains { $0.bookFormat != .ebook }
-        if comicsNeedKey, !ComicVineConfig.hasKey, items.allSatisfy({ $0.bookFormat != .ebook }) {
-            batchCVSummary = "Add a ComicVine API key in Settings first."
+        if comicsNeedKey, !source.hasCredentials, items.allSatisfy({ $0.bookFormat != .ebook }) {
+            batchCVSummary = source.credentialsHint
             return
         }
 
@@ -945,7 +1004,7 @@ final class OrganizeViewModel: ObservableObject {
         if ambiguous > 0 { parts.append("\(ambiguous) ambiguous — fetch individually to pick a match") }
         if noMatch > 0 { parts.append("\(noMatch) no match") }
         if failed > 0 { parts.append("\(failed) failed") }
-        if noKey > 0 { parts.append("\(noKey) skipped (comics need a ComicVine key)") }
+        if noKey > 0 { parts.append("\(noKey) skipped (comics need \(source.displayName) credentials)") }
         batchCVSummary = parts.isEmpty ? "Nothing fetched." : parts.joined(separator: ", ") + "."
     }
 
@@ -966,6 +1025,32 @@ final class OrganizeViewModel: ObservableObject {
             return .failed("File is no longer staged.")
         }
         return .applied(merged)
+    }
+
+    /// Apply a Metron candidate the user picked from the staging match sheet.
+    func applyMetronCandidate(_ candidate: CVCandidate, to id: UUID) async -> StagingCVOutcome {
+        guard let staged = stagedComics.first(where: { $0.id == id }) else {
+            return .failed("File is no longer staged.")
+        }
+        let ref = MTSeriesRef(
+            id: candidate.id,
+            name: candidate.name,
+            yearBegan: candidate.startYear,
+            publisher: candidate.publisher,
+            issueCount: candidate.issueCount
+        )
+        let filled = await MetronFetcher.fill(cvProxy(for: staged), from: ref)
+        guard let merged = mergeCVResult(filled, into: id) else {
+            return .failed("File is no longer staged.")
+        }
+        return .applied(merged)
+    }
+
+    /// Apply a staged candidate through whichever provider produced it.
+    func applyStagingCandidate(_ candidate: CVCandidate, to id: UUID) async -> StagingCVOutcome {
+        candidate.isMetron
+            ? await applyMetronCandidate(candidate, to: id)
+            : await applyComicVineCandidate(candidate, to: id)
     }
 
     /// Temporary `Comic` mirroring a staged file so the shared ComicVine

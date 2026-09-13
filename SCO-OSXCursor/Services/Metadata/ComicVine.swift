@@ -540,7 +540,7 @@ extension LibraryViewModel {
         var pendingReviewIDs: [Comic.ID] = []
 
         var summary: String {
-            if noKey { return "Add a ComicVine API key in Settings first." }
+            if noKey { return ComicSource.current.credentialsHint }
             var parts: [String] = []
             if updated > 0 { parts.append("\(updated) updated") }
             if needChoice > 0 { parts.append("\(needChoice) to review") }
@@ -1049,15 +1049,25 @@ struct ComicVineMatchPicker: View {
         .frame(minWidth: 420, minHeight: 380)
     }
 
-    /// Manual override: paste a ComicVine volume/issue link (or ID) to match a
-    /// series that search ranking didn't surface.
+    /// True when the pending candidates came from Metron, so the link field
+    /// asks for a Metron ID rather than a ComicVine URL.
+    private var isMetronPicker: Bool {
+        candidates.first?.isMetron == true
+    }
+
+    /// Manual override: paste a provider link (or ID) to match a series that
+    /// search ranking didn't surface.
     private var linkSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("None match? Paste a ComicVine link")
+            Text(isMetronPicker ? "None match? Paste a Metron ID" : "None match? Paste a ComicVine link")
                 .font(Typography.caption)
                 .foregroundColor(TextColors.secondary)
             HStack(spacing: Spacing.sm) {
-                TextField("comicvine.gamespot.com/…/4050-170313/", text: $linkText)
+                TextField(
+                    isMetronPicker
+                        ? "Metron series ID or metron.cloud/api/series/<id>/"
+                        : "comicvine.gamespot.com/…/4050-170313/",
+                    text: $linkText)
                     .textFieldStyle(.roundedBorder)
                     .font(Typography.caption)
                     .disabled(isApplying)
@@ -1084,7 +1094,9 @@ struct ComicVineMatchPicker: View {
         if let year = candidate.startYear { parts.append(String(year)) }
         if let publisher = candidate.publisher { parts.append(publisher) }
         if let count = candidate.issueCount { parts.append("\(count) issues") }
-        return parts.isEmpty ? "ComicVine volume #\(candidate.id)" : parts.joined(separator: " • ")
+        return parts.isEmpty
+            ? "\(candidate.isMetron ? "Metron series" : "ComicVine volume") #\(candidate.id)"
+            : parts.joined(separator: " • ")
     }
 
     /// Contextual instruction shown above the list in two-step mode.
@@ -1110,7 +1122,7 @@ struct ComicVineMatchPicker: View {
         guard !isApplying else { return }
         isApplying = true
         Task {
-            _ = await viewModel.applyComicVineCandidate(candidate, to: comic)
+            _ = await viewModel.applyMetadataCandidate(candidate, to: comic)
             isApplying = false
             dismiss()
         }
@@ -1122,7 +1134,7 @@ struct ComicVineMatchPicker: View {
         linkError = nil
         isApplying = true
         Task {
-            let outcome = await viewModel.applyComicVineLink(raw, to: comic)
+            let outcome = await viewModel.applyProviderLink(raw, to: comic)
             isApplying = false
             switch outcome {
             case .updated:
@@ -1130,7 +1142,7 @@ struct ComicVineMatchPicker: View {
             case .failed(let message):
                 linkError = message
             case .noKey:
-                linkError = "Add a ComicVine API key in Settings first."
+                linkError = ComicSource.current.credentialsHint
             default:
                 dismiss()
             }
@@ -1380,14 +1392,16 @@ struct ComicVineBatchReviewView: View {
         if let year = candidate.startYear { parts.append(String(year)) }
         if let publisher = candidate.publisher { parts.append(publisher) }
         if let count = candidate.issueCount { parts.append("\(count) issues") }
-        return parts.isEmpty ? "ComicVine volume #\(candidate.id)" : parts.joined(separator: " • ")
+        return parts.isEmpty
+            ? "\(candidate.isMetron ? "Metron series" : "ComicVine volume") #\(candidate.id)"
+            : parts.joined(separator: " • ")
     }
 
     private func apply(_ candidate: CVCandidate) {
         guard !isApplying, let comic = currentComic else { return }
         isApplying = true
         Task {
-            _ = await viewModel.applyComicVineCandidate(candidate, to: comic)
+            _ = await viewModel.applyMetadataCandidate(candidate, to: comic)
             isApplying = false
             advance()
         }

@@ -231,7 +231,7 @@ struct OrganizeView: View {
                             // file on disk to book in the library
                             VStack(alignment: .leading, spacing: 8) {
                                 guideRow(1, "Add books — drop CBZ, CBR, PDF, or EPUB files here, or use Add Files / Scan Folder above")
-                                guideRow(2, "Select a file to review its details. Fill the fields marked in orange, or let Fetch from ComicVine do it")
+                                guideRow(2, "Select a file to review its details. Fill the fields marked in orange, or let Fetch from \(ComicSource.current.displayName) do it")
                                 guideRow(3, "Import books one at a time, or everything marked Ready at once with Apply All Ready")
                             }
                             .padding(12)
@@ -361,7 +361,7 @@ struct OrganizeView: View {
                 .disabled(viewModel.checkedComicIDs.isEmpty)
 
                 // Fetch metadata for every checked file — routed by format
-                // (eBooks -> book sources, comics -> ComicVine)
+                // (eBooks -> book sources, comics -> the active comic provider)
                 Button(action: {
                     Task { await viewModel.fetchComicVineForChecked() }
                 }) {
@@ -378,7 +378,7 @@ struct OrganizeView: View {
                     }
                 }
                 .disabled(viewModel.checkedComicIDs.isEmpty || viewModel.isBatchFetchingCV)
-                .help("Fills metadata for every checked file — eBooks from Open Library, Google Books, and Hardcover; comics from ComicVine.")
+                .help("Fills metadata for every checked file — eBooks from Open Library, Google Books, and Hardcover; comics from \(ComicSource.current.displayName).")
 
                 if let summary = viewModel.batchCVSummary, !viewModel.isBatchFetchingCV {
                     Text(summary)
