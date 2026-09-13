@@ -255,3 +255,8 @@ A rejected paste returns a `failed` outcome with the explanatory text:
   serializes callers correctly today only because fetches are issued
   sequentially; truly parallel fetches could interleave between the `wait` and
   the request and briefly exceed 20/min.
+- **Cross-provider force re-fetch leaves stale Metron-only fields.** Correcting a
+  wrong Metron match by force re-fetching the same book through ComicVine
+  rewrites the shared fields but never touches the Metron-only ones
+  (`characters`, `teams`, `storeDate`), so those stay on the record from the bad
+  match. Revert (metadata backup) or a corrected Metron fetch clears them.

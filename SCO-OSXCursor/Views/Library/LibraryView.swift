@@ -1430,6 +1430,8 @@ struct LibraryView: View {
                 flashComicVineStatus("\(comic.displayTitle): no \(source.displayName) match found.")
             case .rateLimited:
                 flashComicVineStatus(outcome.rateLimitMessage)
+            case .unauthorized:
+                flashComicVineStatus("Metron sign-in failed — check username/password in Settings.")
             case .failed(let reason):
                 flashComicVineStatus("Fetch failed: \(reason)")
             }

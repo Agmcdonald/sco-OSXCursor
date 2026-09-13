@@ -652,6 +652,11 @@ extension LibraryViewModel {
             if case .rateLimited(let retryAfter) = error {
                 return .rateLimited(retryAfter: retryAfter)
             }
+            // A rejected sign-in won't fix itself on the next book — surface it
+            // as its own outcome so batch loops can stop immediately.
+            if case .unauthorized = error {
+                return .unauthorized
+            }
             AppLog.metadata.error("[Metron] Fetch failed: \(error.localizedDescription)")
             return .failed(error.errorDescription ?? "Metron request failed.")
         } catch {
@@ -697,6 +702,14 @@ extension LibraryViewModel {
                 result.failed += comics.count - index
                 onProgress(total, total)
                 return result
+            case .unauthorized:
+                // Bad credentials — every remaining book would 401 the same way.
+                AppLog.metadata.error("[Metron] Sign-in rejected — stopping batch with \(comics.count - index) books unattempted")
+                result.failed += comics.count - index
+                result.noKey = false
+                result.authFailed = true
+                onProgress(total, total)
+                return result
             }
             onProgress(index + 1, total)
         }
@@ -740,9 +753,13 @@ extension LibraryViewModel {
         } catch {
             // Don't downgrade a 429 to a generic failure — the caller shows a
             // "try again after …" message for the rate-limited case.
-            if let mtError = error as? MetronService.MTError,
-               case .rateLimited(let retryAfter) = mtError {
-                return .rateLimited(retryAfter: retryAfter)
+            if let mtError = error as? MetronService.MTError {
+                if case .rateLimited(let retryAfter) = mtError {
+                    return .rateLimited(retryAfter: retryAfter)
+                }
+                if case .unauthorized = mtError {
+                    return .unauthorized
+                }
             }
             AppLog.metadata.error("[Metron] Link match failed: \(error.localizedDescription)")
             return .failed(error.localizedDescription)

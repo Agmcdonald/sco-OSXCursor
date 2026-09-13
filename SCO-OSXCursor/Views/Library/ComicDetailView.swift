@@ -500,6 +500,8 @@ struct ComicDetailView: View {
                 fetchMessage = "No \(ComicSource.current.displayName) matches found for this book."
             case .rateLimited:
                 fetchMessage = outcome.rateLimitMessage
+            case .unauthorized:
+                fetchMessage = "Metron sign-in failed — check username/password in Settings."
             case .failed(let reason):
                 fetchMessage = "Fetch failed: \(reason)"
             }

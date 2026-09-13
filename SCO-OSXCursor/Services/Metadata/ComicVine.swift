@@ -447,6 +447,8 @@ enum ComicVineFetchOutcome {
     case noKey
     case noMatches
     case rateLimited(retryAfter: Date?)
+    /// Provider sign-in rejected (Metron 401/403) — batch loops stop immediately.
+    case unauthorized
     case failed(String)
 }
 
@@ -535,11 +537,15 @@ extension LibraryViewModel {
         var failed = 0
         var skipped = 0
         var noKey = false
+        /// Set when the provider rejected our credentials (Metron 401/403) and
+        /// the batch stopped early. Takes precedence in `summary`.
+        var authFailed = false
         /// Books with stored candidates that the user should review/confirm,
         /// in the order they were fetched. Drives the batch review sheet.
         var pendingReviewIDs: [Comic.ID] = []
 
         var summary: String {
+            if authFailed { return "Metron sign-in failed — check username/password in Settings." }
             if noKey { return ComicSource.current.credentialsHint }
             var parts: [String] = []
             if updated > 0 { parts.append("\(updated) updated") }
@@ -585,6 +591,8 @@ extension LibraryViewModel {
             case .failed: result.failed += 1
             case .noKey: result.noKey = true
             case .rateLimited: result.failed += 1
+            // Unreachable for ComicVine (no sign-in), but the enum is shared.
+            case .unauthorized: result.failed += 1
             }
             onProgress(index + 1, total)
         }
