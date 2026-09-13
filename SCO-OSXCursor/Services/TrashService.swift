@@ -61,7 +61,7 @@ final class TrashService {
 
             if deleteFiles && !Comic.isBundled(comic) {
                 do {
-                    let taken = try takeFileResolvingBookmark(for: comic, entryID: entryID)
+                    let taken = try await takeFileResolvingBookmark(for: comic, entryID: entryID)
                     storedName = taken.storedName
                     fileSize = taken.fileSize
                     kind = .file
@@ -85,7 +85,7 @@ final class TrashService {
                 deletedAt: Date(),
                 kind: kind,
                 displayTitle: comic.displayTitle,
-                coverThumb: TrashService.thumbnail(from: comic.coverImageData)
+                coverThumb: await TrashService.thumbnailOffMain(from: comic.coverImageData)
             )
 
             var manifestRowWritten = false
@@ -101,12 +101,28 @@ final class TrashService {
                 // Roll back to "nothing happened": the book is still in the
                 // catalog, so a manifest row would be a ghost duplicate and a
                 // taken file would be unreachable from the library.
-                if manifestRowWritten {
-                    try? await database.deleteTrashEntry(withID: entryID)
-                }
+                //
+                // Put the file back FIRST, and drop the manifest row only if
+                // that worked. The other order can lose the file outright: if
+                // the row is deleted and the put-back then fails, nothing in
+                // the database references the file sitting in the Trash
+                // directory and no UI can ever reach it. A ghost row the user
+                // can see and act on is the better failure.
+                var filePutBack = true
                 if let storedName {
-                    _ = try? fileStore.restoreFile(
+                    let destination = try? await restoreFileOffMain(
                         storedName: storedName, toOriginalPath: comic.filePath.path)
+                    // A missing/uncreatable parent reports rather than throws,
+                    // so nil *and* .failedParentMissing mean "still in trash".
+                    filePutBack = destination != nil && destination != .failedParentMissing
+                    if !filePutBack {
+                        AppLog.trash.error(
+                            "[Trash] ⚠️ Rollback could not put \(comic.fileName) back; keeping its manifest row so the file stays reachable"
+                        )
+                    }
+                }
+                if manifestRowWritten && filePutBack {
+                    try? await database.deleteTrashEntry(withID: entryID)
                 }
             }
         }
@@ -116,38 +132,69 @@ final class TrashService {
     /// Resolve the comic's security-scoped bookmark, hold access for exactly
     /// the duration of the take, and hand the stored file back.
     ///
+    /// Runs off the main actor: a take is a `moveItem` that silently becomes a
+    /// full copy across volumes, so a large "delete files" batch would otherwise
+    /// block the UI for as long as the copy takes. Only value types cross into
+    /// the detached task (the bookmark blob, the URL, the entry id) — never the
+    /// `Comic` itself.
+    ///
     /// The scope release lives in this helper rather than in the batch loop on
     /// purpose: Swift's `defer` fires when the *enclosing function* returns, so
     /// a `defer` written inside `trash(_:deleteFiles:folderIDs:)` would hold
     /// every book's security scope open until the whole batch finished.
-    private func takeFileResolvingBookmark(for comic: Comic, entryID: UUID) throws -> (
+    private func takeFileResolvingBookmark(for comic: Comic, entryID: UUID) async throws -> (
         storedName: String, fileSize: Int64
     ) {
-        var fileURL = comic.filePath
-        var didStartAccess = false
-        if let bookmarkData = comic.bookmarkData {
-            var isStale = false
-            #if os(macOS)
-                let resolved = try? URL(
-                    resolvingBookmarkData: bookmarkData,
-                    options: .withSecurityScope,
-                    relativeTo: nil,
-                    bookmarkDataIsStale: &isStale)
-            #else
-                let resolved = try? URL(
-                    resolvingBookmarkData: bookmarkData,
-                    options: [],
-                    relativeTo: nil,
-                    bookmarkDataIsStale: &isStale)
-            #endif
-            if let resolved {
-                fileURL = resolved
-                didStartAccess = resolved.startAccessingSecurityScopedResource()
+        let store = fileStore
+        let bookmarkData = comic.bookmarkData
+        let originalURL = comic.filePath
+        return try await Task.detached(priority: .utility) {
+            var fileURL = originalURL
+            var didStartAccess = false
+            if let bookmarkData {
+                var isStale = false
+                #if os(macOS)
+                    let resolved = try? URL(
+                        resolvingBookmarkData: bookmarkData,
+                        options: .withSecurityScope,
+                        relativeTo: nil,
+                        bookmarkDataIsStale: &isStale)
+                #else
+                    let resolved = try? URL(
+                        resolvingBookmarkData: bookmarkData,
+                        options: [],
+                        relativeTo: nil,
+                        bookmarkDataIsStale: &isStale)
+                #endif
+                if let resolved {
+                    fileURL = resolved
+                    didStartAccess = resolved.startAccessingSecurityScopedResource()
+                }
             }
-        }
-        defer { if didStartAccess { fileURL.stopAccessingSecurityScopedResource() } }
+            defer { if didStartAccess { fileURL.stopAccessingSecurityScopedResource() } }
 
-        return try fileStore.takeFile(at: fileURL, entryID: entryID)
+            return try store.takeFile(at: fileURL, entryID: entryID)
+        }.value
+    }
+
+    /// `TrashFileStore.restoreFile` off the main actor — same reasoning as the
+    /// take: the move can be a cross-volume copy of a multi-gigabyte file.
+    private func restoreFileOffMain(storedName: String, toOriginalPath originalPath: String)
+        async throws -> TrashFileStore.RestoreDestination
+    {
+        let store = fileStore
+        return try await Task.detached(priority: .utility) {
+            try store.restoreFile(storedName: storedName, toOriginalPath: originalPath)
+        }.value
+    }
+
+    /// `TrashFileStore.purgeFile` off the main actor.
+    private func purgeFileOffMain(_ storedName: String?) async {
+        guard let storedName else { return }
+        let store = fileStore
+        await Task.detached(priority: .utility) {
+            store.purgeFile(storedName)
+        }.value
     }
 
     // MARK: - Restore
@@ -182,7 +229,7 @@ final class TrashService {
 
         if let storedName = entry.trashedFileName {
             do {
-                switch try fileStore.restoreFile(
+                switch try await restoreFileOffMain(
                     storedName: storedName, toOriginalPath: entry.originalPath)
                 {
                 case .originalPath(let url):
@@ -191,6 +238,13 @@ final class TrashService {
                 case .renamed(let url):
                     comic.filePath = url
                     comic.fileName = url.lastPathComponent
+                    // The saved bookmark still points at the original path,
+                    // which is occupied by a DIFFERENT file now — resolving it
+                    // later would silently open the wrong book. Drop it; the
+                    // app mints a fresh bookmark the next time this file is
+                    // opened. (.homeLibrary gets a fresh one from the caller;
+                    // .originalPath's bookmark still resolves correctly.)
+                    comic.bookmarkData = nil
                     outcome = .renamed
                 case .failedParentMissing:
                     // A merely-deleted original folder is not this case: the
@@ -236,12 +290,60 @@ final class TrashService {
                 try? await database.addComics([comic.id], toFolder: folderID)
             }
             try await database.deleteTrashEntry(withID: entry.id)
-            fileStore.purgeFile(orphanedStoredName)
+            await purgeFileOffMain(orphanedStoredName)
             AppLog.trash.info("[Trash] ♻️ Restored \(entry.displayTitle)")
             return outcome
         } catch {
+            // The file has already left the Trash directory, so the manifest
+            // row is now a lie: every retry would fail at the move with "the
+            // file isn't there". Rewrite the row to describe what is actually
+            // true — the file is safe on disk at comic.filePath, only the
+            // catalog half is still missing — so a retry restores cleanly.
+            await purgeFileOffMain(orphanedStoredName)
+            await downgradeEntryToCatalogOnly(
+                entry, comic: comic, folderIDs: snapshot.folderIDs)
             return .failed(
                 "The book's catalog entry couldn't be restored: \(error.localizedDescription)")
+        }
+    }
+
+    /// Rewrite a manifest row as catalog-only after its file was successfully
+    /// moved out of the Trash but the catalog write failed. The snapshot is
+    /// re-encoded from the mutated comic so `filePath`/`fileName` point at where
+    /// the file actually landed. `insertTrashEntry` upserts (GRDB `save`), so
+    /// this replaces the row in place, keeping its id and `deletedAt`.
+    private func downgradeEntryToCatalogOnly(
+        _ entry: TrashEntry, comic: Comic, folderIDs: [UUID]
+    ) async {
+        // Nothing moved for a catalog-only entry — its row is still accurate.
+        guard entry.trashedFileName != nil else { return }
+        guard let snapshotJSON = TrashSnapshot(comic: comic, folderIDs: folderIDs).encoded() else {
+            AppLog.trash.error(
+                "[Trash] ⚠️ Couldn't re-encode snapshot for \(entry.displayTitle); manifest row still points at a file that has left the Trash"
+            )
+            return
+        }
+        let downgraded = TrashEntry(
+            id: entry.id,
+            comicSnapshot: snapshotJSON,
+            originalPath: comic.filePath.path,
+            bookmarkData: comic.bookmarkData,
+            trashedFileName: nil,
+            fileSize: 0,
+            deletedAt: entry.deletedAt,
+            kind: .catalog,
+            displayTitle: entry.displayTitle,
+            coverThumb: entry.coverThumb
+        )
+        do {
+            try await database.insertTrashEntry(downgraded)
+            AppLog.trash.info(
+                "[Trash] ⬇️ Downgraded \(entry.displayTitle) to catalog-only — its file is back on disk at \(comic.filePath.path)"
+            )
+        } catch {
+            AppLog.trash.error(
+                "[Trash] ⚠️ Downgrade failed for \(entry.displayTitle): \(error.localizedDescription)"
+            )
         }
     }
 
@@ -285,8 +387,20 @@ final class TrashService {
 
     // MARK: - Thumbnail
 
+    /// `thumbnail(from:)` off the main actor — it fully decodes the cover, which
+    /// on a large batch is a visible stall. Only the cover bytes cross over.
+    private static func thumbnailOffMain(from coverData: Data?) async -> Data? {
+        guard let coverData else { return nil }
+        return await Task.detached(priority: .utility) {
+            thumbnail(from: coverData)
+        }.value
+    }
+
     /// Downscale cover data to a small JPEG for the trash list (~120pt @2x).
-    static func thumbnail(from coverData: Data?) -> Data? {
+    ///
+    /// `nonisolated` because it touches nothing but its argument: that lets the
+    /// detached task above run it off the main actor.
+    nonisolated static func thumbnail(from coverData: Data?) -> Data? {
         guard let coverData else { return nil }
         #if canImport(ImageIO)
             guard let src = CGImageSourceCreateWithData(coverData as CFData, nil) else {
