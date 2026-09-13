@@ -135,6 +135,14 @@ struct ComicCellInteraction: ViewModifier {
                     actions.focus(comic)
                 }
             }
+            // Long-click enters selection mode with this book selected
+            // (same as the context menu's "Select Book"). macOS only —
+            // on iOS a long press opens the context menu instead.
+            .onLongPressGesture(minimumDuration: 0.4) {
+                if !isSelectionMode {
+                    actions.selectBook(comic)
+                }
+            }
             #else
             .onTapGesture {
                 if isSelectionMode {
