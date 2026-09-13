@@ -794,15 +794,27 @@ enum ComicVineMatcher {
     /// 2026, and a volume that began many years earlier is almost certainly the
     /// wrong one. Year is weighted heavily for that reason.
     static func score(_ volume: CVVolumeResult, against comic: Comic, query: String) -> Double {
-        var score = nameSimilarity(volume.name ?? "", query)
-
-        score += yearScore(
-            comicYear: comic.year,
-            volumeYear: volume.startYear.flatMap { Int($0) }
+        score(
+            name: volume.name,
+            startYear: volume.startYear.flatMap { Int($0) },
+            publisher: volume.publisher?.name,
+            against: comic,
+            query: query
         )
+    }
+
+    /// Provider-agnostic scoring core: same math, callable with plain
+    /// values so Metron results score identically to ComicVine ones.
+    static func score(
+        name: String?, startYear: Int?, publisher: String?,
+        against comic: Comic, query: String
+    ) -> Double {
+        var score = nameSimilarity(name ?? "", query)
+
+        score += yearScore(comicYear: comic.year, volumeYear: startYear)
 
         if let comicPublisher = comic.publisher?.lowercased(),
-           let volumePublisher = volume.publisher?.name?.lowercased(),
+           let volumePublisher = publisher?.lowercased(),
            !comicPublisher.isEmpty {
             if comicPublisher == volumePublisher { score += 0.15 }
             else if volumePublisher.contains(comicPublisher) || comicPublisher.contains(volumePublisher) {
@@ -876,7 +888,7 @@ enum ComicVineMatcher {
         }
         if comic.writer?.isEmpty != false { comic.writer = names(for: "writer") }
         if comic.artist?.isEmpty != false {
-            comic.artist = names(for: "penciler") ?? names(for: "artist")
+            comic.artist = names(for: "penciller") ?? names(for: "penciler") ?? names(for: "artist")
         }
         if comic.coverArtist?.isEmpty != false { comic.coverArtist = names(for: "cover") }
         if comic.colorist?.isEmpty != false { comic.colorist = names(for: "colorist") }

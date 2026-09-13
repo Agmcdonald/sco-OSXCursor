@@ -207,3 +207,104 @@ import Testing
         #expect(MetronDates.year(from: "bad") == nil)
     }
 }
+
+// MARK: - Metron scoring & fill
+
+@Suite struct MetronFillTests {
+
+    private func makeComic(
+        series: String? = "Superman", issue: String? = "6",
+        year: Int? = 2016, publisher: String? = nil
+    ) -> Comic {
+        Comic(
+            filePath: URL(fileURLWithPath: "/tmp/s.cbz"),
+            fileName: "s.cbz",
+            publisher: publisher,
+            series: series,
+            issueNumber: issue,
+            year: year
+        )
+    }
+
+    @Test func scoringPrefersMatchingYear() {
+        let comic = makeComic(year: 2016)
+        let new = MTSeriesRef(id: 1, name: "Superman", yearBegan: 2016, publisher: "DC Comics", issueCount: 52)
+        let old = MTSeriesRef(id: 2, name: "Superman", yearBegan: 1987, publisher: "DC Comics", issueCount: 228)
+        let q = "Superman"
+        #expect(MetronMatcher.score(new, against: comic, query: q)
+                > MetronMatcher.score(old, against: comic, query: q))
+    }
+
+    @Test func applySeriesFillsBlanksAndCanonicalName() {
+        var comic = makeComic(series: "superman", publisher: nil)
+        comic.year = nil
+        let ref = MTSeriesRef(id: 2658, name: "Superman (2016)", yearBegan: 2016, publisher: "DC Comics", issueCount: 52)
+        let filled = MetronFetcher.applySeries(ref, to: comic)
+        #expect(filled.series == "Superman (2016)")   // canonical
+        #expect(filled.publisher == "DC Comics")      // blank-filled
+        #expect(filled.year == 2016)                  // blank-filled
+        #expect(filled.metronSeriesID == 2658)
+    }
+
+    @Test func applySeriesNeverClobbersExistingPublisherOrYear() {
+        let comic = makeComic(year: 1999, publisher: "My Publisher")
+        let ref = MTSeriesRef(id: 1, name: "Superman", yearBegan: 2016, publisher: "DC Comics", issueCount: 52)
+        let filled = MetronFetcher.applySeries(ref, to: comic)
+        #expect(filled.publisher == "My Publisher")
+        #expect(filled.year == 1999)
+    }
+
+    @Test func applyIssueFillsEverything() {
+        let comic = makeComic()
+        let list = MTIssueResult(
+            id: 38181, number: "6", issueName: "Superman (2016) #6",
+            coverDate: "2016-11-01", storeDate: "2016-09-07"
+        )
+        let detail = MTIssueDetail(
+            id: 38181, number: "6", collectionTitle: "",
+            storyTitles: ["Son of Superman, Part Six"],
+            coverDate: "2016-11-01", storeDate: "2016-09-07",
+            desc: "Superman and son face the Eradicator.",
+            image: nil,
+            credits: [
+                MTCredit(creator: "Peter J. Tomasi", roles: [MTGenericItem(id: 30, name: "Writer")]),
+                MTCredit(creator: "Patrick Gleason", roles: [
+                    MTGenericItem(id: 1, name: "Penciller"), MTGenericItem(id: 6, name: "Cover"),
+                ]),
+                MTCredit(creator: "Mick Gray", roles: [MTGenericItem(id: 2, name: "Inker")]),
+            ],
+            arcs: [MTGenericItem(id: 93, name: "Son of Superman")],
+            characters: [MTGenericItem(id: 1, name: "Superman"), MTGenericItem(id: 2, name: "Jonathan Kent")],
+            teams: [MTGenericItem(id: 5, name: "Eradicators")]
+        )
+        let filled = MetronFetcher.applyIssue(list: list, detail: detail, to: comic)
+        #expect(filled.metronIssueID == 38181)
+        #expect(filled.title == "Son of Superman, Part Six")
+        #expect(filled.summary == "Superman and son face the Eradicator.")
+        #expect(filled.writer == "Peter J. Tomasi")
+        #expect(filled.artist == "Patrick Gleason")
+        #expect(filled.coverArtist == "Patrick Gleason")
+        #expect(filled.inker == "Mick Gray")
+        #expect(filled.storyArcs == ["Son of Superman"])
+        #expect(filled.characters == ["Superman", "Jonathan Kent"])
+        #expect(filled.teams == ["Eradicators"])
+        #expect(filled.storeDate == MetronDates.parse("2016-09-07"))
+    }
+
+    @Test func applyIssueNeverWipesArcsCharactersTeamsWithEmpty() {
+        var comic = makeComic()
+        comic.storyArcs = ["Existing Arc"]
+        comic.characters = ["Existing Character"]
+        comic.teams = ["Existing Team"]
+        let list = MTIssueResult(id: 1, number: "6", issueName: nil, coverDate: nil, storeDate: nil)
+        let detail = MTIssueDetail(
+            id: 1, number: "6", collectionTitle: nil, storyTitles: nil,
+            coverDate: nil, storeDate: nil, desc: nil, image: nil,
+            credits: nil, arcs: [], characters: [], teams: []
+        )
+        let filled = MetronFetcher.applyIssue(list: list, detail: detail, to: comic)
+        #expect(filled.storyArcs == ["Existing Arc"])
+        #expect(filled.characters == ["Existing Character"])
+        #expect(filled.teams == ["Existing Team"])
+    }
+}

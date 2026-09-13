@@ -448,3 +448,120 @@ enum MTLinkParser {
         return nil
     }
 }
+
+// MARK: - Matching
+
+enum MetronMatcher {
+    /// Same scoring math as ComicVine — one shared core.
+    static func score(_ ref: MTSeriesRef, against comic: Comic, query: String) -> Double {
+        ComicVineMatcher.score(
+            name: ref.name, startYear: ref.yearBegan, publisher: ref.publisher,
+            against: comic, query: query
+        )
+    }
+}
+
+// MARK: - Shared fetch core
+
+/// Fills a `Comic` from Metron data. The two `apply*` functions are pure
+/// (no persistence, no network) so they're unit-testable; `fill`
+/// orchestrates the network calls, mirroring `ComicVineFetcher.fill`.
+enum MetronFetcher {
+
+    /// Series-level fields: series name canonical; publisher/year fill
+    /// blanks only; records the Metron series ID.
+    static func applySeries(_ ref: MTSeriesRef, to comic: Comic) -> Comic {
+        var updated = comic
+        if let name = ref.name, !name.isEmpty { updated.series = name }
+        if updated.publisher == nil || updated.publisher?.isEmpty == true {
+            updated.publisher = ref.publisher
+        }
+        if updated.year == nil {
+            updated.year = ref.yearBegan
+        }
+        updated.metronSeriesID = ref.id
+        return updated
+    }
+
+    /// Issue-level fields from a list row + optional detail. Blank-fill
+    /// scalars; replace-but-never-wipe arcs/characters/teams.
+    static func applyIssue(list: MTIssueResult, detail: MTIssueDetail?, to comic: Comic) -> Comic {
+        var updated = comic
+        updated.metronIssueID = list.id
+
+        if updated.year == nil {
+            updated.year = MetronDates.year(from: list.coverDate ?? detail?.coverDate)
+        }
+        if updated.storeDate == nil {
+            updated.storeDate = MetronDates.parse(list.storeDate ?? detail?.storeDate)
+        }
+
+        guard let detail else { return updated }
+
+        if updated.title == nil || updated.title?.isEmpty == true {
+            let storyTitle = detail.storyTitles?.first(where: { !$0.isEmpty })
+            let collection = (detail.collectionTitle?.isEmpty == false) ? detail.collectionTitle : nil
+            updated.title = storyTitle ?? collection
+        }
+        if updated.summary == nil || updated.summary?.isEmpty == true {
+            updated.summary = ComicVineMatcher.stripHTML(detail.desc)
+        }
+
+        // Credits: adapt Metron's structured roles to the shared role-name
+        // matcher (one CVPersonCredit per creator-role pair).
+        if let credits = detail.credits {
+            let flat = credits.flatMap { credit in
+                credit.roles.map { CVPersonCredit(name: credit.creator, role: $0.name) }
+            }
+            ComicVineMatcher.applyCredits(flat, to: &updated)
+        }
+
+        // Metron authoritative when non-empty; never wipe with empty.
+        let arcNames = (detail.arcs ?? []).map(\.name).filter { !$0.isEmpty }
+        if !arcNames.isEmpty { updated.storyArcs = arcNames }
+        let characterNames = (detail.characters ?? []).map(\.name).filter { !$0.isEmpty }
+        if !characterNames.isEmpty { updated.characters = characterNames }
+        let teamNames = (detail.teams ?? []).map(\.name).filter { !$0.isEmpty }
+        if !teamNames.isEmpty { updated.teams = teamNames }
+
+        return updated
+    }
+
+    /// Full fill: series fields, then (when the issue number is known)
+    /// issue list + detail. 1–3 API calls. Marks the comic fetched.
+    static func fill(_ comic: Comic, from ref: MTSeriesRef) async -> Comic {
+        var updated = applySeries(ref, to: comic)
+
+        if let issueNumber = ComicVineMatcher.normalizedIssueNumber(comic.issueNumber) {
+            do {
+                var issues = try await MetronService.shared.issues(
+                    seriesID: ref.id, issueNumber: issueNumber
+                )
+                // Fallback: list the series' issues and match the
+                // normalized number locally (mirrors the ComicVine path).
+                if issues.isEmpty {
+                    let all = try await MetronService.shared.issuesForSeries(seriesID: ref.id)
+                    if let match = all.first(where: {
+                        ComicVineMatcher.normalizedIssueNumber($0.number) == issueNumber
+                    }) {
+                        issues = [match]
+                    }
+                }
+                if let issue = issues.first {
+                    let detail = try? await MetronService.shared.issueDetail(id: issue.id)
+                    updated = applyIssue(list: issue, detail: detail, to: updated)
+                    AppLog.metadata.info("[Metron] Issue #\(issueNumber) matched (id \(issue.id)) for series \(ref.id) — writer:\(updated.writer ?? "–") artist:\(updated.artist ?? "–")")
+                } else {
+                    AppLog.metadata.info("[Metron] No issue #\(issueNumber) found in series \(ref.id)")
+                }
+            } catch {
+                // Series data still worth keeping; log and continue.
+                AppLog.metadata.error("[Metron] Issue lookup failed: \(error.localizedDescription)")
+            }
+        }
+
+        updated.metadataFetchedAt = Date()
+        updated.metadataCandidates = nil
+        return updated
+    }
+}
