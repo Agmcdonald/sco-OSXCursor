@@ -81,7 +81,10 @@ import Testing
             bookmarkData: nil,
             trashedFileName: nil,
             fileSize: 0,
-            deletedAt: Calendar.current.date(byAdding: .day, value: -daysAgo, to: now)!,
+            // Fixed 86,400s days, matching TrashRetention's own arithmetic —
+            // Calendar day-math would drift an hour across a DST transition and
+            // break the boundary assertions below on real dates.
+            deletedAt: now.addingTimeInterval(-Double(daysAgo) * 86_400),
             kind: .catalog,
             displayTitle: "X",
             coverThumb: nil

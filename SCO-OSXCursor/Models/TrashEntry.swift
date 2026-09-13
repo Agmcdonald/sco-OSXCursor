@@ -54,6 +54,10 @@ struct TrashEntry: Identifiable, FetchableRecord, PersistableRecord {
     var coverThumb: Data?
 
     enum Columns {
+        /// ⚠️ Persisted as `uuidString` TEXT (see `encode(to:)`). GRDB's UUID
+        /// key overloads — `deleteOne(db, id:)` / `fetchOne(db, id:)` — encode a
+        /// UUID as a 16-byte BLOB and will silently match nothing. Always
+        /// address rows with `key: id.uuidString`.
         static let id = Column("id")
         static let comicSnapshot = Column("comic_snapshot")
         static let originalPath = Column("original_path")
@@ -122,7 +126,9 @@ enum TrashRetention {
     static func expired(_ entries: [TrashEntry], retentionDays: Int?, now: Date = Date())
         -> [TrashEntry]
     {
-        guard let retentionDays else { return [] }
+        // A non-positive value is "Never" too: a negative one would put the
+        // cutoff in the future and expire the entire trash.
+        guard let retentionDays, retentionDays > 0 else { return [] }
         let cutoff = now.addingTimeInterval(-Double(retentionDays) * 86_400)
         return entries.filter { $0.deletedAt < cutoff }
     }
