@@ -560,11 +560,14 @@ extension LibraryViewModel {
     /// Batch fetch over several books (selection), throttled by the API client.
     /// Honors the "Auto-Apply Confident Matches" setting: when off, every book is
     /// routed to the review queue; when on, only ambiguous books are.
+    /// - Parameter force: when `true`, already-fetched books are fetched again
+    ///   instead of skipped — the selection bar's Re-fetch action.
     /// - Parameter onProgress: called on the main actor after each book with
     ///   (completed, total) so the caller can show progress.
     @MainActor
     func fetchComicVineMetadataBatch(
         for comics: [Comic],
+        force: Bool = false,
         onProgress: @MainActor (Int, Int) -> Void = { _, _ in }
     ) async -> BatchResult {
         var result = BatchResult()
@@ -579,7 +582,7 @@ extension LibraryViewModel {
             // changed the array.
             let latest = self.comics.first(where: { $0.id == comic.id }) ?? comic
             let outcome = await fetchComicVineMetadata(
-                for: latest, force: false, autoApplyConfident: autoApply
+                for: latest, force: force, autoApplyConfident: autoApply
             )
             switch outcome {
             case .updated: result.updated += 1

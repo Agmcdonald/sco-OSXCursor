@@ -702,13 +702,18 @@ extension LibraryViewModel {
     }
 
     /// Provider-routed batch fetch. Stops early when Metron rate-limits.
+    /// - Parameter force: when `true`, every book is re-fetched even if it was
+    ///   fetched before (or has stored candidates). Used by the selection
+    ///   bar's Re-fetch action to repair metadata a past bug stored wrong.
     @MainActor
     func fetchComicMetadataBatch(
         for comics: [Comic],
+        force: Bool = false,
         onProgress: @MainActor (Int, Int) -> Void = { _, _ in }
     ) async -> BatchResult {
         guard ComicSource.current == .metron else {
-            return await fetchComicVineMetadataBatch(for: comics, onProgress: onProgress)
+            return await fetchComicVineMetadataBatch(
+                for: comics, force: force, onProgress: onProgress)
         }
 
         var result = BatchResult()
@@ -721,7 +726,7 @@ extension LibraryViewModel {
         for (index, comic) in comics.enumerated() {
             let latest = self.comics.first(where: { $0.id == comic.id }) ?? comic
             let outcome = await fetchMetronMetadata(
-                for: latest, force: false, autoApplyConfident: autoApply
+                for: latest, force: force, autoApplyConfident: autoApply
             )
             switch outcome {
             case .updated: result.updated += 1

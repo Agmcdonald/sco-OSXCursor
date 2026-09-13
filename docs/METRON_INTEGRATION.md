@@ -105,6 +105,10 @@ rather than `.formatted()`.
   cost is that the summary says "N failed" for books that were never tried.
   (The ComicVine batch has no early exit — it counts a 429 as one failure and
   keeps going.)
+- **Re-fetch (force) batch.** The selection bar's "Re-fetch" control calls the
+  same batch with `force: true`, so every selected comic is fetched again
+  instead of being skipped as already-fetched — the way to repair metadata a
+  since-fixed bug stored wrong. It spends API budget on every selected book.
 - **Link overrides pass rate-limiting through.** `applyMetronLink` inspects a
   thrown error and re-emits `.rateLimited(retryAfter:)` instead of flattening
   it into `.failed`, so the picker shows the "try again after …" message rather

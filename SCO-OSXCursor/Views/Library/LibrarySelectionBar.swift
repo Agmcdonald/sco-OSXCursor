@@ -22,6 +22,9 @@ struct LibrarySelectionBar: View {
     let onAddToList: () -> Void
     let onRegenerateCovers: () -> Void
     let onFetchMetadata: () -> Void
+    /// Force re-fetch for the whole selection — the compact control sitting
+    /// next to Fetch Metadata.
+    var onRefetchMetadata: () -> Void = {}
     let onDelete: () -> Void
     let onCancel: () -> Void
     /// Disables the metadata button + shows a spinner while a batch runs.
@@ -233,6 +236,31 @@ struct LibrarySelectionBar: View {
             }
             .buttonStyle(.plain)
             .disabled(selectedComics.isEmpty || isFetchingMetadata)
+
+            // Force re-fetch: the plain batch skips books that were fetched
+            // before, so a bad stored match can only be repaired in bulk here.
+            Button(action: {
+                if !selectedComics.isEmpty && !isFetchingMetadata {
+                    onRefetchMetadata()
+                }
+            }) {
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: "arrow.clockwise")
+                    Text("Re-fetch")
+                        .font(Typography.bodySmall)
+                }
+                .foregroundColor(
+                    selectedComics.isEmpty || isFetchingMetadata
+                        ? TextColors.tertiary : TextColors.primary
+                )
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .background(BackgroundColors.elevated)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+            .disabled(selectedComics.isEmpty || isFetchingMetadata)
+            .help("Force re-fetch metadata for every selected book, replacing what a previous fetch stored. Uses API budget for each book.")
 
             // Regenerate Cover button
             Button(action: {

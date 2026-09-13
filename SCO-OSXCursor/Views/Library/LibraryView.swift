@@ -536,7 +536,8 @@ struct LibraryView: View {
             onEditFields: { showingBulkEdit = true },
             onAddToList: addSelectedToReadingList,
             onRegenerateCovers: regenerateCoversForSelected,
-            onFetchMetadata: fetchMetadataForSelected,
+            onFetchMetadata: { fetchMetadataForSelected() },
+            onRefetchMetadata: refetchMetadataForSelected,
             onDelete: {
                 requestDelete(viewModel.comics.filter { selectedComics.contains($0.id) })
             },
@@ -1482,19 +1483,28 @@ struct LibraryView: View {
     /// Selection-bar batch fetch across every selected book. Routes each
     /// file to the provider that supports it: EPUB books go to Open Library
     /// (no key needed), everything else to the active comic provider.
-    private func fetchMetadataForSelected() {
+    /// - Parameter force: re-fetch even books a previous run already fetched.
+    ///   Only the comic providers honor it — the Open Library path for EPUBs
+    ///   has no force mode, so those books are fetched normally.
+    private func fetchMetadataForSelected(force: Bool = false) {
         guard !selectedComics.isEmpty, !isBatchFetching else { return }
         let comics = viewModel.comics.filter { selectedComics.contains($0.id) }
         let epubs = comics.filter { $0.isEbook }
         let issues = comics.filter { !$0.isEbook }
         isBatchFetching = true
         let total = comics.count
-        flashComicVineStatus("Fetching metadata for \(total) book\(total == 1 ? "" : "s")…")
+        flashComicVineStatus(
+            force
+                ? "Re-fetching metadata for \(total) book\(total == 1 ? "" : "s")…"
+                : "Fetching metadata for \(total) book\(total == 1 ? "" : "s")…"
+        )
         Task {
             var summaries: [String] = []
 
             if !issues.isEmpty {
-                let result = await viewModel.fetchComicMetadataBatch(for: issues) { done, total in
+                let result = await viewModel.fetchComicMetadataBatch(
+                    for: issues, force: force
+                ) { done, total in
                     comicVineStatus = "Fetching comic metadata… \(done) of \(total)"
                 }
                 summaries.append(
@@ -1512,11 +1522,22 @@ struct LibraryView: View {
                 }
                 summaries.append(
                     issues.isEmpty ? result.summary : "Books: \(result.summary)")
+                // An epubs-only selection can't be force re-fetched — say so
+                // rather than letting the summary imply the force took effect.
+                if force && issues.isEmpty {
+                    summaries.append("Re-fetch applies to comics — books were fetched normally.")
+                }
             }
 
             isBatchFetching = false
             flashComicVineStatus(summaries.joined(separator: " "))
         }
+    }
+
+    /// Selection-bar force re-fetch: same batch, but already-fetched comics
+    /// are fetched again so a wrong stored match can be repaired in bulk.
+    private func refetchMetadataForSelected() {
+        fetchMetadataForSelected(force: true)
     }
 
     // MARK: - Import

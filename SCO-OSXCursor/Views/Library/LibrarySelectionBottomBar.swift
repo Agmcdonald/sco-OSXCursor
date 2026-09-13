@@ -103,6 +103,11 @@
                 Label("Fetch Metadata", systemImage: "network")
             }
             .disabled(actions.isFetchingMetadata)
+            Button(action: actions.onRefetchMetadata) {
+                Label("Re-fetch Metadata", systemImage: "arrow.clockwise")
+            }
+            .disabled(actions.isFetchingMetadata)
+            .help("Force re-fetch metadata for every selected book, replacing what a previous fetch stored. Uses API budget for each book.")
             Button(action: actions.onRegenerateCovers) {
                 Label("Regenerate Cover", systemImage: "arrow.clockwise.circle")
             }

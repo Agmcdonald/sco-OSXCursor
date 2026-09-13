@@ -21,6 +21,9 @@ struct LibrarySelectionActions {
     var onAddToList: () -> Void = {}
     var onRegenerateCovers: () -> Void = {}
     var onFetchMetadata: () -> Void = {}
+    /// Force variant: re-fetches every selected comic, replacing what an
+    /// earlier fetch stored (the normal batch skips already-fetched books).
+    var onRefetchMetadata: () -> Void = {}
     var onDelete: () -> Void = {}
     var onSendToDevice: () -> Void = {}
 

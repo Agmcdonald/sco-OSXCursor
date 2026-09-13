@@ -248,6 +248,7 @@ struct LibraryHeaderView: View {
             onAddToList: selectionActions.onAddToList,
             onRegenerateCovers: selectionActions.onRegenerateCovers,
             onFetchMetadata: selectionActions.onFetchMetadata,
+            onRefetchMetadata: selectionActions.onRefetchMetadata,
             onDelete: selectionActions.onDelete,
             onCancel: endSelection,
             isFetchingMetadata: selectionActions.isFetchingMetadata,
