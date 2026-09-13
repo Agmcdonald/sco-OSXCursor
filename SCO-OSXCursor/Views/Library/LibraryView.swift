@@ -852,11 +852,11 @@ struct LibraryView: View {
         } message: {
             if comicsPendingDelete.count == 1, let comic = comicsPendingDelete.first {
                 Text(
-                    "Remove “\(comic.displayName)” from your library? The file on your drive is not deleted."
+                    "Remove “\(comic.displayName)” from your library? It moves to the Trash in Maintenance, where you can restore it. The file on your drive is not deleted."
                 )
             } else {
                 Text(
-                    "Remove \(comicsPendingDelete.count) comics from your library? The files on your drive are not deleted."
+                    "Remove \(comicsPendingDelete.count) comics from your library? They move to the Trash in Maintenance, where you can restore them. The files on your drive are not deleted."
                 )
             }
         }
@@ -903,7 +903,7 @@ struct LibraryView: View {
                 Text("This folder is empty — deleting it won't affect any books.")
             } else {
                 Text(
-                    "“\(folder.name)” contains \(n) book\(n == 1 ? "" : "s"). Choose what to remove. Deleting files from your device cannot be undone."
+                    "“\(folder.name)” contains \(n) book\(n == 1 ? "" : "s"). Choose what to remove. Books — and their files, if you delete those too — move to the Trash in Maintenance, where you can restore them. They're kept for your retention period (30 days by default), then removed."
                 )
             }
         }

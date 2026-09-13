@@ -361,8 +361,8 @@ struct HealthReviewSheet: View {
         } message: {
             Text(
                 deleteFileToo
-                    ? "\"\(comicPendingDelete?.displayName ?? "")\" will be removed from the library AND its file deleted from this device. This cannot be undone."
-                    : "\"\(comicPendingDelete?.displayName ?? "")\" will be removed from the library. The file stays on disk."
+                    ? "\"\(comicPendingDelete?.displayName ?? "")\" will be removed from the library and its file taken off this device. The book moves to the Trash in Maintenance, where you can restore it."
+                    : "\"\(comicPendingDelete?.displayName ?? "")\" will be removed from the library. The book moves to the Trash in Maintenance, where you can restore it, and the file stays on disk."
             )
         }
     }

@@ -219,7 +219,7 @@ struct UserManualView: View {
                             icon: "trash",
                             title: "Deleting Books & Files",
                             description:
-                                "Deleting a book (from its right-click/long-press menu, or 'Delete' in the selection toolbar) removes it from your SCO library but leaves the original file untouched on your drive. To delete the underlying files from your device too, use a folder: gather the books into a folder, then choose 'Delete Folder' → 'Delete Files from Device'. Deleting files from your device is permanent and cannot be undone."
+                                "Deleting a book (from its right-click/long-press menu, or 'Delete' in the selection toolbar) removes it from your SCO library but leaves the original file untouched on your drive. To delete the underlying files from your device too, use a folder: gather the books into a folder, then choose 'Delete Folder' → 'Delete Files from Device'. Either way nothing is lost right away: deleted books — and their files, for device deletes — go to the Trash in Maintenance. Restore brings a book back with its metadata, reading progress, and folders (and puts its file back where it was). The Trash's retention setting decides how long items wait there before they're cleared automatically — 30 days by default, or 'Never Delete' to keep them until you say so. Only 'Empty Trash' and 'Delete Now' in Maintenance remove anything for good."
                         )
 
                         FeatureRow(
@@ -305,7 +305,7 @@ struct UserManualView: View {
                             icon: "trash",
                             title: "Deleting a Folder",
                             description:
-                                "Choosing 'Delete Folder' on a collection gives you three choices: 'Delete Folder Only' removes just the collection and leaves every book in your library; 'Remove Books from App' also removes those books from SCO but leaves the files on your drive; and 'Delete Files from Device' permanently deletes the underlying comic files too. The last option cannot be undone."
+                                "Choosing 'Delete Folder' on a collection gives you three choices: 'Delete Folder Only' removes just the collection and leaves every book in your library; 'Remove Books from App' also removes those books from SCO but leaves the files on your drive; and 'Delete Files from Device' takes the underlying comic files off your device too. With either of the last two, the books — and their files, for a device delete — move to the Trash in Maintenance, where you can restore them until your retention period runs out (30 days by default)."
                         )
 
                         FeatureRow(
@@ -640,6 +640,13 @@ struct UserManualView: View {
                         )
 
                         FeatureRow(
+                            icon: "trash",
+                            title: "Trash & Restore",
+                            description:
+                                "Every book you delete lands in the Trash section here — with its file too, if you chose to delete that from your device. 'Restore' puts a book back in your library with its metadata, reading progress, and folder memberships intact (and returns its file to where it came from). The 'Keep deleted items' picker sets how long items wait: 7, 30 (the default), or 90 days, or 'Never Delete' to keep them until you clear them yourself — anything past the window is swept away the next time the app launches. 'Empty Trash' and a row's 'Delete Now' are the only actions that remove something for good."
+                        )
+
+                        FeatureRow(
                             icon: "cylinder.split.1x2",
                             title: "Database Tools",
                             description:
@@ -728,7 +735,7 @@ struct UserManualView: View {
                             MenuItemRow(icon: "folder.badge.questionmark", name: "Locate File…",
                                 detail: "Shown only when a book's file is missing — point SCO at where the file moved to.")
                             MenuItemRow(icon: "trash", name: "Delete",
-                                detail: "Remove the book from your library. The file on your drive is left untouched.")
+                                detail: "Remove the book from your library — it moves to the Trash in Maintenance, where you can restore it. The file on your drive is left untouched.")
                         }
 
                         // Folder right-click menu
@@ -754,7 +761,7 @@ struct UserManualView: View {
                             MenuItemRow(icon: "arrow.up.left.and.arrow.down.right", name: "Set Vertical Zoom",
                                 detail: "Remember a zoom level for vertical-scroll reading in this folder.")
                             MenuItemRow(icon: "trash", name: "Delete Folder",
-                                detail: "For an empty folder, removes the collection. When it holds books, SCO offers three choices: 'Delete Folder Only' (books stay in your library), 'Delete Folder & Remove Books from App' (books leave the library but their files stay on disk), or 'Delete Folder & Delete Files from Device' — only the last erases files and can't be undone.")
+                                detail: "For an empty folder, removes the collection. When it holds books, SCO offers three choices: 'Delete Folder Only' (books stay in your library), 'Delete Folder & Remove Books from App' (books leave the library but their files stay on disk), or 'Delete Folder & Delete Files from Device' — only the last takes files off your device, and those books and files go to the Trash in Maintenance so you can restore them.")
                         }
 
                         // Reader controls
