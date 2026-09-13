@@ -1029,7 +1029,10 @@ final class LibraryViewModel: ObservableObject {
         let outcome = await TrashService.shared.restore(entry) { storedFile, comic in
             await self.fileTrashedFileIntoHomeLibrary(storedFile, comic: comic)
         }
-        if case .failed = outcome { return outcome }
+        // Reload unconditionally, including on `.failed`: one failure path —
+        // the manifest downgrade after the catalog row has already been saved —
+        // leaves a genuinely restored book in the database. Skipping the reload
+        // there would keep that row invisible until the next full load.
         await reloadAfterRestore()
         return outcome
     }
