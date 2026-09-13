@@ -59,3 +59,26 @@ import Testing
         #expect(snapshot?.storeDate == nil)
     }
 }
+
+// MARK: - Candidate provider tag
+
+@Suite struct CandidateProviderTests {
+
+    @Test func legacyCandidateJSONDecodesAsComicVine() {
+        let legacy = #"[{"id":123,"name":"Iron Man","startYear":1968,"publisher":"Marvel","issueCount":332}]"#
+        let list = CVCandidate.decodeList(legacy)
+        #expect(list.count == 1)
+        #expect(list[0].provider == nil)
+        #expect(list[0].isMetron == false)
+    }
+
+    @Test func metronCandidateRoundTrips() {
+        let candidate = CVCandidate(
+            id: 42, name: "Superman", startYear: 2016,
+            publisher: "DC Comics", issueCount: 45, provider: "Metron"
+        )
+        let json = CVCandidate.encodeList([candidate])
+        let decoded = CVCandidate.decodeList(json)
+        #expect(decoded.first?.isMetron == true)
+    }
+}

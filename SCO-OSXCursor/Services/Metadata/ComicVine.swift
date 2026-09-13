@@ -171,6 +171,12 @@ struct CVCandidate: Codable, Identifiable, Hashable {
     let publisher: String?
     let issueCount: Int?
 
+    /// Which provider these candidate IDs belong to. Nil (legacy) or
+    /// "ComicVine" = ComicVine volume IDs; "Metron" = Metron series IDs.
+    var provider: String? = nil
+
+    var isMetron: Bool { provider == "Metron" }
+
     static func encodeList(_ list: [CVCandidate]) -> String? {
         (try? JSONEncoder().encode(list)).flatMap { String(data: $0, encoding: .utf8) }
     }
