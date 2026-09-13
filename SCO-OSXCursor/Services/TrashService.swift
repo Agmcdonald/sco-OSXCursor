@@ -401,6 +401,15 @@ final class TrashService {
     func escalateToDeviceDelete(_ entry: TrashEntry) async -> EscalateOutcome {
         guard entry.canEscalateToDeviceDelete else { return .notApplicable }
 
+        // Bundled samples never had their file taken (trash() skips them the
+        // same way) — the file lives inside the app bundle, which the sandbox
+        // will refuse to modify. Refuse politely instead of surfacing a raw
+        // FileManager error after a scary confirmation.
+        if let snapshot = TrashSnapshot.decode(entry.comicSnapshot),
+           Comic.isBundled(snapshot.comic) {
+            return .failed("This is a bundled sample — its file is part of the app and can't be deleted.")
+        }
+
         let taken: (storedName: String, fileSize: Int64)
         do {
             taken = try await takeFileResolvingBookmark(
