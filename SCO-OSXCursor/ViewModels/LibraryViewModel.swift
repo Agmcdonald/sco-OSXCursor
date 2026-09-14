@@ -548,7 +548,20 @@ final class LibraryViewModel: ObservableObject {
             } catch {
                 AppLog.files.error(
                     "[LibraryViewModel] ❌ Save Metadata to File failed for \(comic.fileName): \(error.localizedDescription)")
-                summary.failures.append("\(comic.displayTitle): \(error.localizedDescription)")
+                // A write-permission denial here means the book's stored
+                // access grant is read-only — older imports capped their
+                // bookmarks with .securityScopeAllowOnlyReadAccess. The
+                // grant can't be widened in code; re-adding the file mints
+                // a fresh read-write one (import reuses the record).
+                let nsError = error as NSError
+                let isWriteDenied =
+                    nsError.domain == NSCocoaErrorDomain
+                    && nsError.code == CocoaError.fileWriteNoPermission.rawValue
+                let reason =
+                    isWriteDenied
+                    ? "SCO has read-only access to this file (from an older import). Re-add it via Quick Add or drag & drop to refresh access, then save again."
+                    : error.localizedDescription
+                summary.failures.append("\(comic.displayTitle): \(reason)")
             }
         }
         return summary
@@ -739,10 +752,14 @@ final class LibraryViewModel: ObservableObject {
                     continue
                 }
 
-                // Create bookmark for persistent access
+                // Create bookmark for persistent access. Read-WRITE scope
+                // (same as LibraryFileService.makeBookmark): imported-in-place
+                // books must stay writable for renames, library moves, and
+                // ComicInfo.xml embeds — a read-only scope here silently
+                // capped every later write to the file.
                 #if os(macOS)
                     let bookmarkData = try? url.bookmarkData(
-                        options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess],
+                        options: .withSecurityScope,
                         includingResourceValuesForKeys: nil,
                         relativeTo: nil
                     )
@@ -1385,7 +1402,7 @@ final class LibraryViewModel: ObservableObject {
 
         #if os(macOS)
             let bookmarkData = try? url.bookmarkData(
-                options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess],
+                options: .withSecurityScope,
                 includingResourceValuesForKeys: nil,
                 relativeTo: nil
             )
@@ -1723,7 +1740,7 @@ final class LibraryViewModel: ObservableObject {
             // Create bookmark for persistent access on the final file
             #if os(macOS)
                 let bookmarkData = try? fileURL.bookmarkData(
-                    options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess],
+                    options: .withSecurityScope,
                     includingResourceValuesForKeys: nil,
                     relativeTo: nil
                 )
