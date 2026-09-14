@@ -735,8 +735,8 @@ struct UserManualView: View {
                                 detail: "Package the book — file, metadata, and reading progress — to AirDrop or save for another device.")
                             MenuItemRow(icon: "network", name: "Fetch from ComicVine/Metron · Fetch Book Metadata",
                                 detail: "In its own section near the bottom. Look the book up online and fill in details automatically — your chosen comic source (ComicVine or Metron) for comics, Open Library / Google Books / Hardcover for eBooks. The wording changes to match the item type.")
-                            MenuItemRow(icon: "arrow.uturn.backward", name: "Revert ComicVine Fetch · Revert Metadata Fetch",
-                                detail: "Shown only after a fetch — puts back the details the book had before you fetched. The wording follows the item type.")
+                            MenuItemRow(icon: "arrow.uturn.backward", name: "Revert [Source] Fetch",
+                                detail: "Shown only after a fetch — puts back the details the book had before you fetched. Named for the source that filled the book (Revert Metron Fetch, Revert ComicVine Fetch, Revert Open Library Fetch…).")
                             MenuItemRow(icon: "arrow.clockwise.circle", name: "Regenerate Cover",
                                 detail: "Rebuild the cover thumbnail from the file's first page. Lives with the fetch actions.")
                             MenuItemRow(icon: "folder.badge.questionmark", name: "Locate File…",
