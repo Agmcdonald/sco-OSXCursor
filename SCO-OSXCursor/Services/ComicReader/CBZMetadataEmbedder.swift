@@ -120,7 +120,7 @@ final class CBZMetadataEmbedder {
         // back if the write or the re-verification fails.
         do {
             _ = try fm.replaceItemAt(url, withItemAt: tempURL)
-        } catch where Self.isPermissionDenial(error) {
+        } catch let error where Self.isPermissionDenial(error) {
             let backupURL = tempDir.appendingPathComponent("backup-" + url.lastPathComponent)
             try fm.copyItem(at: url, to: backupURL)
             do {
