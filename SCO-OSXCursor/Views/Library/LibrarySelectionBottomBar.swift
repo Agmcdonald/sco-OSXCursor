@@ -111,6 +111,11 @@
             Button(action: actions.onRegenerateCovers) {
                 Label("Regenerate Cover", systemImage: "arrow.clockwise.circle")
             }
+            Button(action: actions.onEmbedMetadata) {
+                Label("Save Metadata to File", systemImage: "square.and.arrow.down")
+            }
+            .disabled(actions.isEmbeddingMetadata)
+            .help("Write each selected book's metadata into its CBZ file as ComicInfo.xml. Only CBZ files are rewritten; other formats are skipped.")
 
             let removable = actions.removalFolders()
             if !removable.isEmpty {

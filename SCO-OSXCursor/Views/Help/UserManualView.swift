@@ -548,6 +548,13 @@ struct UserManualView: View {
                         )
 
                         FeatureRow(
+                            icon: "square.and.arrow.down",
+                            title: "Save Metadata to File (ComicInfo.xml)",
+                            description:
+                                "Once a book's metadata is right, you can write it back into the CBZ itself: choose 'Save Metadata to File' from the right-click/long-press menu, or select several books and use the selection bar's Save to File. SCO embeds a standard ComicInfo.xml inside the archive, so the series, issue, creators, and summary travel with the file into any other reader (Kavita, Komga, Panels…). Fields SCO doesn't track — and page lists written by other taggers — are preserved, and the file is only replaced after the rewritten archive verifies cleanly. CBZ only; other formats are skipped."
+                        )
+
+                        FeatureRow(
                             icon: "photo.artframe",
                             title: "Publisher Banners",
                             description:

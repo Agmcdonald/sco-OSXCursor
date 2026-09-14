@@ -26,9 +26,13 @@ struct LibrarySelectionActions {
     var onRefetchMetadata: () -> Void = {}
     var onDelete: () -> Void = {}
     var onSendToDevice: () -> Void = {}
+    /// Write each selected book's metadata back into its CBZ as ComicInfo.xml.
+    var onEmbedMetadata: () -> Void = {}
 
     /// Disables the metadata button and shows a spinner while a batch runs.
     var isFetchingMetadata: Bool = false
+    /// Disables Save Metadata to File while an embed batch is rewriting files.
+    var isEmbeddingMetadata: Bool = false
 
     /// Folders offered by the "Add to Folder" menu.
     var folders: [Folder] = []

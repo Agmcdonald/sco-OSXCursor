@@ -137,6 +137,8 @@ struct LibraryView: View {
     // Batch match review queue
     @State private var batchReviewIDs: [Comic.ID] = []
     @State private var showingBatchReview = false
+    // Save Metadata to File (ComicInfo.xml embed) — single + batch
+    @State private var isEmbeddingMetadata = false
 
     // MARK: - Derived Data
 
@@ -443,6 +445,7 @@ struct LibraryView: View {
                 updated.dateModified = Date()
                 viewModel.updateComic(updated)
             },
+            embedMetadata: { embedMetadataSingle($0) },
             folders: viewModel.folders,
             folderDisplayName: { viewModel.folderPathName($0) },
             foldersContaining: { viewModel.folders(containing: $0.id) },
@@ -546,7 +549,9 @@ struct LibraryView: View {
                 guard !selected.isEmpty else { return }
                 transferExportRequest = TransferExportRequest(comics: selected)
             },
+            onEmbedMetadata: embedMetadataForSelected,
             isFetchingMetadata: isBatchFetching,
+            isEmbeddingMetadata: isEmbeddingMetadata,
             folders: viewModel.folders,
             onAddToFolder: { folderID in
                 let ids = Array(selectedComics)
@@ -1548,6 +1553,43 @@ struct LibraryView: View {
     /// are fetched again so a wrong stored match can be repaired in bulk.
     private func refetchMetadataForSelected() {
         fetchMetadataForSelected(force: true)
+    }
+
+    // MARK: - Save Metadata to File (ComicInfo.xml)
+
+    /// Context-menu embed on a single book: writes the library's metadata
+    /// into the CBZ as ComicInfo.xml and reports the outcome in the toast.
+    private func embedMetadataSingle(_ comic: Comic) {
+        guard !isEmbeddingMetadata else { return }
+        isEmbeddingMetadata = true
+        Task {
+            let summary = await viewModel.embedComicInfo(for: [comic])
+            isEmbeddingMetadata = false
+            if summary.written == 1 {
+                flashComicVineStatus("\(comic.displayTitle): metadata saved into the file.")
+            } else if summary.unchanged == 1 {
+                flashComicVineStatus("\(comic.displayTitle): file already up to date.")
+            } else {
+                flashComicVineStatus(summary.message)
+            }
+        }
+    }
+
+    /// Selection-bar batch embed: rewrites every selected CBZ with the
+    /// library's current metadata. Other formats are counted as skipped.
+    private func embedMetadataForSelected() {
+        guard !selectedComics.isEmpty, !isEmbeddingMetadata else { return }
+        let comics = viewModel.comics.filter { selectedComics.contains($0.id) }
+        isEmbeddingMetadata = true
+        flashComicVineStatus(
+            "Saving metadata into \(comics.count) file\(comics.count == 1 ? "" : "s")…")
+        Task {
+            let summary = await viewModel.embedComicInfo(for: comics) { done, total in
+                comicVineStatus = "Saving metadata to files… \(done) of \(total)"
+            }
+            isEmbeddingMetadata = false
+            flashComicVineStatus(summary.message)
+        }
     }
 
     // MARK: - Import

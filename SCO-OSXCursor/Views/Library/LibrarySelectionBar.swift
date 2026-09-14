@@ -41,6 +41,10 @@ struct LibrarySelectionBar: View {
     /// Package the selection as .scobook files for AirDrop. Available on
     /// every platform — transfer runs Mac → iPad and iPad/iPhone → Mac.
     var onSendToDevice: () -> Void = {}
+    /// Write each selected book's metadata back into its CBZ as ComicInfo.xml.
+    var onEmbedMetadata: () -> Void = {}
+    /// Disables Save Metadata to File while an embed batch is rewriting files.
+    var isEmbeddingMetadata: Bool = false
 
     var body: some View {
         // Two rows (Andrew, Aug 7): one long row squeezed the trailing
@@ -283,6 +287,35 @@ struct LibrarySelectionBar: View {
             }
             .buttonStyle(.plain)
             .disabled(selectedComics.isEmpty)
+
+            // Write library metadata back into the selected CBZ files as
+            // ComicInfo.xml, so it travels with the file into other readers.
+            Button(action: {
+                if !selectedComics.isEmpty && !isEmbeddingMetadata {
+                    onEmbedMetadata()
+                }
+            }) {
+                HStack(spacing: Spacing.xs) {
+                    if isEmbeddingMetadata {
+                        ProgressView().scaleEffect(0.6)
+                    } else {
+                        Image(systemName: "square.and.arrow.down")
+                    }
+                    Text("Save to File")
+                        .font(Typography.bodySmall)
+                }
+                .foregroundColor(
+                    selectedComics.isEmpty || isEmbeddingMetadata
+                        ? TextColors.tertiary : TextColors.primary
+                )
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .background(BackgroundColors.elevated)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+            .disabled(selectedComics.isEmpty || isEmbeddingMetadata)
+            .help("Write each selected book's metadata into its CBZ file as ComicInfo.xml. Only CBZ files are rewritten; other formats are skipped.")
 
             // Send the selection to another device — Mac → iPad and
             // iPad/iPhone → Mac both go through the same export sheet.
