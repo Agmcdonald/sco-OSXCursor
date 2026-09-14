@@ -996,10 +996,13 @@ struct LibraryView: View {
         .overlay(alignment: .bottom) {
             if let status = comicVineStatus {
                 Text(status)
-                    .font(Typography.bodySmall)
+                    // ~50% larger than the old bodySmall (13pt) toast —
+                    // these confirmations were easy to miss (Andrew, Sep 13).
+                    .font(.system(size: 20, weight: .medium))
                     .foregroundColor(.white)
-                    .padding(.horizontal, Spacing.lg)
-                    .padding(.vertical, Spacing.md)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, Spacing.xl)
+                    .padding(.vertical, Spacing.lg)
                     .background(Color.black.opacity(0.85))
                     .clipShape(Capsule())
                     // Stacks above the selection bottom bar rather than
