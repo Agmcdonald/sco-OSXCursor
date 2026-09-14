@@ -687,11 +687,12 @@ extension LibraryViewModel {
             return false
         }
         var updated = current
+        let source = current.metadataSource ?? "metadata"
         snapshot.restore(onto: &updated)
         updated.metadataBackup = nil
         updated.dateModified = Date()
         updateComic(updated)
-        AppLog.metadata.info("[ComicVine] ↩️ Reverted fetch for \(updated.fileName)")
+        AppLog.metadata.info("[Fetch] ↩️ Reverted \(source) fetch for \(updated.fileName)")
         return true
     }
 }

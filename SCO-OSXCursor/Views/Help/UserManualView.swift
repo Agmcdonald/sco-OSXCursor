@@ -551,7 +551,7 @@ struct UserManualView: View {
                             icon: "square.and.arrow.down",
                             title: "Save Metadata to File (ComicInfo.xml)",
                             description:
-                                "Once a book's metadata is right, you can write it back into the CBZ itself: choose 'Save Metadata to File' from the right-click/long-press menu, or select several books and use the selection bar's Save to File. SCO embeds a standard ComicInfo.xml inside the archive, so the series, issue, creators, and summary travel with the file into any other reader (Kavita, Komga, Panels…). Fields SCO doesn't track — and page lists written by other taggers — are preserved, and the file is only replaced after the rewritten archive verifies cleanly. CBZ only; other formats are skipped."
+                                "Once a book's metadata is right, you can write it back into the CBZ itself: choose 'Save Metadata to File' from the right-click/long-press menu, or select several books and use the selection bar's Save to File. SCO embeds a standard ComicInfo.xml inside the archive, so the series, issue, creators, and summary travel with the file into any other reader (Kavita, Komga, Panels…). Fields SCO doesn't track — and page lists written by other taggers — are preserved, and the file is only replaced after the rewritten archive verifies cleanly. CBZ only; other formats are skipped. Prefer it hands-off? Turn on 'Automatically Save Metadata into CBZ Files' under Settings → File Metadata and every edit, fetch, or bulk change writes itself into the file."
                         )
 
                         FeatureRow(
@@ -735,8 +735,8 @@ struct UserManualView: View {
                                 detail: "Package the book — file, metadata, and reading progress — to AirDrop or save for another device.")
                             MenuItemRow(icon: "network", name: "Fetch from ComicVine/Metron · Fetch Book Metadata",
                                 detail: "In its own section near the bottom. Look the book up online and fill in details automatically — your chosen comic source (ComicVine or Metron) for comics, Open Library / Google Books / Hardcover for eBooks. The wording changes to match the item type.")
-                            MenuItemRow(icon: "arrow.uturn.backward", name: "Revert ComicVine Fetch · Revert Metadata Fetch",
-                                detail: "Shown only after a fetch — puts back the details the book had before you fetched. The wording follows the item type.")
+                            MenuItemRow(icon: "arrow.uturn.backward", name: "Revert [Source] Fetch",
+                                detail: "Shown only after a fetch — puts back the details the book had before you fetched. Named for the source that filled the book (Revert Metron Fetch, Revert ComicVine Fetch, Revert Open Library Fetch…).")
                             MenuItemRow(icon: "arrow.clockwise.circle", name: "Regenerate Cover",
                                 detail: "Rebuild the cover thumbnail from the file's first page. Lives with the fetch actions.")
                             MenuItemRow(icon: "folder.badge.questionmark", name: "Locate File…",

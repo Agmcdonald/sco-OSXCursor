@@ -271,12 +271,12 @@ struct ComicCellInteraction: ViewModifier {
         }
 
         // Escape hatch for a wrong match — only offered while a pre-fetch
-        // snapshot is stored on the record.
+        // snapshot is stored on the record. Named for the provider that
+        // supplied the last applied fetch (metadataSource), so the menu
+        // never says ComicVine on a book Metron filled.
         if comic.metadataBackup != nil {
             Button(action: { actions.revertMetadataFetch(comic) }) {
-                Label(
-                    comic.isEbook ? "Revert Metadata Fetch" : "Revert ComicVine Fetch",
-                    systemImage: "arrow.uturn.backward")
+                Label(revertFetchLabel, systemImage: "arrow.uturn.backward")
             }
         }
 
@@ -301,6 +301,17 @@ struct ComicCellInteraction: ViewModifier {
         Button(role: .destructive, action: { actions.delete(comic) }) {
             Label("Delete", systemImage: "trash")
         }
+    }
+
+    /// "Revert Metron Fetch" / "Revert ComicVine Fetch" / "Revert Open
+    /// Library Fetch"… — whichever source the record says supplied the
+    /// last fetch. Generic when unknown (older records predate the
+    /// metadataSource stamp).
+    private var revertFetchLabel: String {
+        if let source = comic.metadataSource, !source.isEmpty {
+            return "Revert \(source) Fetch"
+        }
+        return "Revert Metadata Fetch"
     }
 
     // MARK: - Folder Submenu

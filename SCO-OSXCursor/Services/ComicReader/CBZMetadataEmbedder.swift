@@ -109,10 +109,64 @@ final class CBZMetadataEmbedder {
             throw CBZEmbedError.verificationFailed
         }
 
-        // ── Atomic swap ──
-        _ = try fm.replaceItemAt(url, withItemAt: tempURL)
+        // ── Swap the verified copy into place ──
+        // Preferred: atomic replace (a rename inside the parent folder).
+        // Books imported in place from OUTSIDE the home library carry a
+        // file-scoped sandbox grant only — the file itself is writable, but
+        // renaming within its parent folder is not, and replaceItemAt fails
+        // with "You don't have permission to save the file … in the
+        // folder …". Fall back to rewriting the file's CONTENTS through its
+        // own file handle: not atomic, so keep a pristine backup and put it
+        // back if the write or the re-verification fails.
+        do {
+            _ = try fm.replaceItemAt(url, withItemAt: tempURL)
+        } catch let swapError {
+            AppLog.files.info(
+                "[CBZEmbed] ↪️ Atomic swap refused (\(swapError.localizedDescription)) — trying in-place rewrite: \(comic.fileName)")
+            let backupURL = tempDir.appendingPathComponent("backup-" + url.lastPathComponent)
+            try fm.copyItem(at: url, to: backupURL)
+            do {
+                try Self.overwriteContents(of: url, with: tempURL)
+
+                // Re-verify on the destination itself before trusting it.
+                let final = try Archive(url: url, accessMode: .read)
+                guard Self.imageEntryCount(in: final) == imageCountBefore,
+                    let finalEntry = Self.comicInfoEntry(in: final)
+                else { throw CBZEmbedError.verificationFailed }
+                var finalXML = Data()
+                _ = try final.extract(finalEntry) { finalXML.append($0) }
+                guard finalXML == xml else { throw CBZEmbedError.verificationFailed }
+            } catch {
+                // Best effort: put the original bytes back before surfacing.
+                try? Self.overwriteContents(of: url, with: backupURL)
+                AppLog.files.error(
+                    "[CBZEmbed] ❌ In-place rewrite failed (\(error.localizedDescription)) after swap refusal: \(comic.fileName)")
+                throw error
+            }
+            AppLog.files.info(
+                "[CBZEmbed] ✅ Wrote ComicInfo.xml in place (file-scoped access): \(comic.fileName)")
+            return .written
+        }
         AppLog.files.info("[CBZEmbed] ✅ Wrote ComicInfo.xml into \(comic.fileName)")
         return .written
+    }
+
+    // MARK: - In-place Fallback
+
+    /// Chunked overwrite of `destination`'s contents with `source`'s bytes,
+    /// through the destination's own file handle (works with a file-scoped
+    /// sandbox grant). NOT atomic — callers must verify afterwards and
+    /// restore from a backup on failure.
+    private static func overwriteContents(of destination: URL, with source: URL) throws {
+        let input = try FileHandle(forReadingFrom: source)
+        defer { try? input.close() }
+        let output = try FileHandle(forWritingTo: destination)
+        defer { try? output.close() }
+        try output.truncate(atOffset: 0)
+        while let chunk = try input.read(upToCount: 4_194_304), !chunk.isEmpty {
+            try output.write(contentsOf: chunk)
+        }
+        try output.synchronize()
     }
 
     // MARK: - Helpers
