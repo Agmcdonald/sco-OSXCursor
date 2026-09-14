@@ -39,6 +39,9 @@ struct ComicCellActions {
     var sendToDevice: (Comic) -> Void = { _ in }
     /// Toggle the opt-in PDFKit book reader for a single PDF.
     var togglePDFReadAsBook: (Comic) -> Void = { _ in }
+    /// Write the library's metadata back into the book's CBZ as
+    /// ComicInfo.xml (offered on writable CBZ files only).
+    var embedMetadata: (Comic) -> Void = { _ in }
 
     // MARK: Folders
     /// All user folders (for the "Add to Folder" submenu).
@@ -274,6 +277,16 @@ struct ComicCellInteraction: ViewModifier {
                 Label(
                     comic.isEbook ? "Revert Metadata Fetch" : "Revert ComicVine Fetch",
                     systemImage: "arrow.uturn.backward")
+            }
+        }
+
+        // Write the library's metadata into the file itself, so it travels
+        // with the CBZ into any other reader. Bundled samples live inside
+        // the app bundle and can't be rewritten; a missing file has nothing
+        // to write into.
+        if comic.fileType == .cbz && !Comic.isBundled(comic) && !comic.needsAttention {
+            Button(action: { actions.embedMetadata(comic) }) {
+                Label("Save Metadata to File", systemImage: "square.and.arrow.down")
             }
         }
 

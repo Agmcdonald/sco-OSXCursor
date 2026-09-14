@@ -433,6 +433,118 @@ final class LibraryViewModel: ObservableObject {
         AppLog.library.info("[LibraryViewModel] ✅ Cover regenerated for \(comic.fileName)")
     }
 
+    // MARK: - Save Metadata to File (ComicInfo.xml)
+
+    /// Outcome of a "Save Metadata to File" batch.
+    struct EmbedMetadataSummary {
+        var written = 0
+        var unchanged = 0
+        /// Books the embed doesn't apply to (not CBZ, bundled sample, missing file).
+        var skipped = 0
+        /// "title: reason" per failure.
+        var failures: [String] = []
+
+        var message: String {
+            var parts: [String] = []
+            if written > 0 {
+                parts.append("Saved metadata into \(written) file\(written == 1 ? "" : "s").")
+            }
+            if unchanged > 0 { parts.append("\(unchanged) already up to date.") }
+            if skipped > 0 { parts.append("\(skipped) skipped (CBZ files only).") }
+            if !failures.isEmpty {
+                parts.append("\(failures.count) failed: \(failures.joined(separator: "; "))")
+            }
+            if parts.isEmpty { parts.append("Nothing to save.") }
+            return parts.joined(separator: " ")
+        }
+    }
+
+    /// Writes each book's library metadata back into its file as
+    /// ComicInfo.xml. CBZ only — other formats, bundled samples, and books
+    /// whose file is missing are counted as skipped. Existing ComicInfo.xml
+    /// content the library doesn't track is preserved (see ComicInfoWriter).
+    func embedComicInfo(
+        for comicsToEmbed: [Comic],
+        progress: ((Int, Int) -> Void)? = nil
+    ) async -> EmbedMetadataSummary {
+        var summary = EmbedMetadataSummary()
+
+        // The rewrite replaces files under the home library root, so hold
+        // the root's scope across the batch (same rule as
+        // LibraryFileService.moveToLibrary documents).
+        let scopedLibraryRoot = beginHomeLibraryScope()
+        defer { scopedLibraryRoot?.stopAccessingSecurityScopedResource() }
+
+        let total = comicsToEmbed.count
+        for (index, comic) in comicsToEmbed.enumerated() {
+            progress?(index + 1, total)
+
+            guard comic.fileType == .cbz, !Comic.isBundled(comic), !comic.needsAttention
+            else {
+                summary.skipped += 1
+                continue
+            }
+
+            // Resolve file URL (honour security-scoped bookmark if present)
+            var fileURL = comic.filePath
+            var didStartAccess = false
+            if let bookmarkData = comic.bookmarkData {
+                var isStale = false
+                #if os(macOS)
+                    if let resolved = try? URL(
+                        resolvingBookmarkData: bookmarkData,
+                        options: .withSecurityScope,
+                        relativeTo: nil,
+                        bookmarkDataIsStale: &isStale
+                    ) {
+                        fileURL = resolved
+                        didStartAccess = resolved.startAccessingSecurityScopedResource()
+                    }
+                #else
+                    if let resolved = try? URL(
+                        resolvingBookmarkData: bookmarkData,
+                        options: [],
+                        relativeTo: nil,
+                        bookmarkDataIsStale: &isStale
+                    ) {
+                        fileURL = resolved
+                        didStartAccess = resolved.startAccessingSecurityScopedResource()
+                    }
+                #endif
+            }
+            defer { if didStartAccess { fileURL.stopAccessingSecurityScopedResource() } }
+
+            do {
+                let url = fileURL
+                let result = try await Task.detached(priority: .utility) {
+                    try CBZMetadataEmbedder().embed(comic, into: url)
+                }.value
+
+                switch result {
+                case .written:
+                    summary.written += 1
+                    // The rewrite changed the file on disk — keep the
+                    // catalog row's size/modified stamps honest.
+                    var updated = comic
+                    if let size = try? FileManager.default
+                        .attributesOfItem(atPath: url.path)[.size] as? Int64
+                    {
+                        updated.fileSize = size
+                    }
+                    updated.dateModified = Date()
+                    updateComic(updated)
+                case .unchanged:
+                    summary.unchanged += 1
+                }
+            } catch {
+                AppLog.files.error(
+                    "[LibraryViewModel] ❌ Save Metadata to File failed for \(comic.fileName): \(error.localizedDescription)")
+                summary.failures.append("\(comic.displayTitle): \(error.localizedDescription)")
+            }
+        }
+        return summary
+    }
+
     // ✅ Background read + single publish
     func syncProgressFromTracker() {
         Task.detached(priority: .utility) { [progressTracker] in
