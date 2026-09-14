@@ -28,6 +28,7 @@ A native Swift/SwiftUI comic collection organizer and reader for macOS and iPadO
 - **Folders**: Your own collections, with per-folder reading style overrides — purely organizational, files never move
 - **Fast selection**: Swipe to select, long-click to enter selection mode (Mac), Escape to clear, shift-click ranges
 - **Bulk actions**: Fetch or re-fetch metadata, edit fields, mark read/unread, add to folders, send to device
+- **Trash & Restore**: Every delete is recoverable — removed books (and deleted files) sit in a Trash in the Maintenance tab with a 7/30/90-day or never auto-purge, restorable with their metadata, reading progress, and folders intact
 - **Metadata Editing**: Correct and update comic information with intelligent suggestions and autocomplete
 
 ### 📖 Reader
