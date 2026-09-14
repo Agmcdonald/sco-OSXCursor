@@ -620,9 +620,24 @@ enum MetronFetcher {
     /// Full fill: series fields, then (when the issue number is known)
     /// issue list + detail. 1–3 API calls. Marks the comic fetched.
     static func fill(_ comic: Comic, from ref: MTSeriesRef, overwrite: Bool = false) async -> Comic {
+        await fillReportingIssueMatch(comic, from: ref, overwrite: overwrite).comic
+    }
+
+    /// Like `fill`, but also reports whether an issue row was matched.
+    /// `issueMatched` is true when the series carried the book's issue
+    /// number — and also when the book has no issue number to look for.
+    /// Callers holding alternative series candidates use a false report to
+    /// try the next candidate instead of committing series-only data (the
+    /// best name match can be a look-alike that doesn't contain the issue,
+    /// e.g. an event tie-in branding of the same title).
+    static func fillReportingIssueMatch(
+        _ comic: Comic, from ref: MTSeriesRef, overwrite: Bool = false
+    ) async -> (comic: Comic, issueMatched: Bool) {
         var updated = applySeries(ref, to: comic, overwrite: overwrite)
+        var issueMatched = true
 
         if let issueNumber = ComicVineMatcher.normalizedIssueNumber(comic.issueNumber) {
+            issueMatched = false
             do {
                 var issues = try await MetronService.shared.issues(
                     seriesID: ref.id, issueNumber: issueNumber
@@ -640,6 +655,7 @@ enum MetronFetcher {
                 if let issue = issues.first {
                     let detail = try? await MetronService.shared.issueDetail(id: issue.id)
                     updated = applyIssue(list: issue, detail: detail, to: updated, overwrite: overwrite)
+                    issueMatched = true
                     AppLog.metadata.info("[Metron] Issue #\(issueNumber) matched (id \(issue.id)) for series \(ref.id) — writer:\(updated.writer ?? "–") artist:\(updated.artist ?? "–")")
                 } else {
                     AppLog.metadata.info("[Metron] No issue #\(issueNumber) found in series \(ref.id)")
@@ -652,7 +668,7 @@ enum MetronFetcher {
 
         updated.metadataFetchedAt = Date()
         updated.metadataCandidates = nil
-        return updated
+        return (updated, issueMatched)
     }
 }
 
@@ -693,8 +709,18 @@ extension LibraryViewModel {
         if force, let seriesID = comic.metronSeriesID {
             do {
                 let detail = try await MetronService.shared.seriesDetail(id: seriesID)
-                return await applyMetronSeries(
-                    MTSeriesRef(detail: detail), to: comic, overwrite: true)
+                let current = comics.first(where: { $0.id == comic.id }) ?? comic
+                let attempt = await MetronFetcher.fillReportingIssueMatch(
+                    current, from: MTSeriesRef(detail: detail), overwrite: true)
+                if attempt.issueMatched {
+                    return commitMetronFill(attempt.comic, replacing: current)
+                }
+                // The stored series doesn't carry this issue — an earlier
+                // fetch matched a look-alike. Fall through to the name
+                // search so the candidate fallback below can find the
+                // series that does.
+                AppLog.metadata.info(
+                    "[Metron] Stored series \(seriesID) lacks issue #\(comic.issueNumber ?? "?") — falling back to search")
             } catch MetronService.MTError.http(404) {
                 // Series deleted or merged away since we stored it — fall
                 // through to the normal search path rather than failing.
@@ -734,8 +760,12 @@ extension LibraryViewModel {
 
             if confident && autoApplyConfident {
                 // A forced re-fetch is a deliberate repair — let provider values
-                // replace what's there instead of only filling blanks.
-                return await applyMetronSeries(best.ref, to: comic, overwrite: force)
+                // replace what's there instead of only filling blanks. The
+                // lower-scored candidates ride along so a top pick that
+                // doesn't contain this issue can be skipped for one that does.
+                return await applyMetronSeries(
+                    best.ref, to: comic, overwrite: force,
+                    fallbacks: scored.dropFirst().map { $0.ref })
             }
 
             let candidates = scored.prefix(5).map { item in
@@ -906,12 +936,44 @@ extension LibraryViewModel {
 
     @MainActor
     private func applyMetronSeries(
-        _ ref: MTSeriesRef, to comic: Comic, overwrite: Bool = false
+        _ ref: MTSeriesRef, to comic: Comic, overwrite: Bool = false,
+        fallbacks: [MTSeriesRef] = []
     ) async -> ComicVineFetchOutcome {
         let current = comics.first(where: { $0.id == comic.id }) ?? comic
-        let snapshot = CVMetadataSnapshot(of: current)
-        var updated = await MetronFetcher.fill(current, from: ref, overwrite: overwrite)
-        updated.metadataBackup = snapshot.encoded()
+        let first = await MetronFetcher.fillReportingIssueMatch(
+            current, from: ref, overwrite: overwrite)
+        var updated = first.comic
+
+        // The top-scoring series can be a look-alike that doesn't carry
+        // this issue — event brandings split a run across series on Metron
+        // (e.g. "Imperial War: Nova – Centurion" vs "Nova: Centurion
+        // (2026)", which is where #006 actually lives). Prefer a
+        // lower-scored candidate that HAS the issue over committing
+        // series-only data. Extra API calls are spent only on this miss
+        // path, never on a clean top match.
+        if !first.issueMatched {
+            for fallback in fallbacks.prefix(3) {
+                let attempt = await MetronFetcher.fillReportingIssueMatch(
+                    current, from: fallback, overwrite: overwrite)
+                if attempt.issueMatched {
+                    AppLog.metadata.info(
+                        "[Metron] ↪️ Series \(ref.id) lacks the issue — using candidate \(fallback.id) which has it")
+                    updated = attempt.comic
+                    break
+                }
+            }
+        }
+
+        return commitMetronFill(updated, replacing: current)
+    }
+
+    /// Stamp provenance + the undo snapshot and persist a Metron fill.
+    @MainActor
+    private func commitMetronFill(
+        _ filled: Comic, replacing current: Comic
+    ) -> ComicVineFetchOutcome {
+        var updated = filled
+        updated.metadataBackup = CVMetadataSnapshot(of: current).encoded()
         updated.metadataSource = "Metron"
         updated.dateModified = Date()
         updateComic(updated)
