@@ -120,7 +120,9 @@ final class CBZMetadataEmbedder {
         // back if the write or the re-verification fails.
         do {
             _ = try fm.replaceItemAt(url, withItemAt: tempURL)
-        } catch let error where Self.isPermissionDenial(error) {
+        } catch let swapError {
+            AppLog.files.info(
+                "[CBZEmbed] ↪️ Atomic swap refused (\(swapError.localizedDescription)) — trying in-place rewrite: \(comic.fileName)")
             let backupURL = tempDir.appendingPathComponent("backup-" + url.lastPathComponent)
             try fm.copyItem(at: url, to: backupURL)
             do {
@@ -137,6 +139,8 @@ final class CBZMetadataEmbedder {
             } catch {
                 // Best effort: put the original bytes back before surfacing.
                 try? Self.overwriteContents(of: url, with: backupURL)
+                AppLog.files.error(
+                    "[CBZEmbed] ❌ In-place rewrite failed (\(error.localizedDescription)) after swap refusal: \(comic.fileName)")
                 throw error
             }
             AppLog.files.info(
@@ -148,27 +152,6 @@ final class CBZMetadataEmbedder {
     }
 
     // MARK: - In-place Fallback
-
-    /// True for sandbox/POSIX permission denials — the signal that the
-    /// atomic-swap strategy (a rename in the parent folder) is disallowed
-    /// while the file itself may still be writable.
-    private static func isPermissionDenial(_ error: Error) -> Bool {
-        var current: NSError? = error as NSError
-        while let nsError = current {
-            if nsError.domain == NSCocoaErrorDomain,
-                nsError.code == CocoaError.fileWriteNoPermission.rawValue
-            {
-                return true
-            }
-            if nsError.domain == NSPOSIXErrorDomain,
-                nsError.code == Int(EACCES) || nsError.code == Int(EPERM)
-            {
-                return true
-            }
-            current = nsError.userInfo[NSUnderlyingErrorKey] as? NSError
-        }
-        return false
-    }
 
     /// Chunked overwrite of `destination`'s contents with `source`'s bytes,
     /// through the destination's own file handle (works with a file-scoped
