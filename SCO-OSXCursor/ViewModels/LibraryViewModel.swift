@@ -256,6 +256,15 @@ final class LibraryViewModel: ObservableObject {
             if seriesChanged {
                 pruneKnowledgeIfOrphaned(type: .series, name: old.series)
             }
+
+            // Mirror the change into the file's ComicInfo.xml when the
+            // auto-save setting is on. Runs after any relocation above so
+            // the embed targets the file's final path, and only when a
+            // field the embed actually writes has changed — progress,
+            // favorites, and reader prefs never trigger a file rewrite.
+            if Self.comicInfoFieldsChanged(old, comic) {
+                await autoEmbedComicInfoIfEnabled(ids: [comic.id])
+            }
         }
     }
 
@@ -543,6 +552,60 @@ final class LibraryViewModel: ObservableObject {
             }
         }
         return summary
+    }
+
+    // MARK: - Automatic Embed (Settings opt-in)
+
+    /// True when the user opted in to automatic ComicInfo.xml write-back
+    /// (Settings → File Metadata). Stored under its own UserDefaults key —
+    /// NOT inside AppSettings' Codable blob, where a new required field
+    /// would invalidate previously saved settings on decode.
+    static var autoEmbedComicInfoEnabled: Bool {
+        UserDefaults.standard.bool(forKey: "autoEmbedComicInfo")
+    }
+
+    /// True when a change between two versions of a record affects a field
+    /// `ComicInfoWriter` embeds — the signal that the file's ComicInfo.xml
+    /// is now stale. Deliberately ignores `totalPages` (it's set when a
+    /// book is first opened, and rewriting the archive mid-read isn't worth
+    /// a PageCount) along with everything non-metadata.
+    private static func comicInfoFieldsChanged(_ old: Comic, _ new: Comic) -> Bool {
+        old.title != new.title
+            || old.series != new.series
+            || old.issueNumber != new.issueNumber
+            || old.volume != new.volume
+            || old.year != new.year
+            || old.publisher != new.publisher
+            || old.writer != new.writer
+            || old.artist != new.artist
+            || old.coverArtist != new.coverArtist
+            || old.colorist != new.colorist
+            || old.inker != new.inker
+            || old.editor != new.editor
+            || old.summary != new.summary
+            || old.tags != new.tags
+            || old.storyArcs != new.storyArcs
+            || old.characters != new.characters
+            || old.teams != new.teams
+            || old.contentRating != new.contentRating
+    }
+
+    /// Runs the embed for the given books when the auto-save setting is on.
+    /// Silent: outcomes are logged, not toasted — this fires after ordinary
+    /// edits and fetches and shouldn't add chatter. Reads FRESH records by
+    /// id (an edit may have just relocated or renamed the file) and filters
+    /// to writable CBZs here. The `.written` path updates only
+    /// fileSize/dateModified, which `comicInfoFieldsChanged` ignores, so
+    /// the embed can never re-trigger itself.
+    func autoEmbedComicInfoIfEnabled(ids: [UUID]) async {
+        guard Self.autoEmbedComicInfoEnabled else { return }
+        let targets = comics.filter {
+            ids.contains($0.id) && $0.fileType == .cbz
+                && !Comic.isBundled($0) && !$0.needsAttention
+        }
+        guard !targets.isEmpty else { return }
+        let summary = await embedComicInfo(for: targets)
+        AppLog.files.info("[LibraryViewModel] 🔄 Auto-embed: \(summary.message)")
     }
 
     // ✅ Background read + single publish
@@ -1515,12 +1578,17 @@ final class LibraryViewModel: ObservableObject {
         let affectsLocation =
             values.series != nil || values.publisher != nil || values.year != nil
             || values.volume != nil || values.bookFormat != nil
-        if affectsLocation {
-            Task {
+        Task {
+            if affectsLocation {
                 for id in ids {
                     await resortAfterEdit(id)
                 }
             }
+            // Mirror the bulk change into each file's ComicInfo.xml when the
+            // auto-save setting is on (bulkEdit persists directly, bypassing
+            // updateComic's own hook). After the re-filing above, so the
+            // embed targets each file's final path.
+            await autoEmbedComicInfoIfEnabled(ids: Array(ids))
         }
     }
 

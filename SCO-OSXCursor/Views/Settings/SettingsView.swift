@@ -203,6 +203,11 @@ struct SettingsView: View {
                     metronSettings
                 }
 
+                // File metadata write-back (ComicInfo.xml)
+                settingsSection(title: "File Metadata", icon: "square.and.arrow.down") {
+                    fileMetadataSettings
+                }
+
                 // Feedback & Support Section
                 settingsSection(title: "Feedback & Support", icon: "envelope") {
                     feedbackSettings
@@ -435,6 +440,9 @@ struct SettingsView: View {
     @AppStorage(HardcoverConfig.tokenDefaultsKey) private var hardcoverAPIToken: String = ""
     @AppStorage("autoApplyConfidentMatches") private var autoApplyConfidentMatches = true
     @AppStorage("singleTapConfirmMatch") private var singleTapConfirmMatch = false
+    // Same key LibraryViewModel.autoEmbedComicInfoEnabled reads. Its own
+    // UserDefaults entry, not an AppSettings field — see that property's note.
+    @AppStorage("autoEmbedComicInfo") private var autoEmbedComicInfo = false
     @ObservedObject private var comicVineQuota = ComicVineQuota.shared
 
     @AppStorage(ComicSource.defaultsKey) private var comicMetadataProvider: String = ComicSource.comicVine.rawValue
@@ -794,6 +802,30 @@ struct SettingsView: View {
                 Spacer()
 
                 Toggle("", isOn: $singleTapConfirmMatch)
+                    .labelsHidden()
+            }
+        }
+    }
+
+    // MARK: - File Metadata Settings
+
+    private var fileMetadataSettings: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text("Automatically Save Metadata into CBZ Files")
+                        .font(Typography.h3)
+                        .foregroundColor(TextColors.primary)
+
+                    Text("After you edit a book's metadata or apply a fetch, SCO rewrites the CBZ's embedded ComicInfo.xml to match — so the file always carries what the library knows. Only CBZ files are rewritten, fields SCO doesn't track are preserved, and the file is replaced only after the updated archive verifies. With this off, use 'Save Metadata to File' from a book's right-click menu or the selection bar whenever you want.")
+                        .font(Typography.bodySmall)
+                        .foregroundColor(TextColors.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+
+                Toggle("", isOn: $autoEmbedComicInfo)
                     .labelsHidden()
             }
         }
