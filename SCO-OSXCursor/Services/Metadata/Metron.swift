@@ -670,6 +670,38 @@ enum MetronFetcher {
         updated.metadataCandidates = nil
         return (updated, issueMatched)
     }
+
+    /// Series found by punctuation-variant name searches — the last-resort
+    /// pool when the primary query's candidates all lack the book's issue
+    /// (or the primary search returns nothing). Metron's name filter
+    /// matches substrings, so "Nova - Centurion" never returns
+    /// "Nova: Centurion (2026)" — but its segment "Nova" does. Splits the
+    /// query on separator punctuation, searches each distinctive segment,
+    /// and returns the union ranked by the normal scorer.
+    static func variantCandidates(for comic: Comic, originalQuery: String) async -> [MTSeriesRef] {
+        var working = originalQuery
+        for separator in ["–", "—", ":", " - ", "/"] {
+            working = working.replacingOccurrences(of: separator, with: "|")
+        }
+        let segments = working.split(separator: "|")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { $0.count >= 4 && $0.caseInsensitiveCompare(originalQuery) != .orderedSame }
+        guard !segments.isEmpty else { return [] }
+
+        var refs: [MTSeriesRef] = []
+        var seen = Set<Int>()
+        for segment in segments.prefix(3) {
+            guard let rows = try? await MetronService.shared.searchSeries(segment) else { continue }
+            for row in rows {
+                let ref = MTSeriesRef(listRow: row)
+                if seen.insert(ref.id).inserted { refs.append(ref) }
+            }
+        }
+        return refs
+            .map { (ref: $0, score: MetronMatcher.score($0, against: comic, query: originalQuery)) }
+            .sorted { $0.score > $1.score }
+            .map { $0.ref }
+    }
 }
 
 // MARK: - Fetch Flow
@@ -747,9 +779,14 @@ extension LibraryViewModel {
 
         do {
             let rows = try await MetronService.shared.searchSeries(query)
-            guard !rows.isEmpty else { return .noMatches }
-
-            let refs = rows.map(MTSeriesRef.init(listRow:))
+            var refs = rows.map(MTSeriesRef.init(listRow:))
+            // Metron's name filter is a substring match, so punctuation
+            // differences ("Nova - Centurion" vs "Nova: Centurion") can
+            // return nothing. Segment searches recover those.
+            if refs.isEmpty {
+                refs = await MetronFetcher.variantCandidates(for: comic, originalQuery: query)
+            }
+            guard !refs.isEmpty else { return .noMatches }
             let scored = refs
                 .map { (ref: $0, score: MetronMatcher.score($0, against: comic, query: query)) }
                 .sorted { $0.score > $1.score }
@@ -762,10 +799,16 @@ extension LibraryViewModel {
                 // A forced re-fetch is a deliberate repair — let provider values
                 // replace what's there instead of only filling blanks. The
                 // lower-scored candidates ride along so a top pick that
-                // doesn't contain this issue can be skipped for one that does.
+                // doesn't contain this issue can be skipped for one that
+                // does — and if every candidate lacks it, variant searches
+                // get one more chance to find the series the primary
+                // query's punctuation hid.
                 return await applyMetronSeries(
                     best.ref, to: comic, overwrite: force,
-                    fallbacks: scored.dropFirst().map { $0.ref })
+                    fallbacks: scored.dropFirst().map { $0.ref },
+                    variantCandidatesOnMiss: {
+                        await MetronFetcher.variantCandidates(for: comic, originalQuery: query)
+                    })
             }
 
             let candidates = scored.prefix(5).map { item in
@@ -937,7 +980,8 @@ extension LibraryViewModel {
     @MainActor
     private func applyMetronSeries(
         _ ref: MTSeriesRef, to comic: Comic, overwrite: Bool = false,
-        fallbacks: [MTSeriesRef] = []
+        fallbacks: [MTSeriesRef] = [],
+        variantCandidatesOnMiss: (() async -> [MTSeriesRef])? = nil
     ) async -> ComicVineFetchOutcome {
         let current = comics.first(where: { $0.id == comic.id }) ?? comic
         let first = await MetronFetcher.fillReportingIssueMatch(
@@ -952,14 +996,35 @@ extension LibraryViewModel {
         // series-only data. Extra API calls are spent only on this miss
         // path, never on a clean top match.
         if !first.issueMatched {
+            var tried: Set<Int> = [ref.id]
+            var resolved = false
             for fallback in fallbacks.prefix(3) {
+                tried.insert(fallback.id)
                 let attempt = await MetronFetcher.fillReportingIssueMatch(
                     current, from: fallback, overwrite: overwrite)
                 if attempt.issueMatched {
                     AppLog.metadata.info(
                         "[Metron] ↪️ Series \(ref.id) lacks the issue — using candidate \(fallback.id) which has it")
                     updated = attempt.comic
+                    resolved = true
                     break
+                }
+            }
+            // Last resort: the primary search itself can miss the right
+            // series entirely (substring name filter — a hyphen in the
+            // query never matches a colon in the name). Re-search with
+            // punctuation-variant queries and try their best matches.
+            if !resolved, let variantCandidatesOnMiss {
+                let variants = await variantCandidatesOnMiss()
+                for candidate in variants.filter({ !tried.contains($0.id) }).prefix(3) {
+                    let attempt = await MetronFetcher.fillReportingIssueMatch(
+                        current, from: candidate, overwrite: overwrite)
+                    if attempt.issueMatched {
+                        AppLog.metadata.info(
+                            "[Metron] ↪️ Variant search found series \(candidate.id) (\(candidate.name ?? "?")) carrying the issue")
+                        updated = attempt.comic
+                        break
+                    }
                 }
             }
         }
