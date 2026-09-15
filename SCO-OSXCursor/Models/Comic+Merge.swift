@@ -85,7 +85,7 @@ extension Comic {
         let mergedPreferredTransition = existing.preferredTransition
         
         // Metadata: existing wins if populated
-        return Comic(
+        var merged = Comic(
             id: existing.id, // Preserve identity
             filePath: extracted.filePath, // always trust current file location
             fileName: extracted.fileName,
@@ -132,5 +132,9 @@ extension Comic {
             dateAdded: existing.dateAdded,
             dateModified: Date() // refresh when we merge anything
         )
+        // The custom cover isn't an init parameter (see Comic.swift), so a
+        // rebuilt merge result must carry it over or a rescan would drop it.
+        merged.customCoverImageData = existing.customCoverImageData
+        return merged
     }
 }

@@ -41,6 +41,16 @@ struct Comic: Identifiable, Codable {
 
     // MARK: - Cover & Visual
     var coverImageData: Data?
+    /// User-picked cover picture. Overrides the extracted first-page cover
+    /// everywhere covers render; the extracted bytes stay untouched
+    /// underneath, so removing the custom picture restores them instantly.
+    /// Deliberately NOT an init parameter — every constructor produces
+    /// "no custom cover"; only explicit user action sets it.
+    var customCoverImageData: Data? = nil
+
+    /// The cover to render: the custom picture when set, else the extracted
+    /// first-page cover. Display sites use this, never `coverImageData`.
+    var displayCoverData: Data? { customCoverImageData ?? coverImageData }
 
     // MARK: - Status & Progress
     var status: Status
