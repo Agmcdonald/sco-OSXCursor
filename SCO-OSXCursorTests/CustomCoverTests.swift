@@ -66,6 +66,17 @@ import Testing
         #expect(merged.displayCoverData == Data([0x0A, 0x0B]))
     }
 
+    // Exporter regression: a book with a custom cover but no extracted
+    // cover must still be flagged hasCover so the importer (gated on
+    // manifest.hasCover) doesn't discard the cover bytes the exporter wrote.
+    @Test func manifestHasCoverReflectsDisplayCoverNotExtractedCover() {
+        var c = makeComic()
+        c.coverImageData = nil
+        c.customCoverImageData = Data([0x0A, 0x0B])
+        let manifest = TransferManifest(comic: c, fileSHA256: "deadbeef", actualFileSize: 2)
+        #expect(manifest.hasCover == true)
+    }
+
     // The webcomic case: normalization must cap the long side at 800 px, so
     // a picked image never bloats the DB (and the sliver problem the custom
     // cover exists to fix stays fixed for the stored bytes).

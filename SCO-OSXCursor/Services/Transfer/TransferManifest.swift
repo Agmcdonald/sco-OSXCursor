@@ -177,7 +177,7 @@ struct TransferManifest: Codable {
         self.fileSize = actualFileSize
         self.fileSHA256 = fileSHA256
         self.bookEntryPath = BookPackage.bookEntryPath(for: comic.fileName)
-        self.hasCover = comic.coverImageData != nil
+        self.hasCover = comic.displayCoverData != nil
         self.sentDateAdded = comic.dateAdded
 
         self.metadata = Metadata(
