@@ -310,7 +310,7 @@ struct CoverCollage: View {
     @ViewBuilder
     private func cell(at index: Int, width: CGFloat, height: CGFloat) -> some View {
         if index < previewComics.count,
-            let data = previewComics[index].coverImageData,
+            let data = previewComics[index].displayCoverData,
             let image = PageImageCache.shared.coverImage(
                 from: data, cacheKey: previewComics[index].id.uuidString)
         {
@@ -419,9 +419,9 @@ struct FolderCardView: View {
         case .book:
             // Use the resolved book cover; if the book was removed, fall back to
             // the collage so the card is never blank.
-            if let comic = coverComic, comic.coverImageData != nil {
+            if let comic = coverComic, comic.displayCoverData != nil {
                 SingleImageCover(
-                    imageData: comic.coverImageData,
+                    imageData: comic.displayCoverData,
                     cacheKey: comic.id.uuidString,
                     placeholderSystemImage: "folder"
                 )
@@ -621,7 +621,7 @@ struct FolderReorderSheet: View {
                                 .frame(width: 28, alignment: .trailing)
 
                             SingleImageCover(
-                                imageData: comic.coverImageData,
+                                imageData: comic.displayCoverData,
                                 cacheKey: comic.id.uuidString,
                                 placeholderSystemImage: "book.closed"
                             )
@@ -897,7 +897,7 @@ struct FolderCoverBookPicker: View {
         let isSelected = comic.id == selectedID
         VStack(alignment: .leading, spacing: Spacing.xs) {
             SingleImageCover(
-                imageData: comic.coverImageData,
+                imageData: comic.displayCoverData,
                 cacheKey: comic.id.uuidString,
                 placeholderSystemImage: "book.closed"
             )

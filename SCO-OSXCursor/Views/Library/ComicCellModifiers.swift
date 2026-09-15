@@ -517,7 +517,7 @@ struct SelectionCheckbox: View {
 
         var body: some View {
             VStack(spacing: 0) {
-                if let data = comic.coverImageData,
+                if let data = comic.displayCoverData,
                     let image = PageImageCache.shared.coverImage(
                         from: data, cacheKey: comic.id.uuidString)
                 {

@@ -19,7 +19,7 @@ struct NextIssuePreviewOverlay: View {
     let onDismiss: () -> Void
 
     private var coverImage: PlatformImage? {
-        guard let data = comic.coverImageData else { return nil }
+        guard let data = comic.displayCoverData else { return nil }
         return PageImageCache.shared.coverImage(
             from: data, cacheKey: comic.id.uuidString)
     }

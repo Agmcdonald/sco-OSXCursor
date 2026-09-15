@@ -109,7 +109,7 @@ struct ComicCardView: View {
                 // Cover image or placeholder — decoded once via the cover
                 // cache (raw NSImage/UIImage(data:) re-decoded the full bytes
                 // on every grid render)
-                if let coverData = comic.coverImageData,
+                if let coverData = comic.displayCoverData,
                     let cover = PageImageCache.shared.coverImage(
                         from: coverData, cacheKey: comic.id.uuidString)
                 {

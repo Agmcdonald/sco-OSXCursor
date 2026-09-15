@@ -179,7 +179,7 @@ enum LibraryHealth {
     }
 
     static func missingCovers(in comics: [Comic]) -> [Comic] {
-        comics.filter { $0.coverImageData == nil }
+        comics.filter { $0.displayCoverData == nil }
     }
 
     /// Potential duplicates: same series + same issue number. Groups are
@@ -512,7 +512,7 @@ private struct HealthReviewRow: View {
 
     @ViewBuilder
     private var coverThumb: some View {
-        if let data = comic.coverImageData,
+        if let data = comic.displayCoverData,
             let cover = PageImageCache.shared.coverImage(
                 from: data, cacheKey: comic.id.uuidString)
         {

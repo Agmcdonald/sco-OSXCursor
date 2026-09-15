@@ -88,7 +88,7 @@ final class TrashService {
                 deletedAt: Date(),
                 kind: kind,
                 displayTitle: comic.displayTitle,
-                coverThumb: await TrashService.thumbnailOffMain(from: comic.coverImageData)
+                coverThumb: await TrashService.thumbnailOffMain(from: comic.displayCoverData)
             )
 
             var manifestRowWritten = false

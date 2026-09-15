@@ -820,10 +820,10 @@ struct LibraryView: View {
         // clears the item automatically (isPresented + inner `if let` left the
         // Cancel path flaky on iPhone).
         .sheet(item: $folderPendingVerticalZoom) { folder in
-            let sample = memberComics(in: folder.id).first(where: { $0.coverImageData != nil })
+            let sample = memberComics(in: folder.id).first(where: { $0.displayCoverData != nil })
             FolderVerticalZoomSheet(
                 folderName: folder.name,
-                sampleImageData: sample?.coverImageData,
+                sampleImageData: sample?.displayCoverData,
                 sampleCacheKey: sample?.id.uuidString ?? "folder-zoom-sample",
                 initialZoom: folder.verticalZoomScale,
                 onSave: { zoom in

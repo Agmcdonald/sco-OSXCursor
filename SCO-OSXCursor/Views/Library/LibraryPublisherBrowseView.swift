@@ -184,7 +184,7 @@ struct LibraryPublisherBrowseView: View {
 
                 // Thumbnail of first cover
                 if let firstComic = group.comics.first,
-                    let coverData = firstComic.coverImageData,
+                    let coverData = firstComic.displayCoverData,
                     let cover = PageImageCache.shared.coverImage(
                         from: coverData, cacheKey: firstComic.id.uuidString)
                 {

@@ -566,7 +566,7 @@ struct ComicDetailView: View {
     private var headerView: some View {
         HStack(spacing: Spacing.lg) {
             // Cover Image
-            if let coverData = editedComic.coverImageData,
+            if let coverData = editedComic.displayCoverData,
                 let cover = PageImageCache.shared.coverImage(
                     from: coverData, cacheKey: editedComic.id.uuidString)
             {
