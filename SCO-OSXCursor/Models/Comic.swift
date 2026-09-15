@@ -41,6 +41,16 @@ struct Comic: Identifiable, Codable {
 
     // MARK: - Cover & Visual
     var coverImageData: Data?
+    /// User-picked cover picture. Overrides the extracted first-page cover
+    /// everywhere covers render; the extracted bytes stay untouched
+    /// underneath, so removing the custom picture restores them instantly.
+    /// Deliberately NOT an init parameter — every constructor produces
+    /// "no custom cover"; only explicit user action sets it.
+    var customCoverImageData: Data? = nil
+
+    /// The cover to render: the custom picture when set, else the extracted
+    /// first-page cover. Display sites use this, never `coverImageData`.
+    var displayCoverData: Data? { customCoverImageData ?? coverImageData }
 
     // MARK: - Status & Progress
     var status: Status
@@ -768,6 +778,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         static let editor = Column("editor")
         static let summary = Column("summary")
         static let coverImageData = Column("cover_image_data")
+        static let customCoverImageData = Column("custom_cover_image_data")
         static let status = Column("status")
         static let currentPage = Column("current_page")
         static let totalPages = Column("total_pages")
@@ -831,6 +842,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         container[Columns.editor] = editor
         container[Columns.summary] = summary
         container[Columns.coverImageData] = coverImageData
+        container[Columns.customCoverImageData] = customCoverImageData
         container[Columns.status] = status.rawValue
         container[Columns.currentPage] = currentPage
         container[Columns.totalPages] = totalPages
@@ -976,6 +988,9 @@ extension Comic: FetchableRecord, PersistableRecord {
             dateAdded: dateAdded,
             dateModified: dateModified
         )
+        // Not an init parameter (see the property's doc comment) — read it
+        // off the row after the memberwise pass.
+        customCoverImageData = row["custom_cover_image_data"]
     }
 }
 

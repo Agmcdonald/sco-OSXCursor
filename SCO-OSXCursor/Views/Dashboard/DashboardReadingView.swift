@@ -324,7 +324,7 @@ private struct CoverThumbnail: View {
     @ViewBuilder
     private func coverImage(width: CGFloat, height: CGFloat, cornerRadius: CGFloat) -> some View {
         // Decoded via the shared cover cache — no per-render full decode
-        if let coverData = comic.coverImageData,
+        if let coverData = comic.displayCoverData,
             let cover = PageImageCache.shared.coverImage(
                 from: coverData, cacheKey: comic.id.uuidString)
         {

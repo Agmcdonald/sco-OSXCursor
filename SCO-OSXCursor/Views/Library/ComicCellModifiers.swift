@@ -42,6 +42,12 @@ struct ComicCellActions {
     /// Write the library's metadata back into the book's CBZ as
     /// ComicInfo.xml (offered on writable CBZ files only).
     var embedMetadata: (Comic) -> Void = { _ in }
+    /// Open the image file picker to set a user-chosen cover picture.
+    var setCustomCover: (Comic) -> Void = { _ in }
+    /// iOS only: pick the custom cover from the Photos library.
+    var setCustomCoverFromPhotos: (Comic) -> Void = { _ in }
+    /// Drop the custom picture; the extracted first-page cover returns.
+    var removeCustomCover: (Comic) -> Void = { _ in }
 
     // MARK: Folders
     /// All user folders (for the "Add to Folder" submenu).
@@ -290,10 +296,32 @@ struct ComicCellInteraction: ViewModifier {
             }
         }
 
-        if showsRegenerate {
-            Button(action: { actions.regenerateCover(comic) }) {
-                Label("Regenerate Cover", systemImage: "arrow.clockwise.circle")
+        Menu {
+            #if os(iOS)
+                Button(action: { actions.setCustomCoverFromPhotos(comic) }) {
+                    Label("Choose from Photos…", systemImage: "photo.stack")
+                }
+                Button(action: { actions.setCustomCover(comic) }) {
+                    Label("Choose from Files…", systemImage: "folder")
+                }
+            #else
+                Button(action: { actions.setCustomCover(comic) }) {
+                    Label("Choose Picture…", systemImage: "photo")
+                }
+            #endif
+            if showsRegenerate {
+                Button(action: { actions.regenerateCover(comic) }) {
+                    Label("Regenerate Cover", systemImage: "arrow.clockwise.circle")
+                }
             }
+            if comic.customCoverImageData != nil {
+                Divider()
+                Button(action: { actions.removeCustomCover(comic) }) {
+                    Label("Remove Custom Cover", systemImage: "xmark.circle")
+                }
+            }
+        } label: {
+            Label("Cover", systemImage: "photo.on.rectangle.angled")
         }
 
         Divider()
@@ -517,7 +545,7 @@ struct SelectionCheckbox: View {
 
         var body: some View {
             VStack(spacing: 0) {
-                if let data = comic.coverImageData,
+                if let data = comic.displayCoverData,
                     let image = PageImageCache.shared.coverImage(
                         from: data, cacheKey: comic.id.uuidString)
                 {

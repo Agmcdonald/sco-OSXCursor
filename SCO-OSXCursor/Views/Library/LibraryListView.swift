@@ -92,7 +92,7 @@ struct ComicRowView: View {
         HStack(spacing: Spacing.lg) {
             // Cover image
             ZStack {
-                if let coverData = comic.coverImageData,
+                if let coverData = comic.displayCoverData,
                     let cover = PageImageCache.shared.coverImage(
                         from: coverData, cacheKey: comic.id.uuidString)
                 {

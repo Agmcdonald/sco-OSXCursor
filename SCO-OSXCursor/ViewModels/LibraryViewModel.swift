@@ -442,6 +442,39 @@ final class LibraryViewModel: ObservableObject {
         AppLog.library.info("[LibraryViewModel] ✅ Cover regenerated for \(comic.fileName)")
     }
 
+    // MARK: - Custom book covers
+
+    /// Assign a user-picked picture as the book's cover. Bytes are
+    /// downsampled to a storage-friendly JPEG (max 800 px) before saving.
+    /// The extracted first-page cover is kept untouched underneath, so
+    /// removing the custom picture restores it instantly.
+    /// Returns false when the bytes can't be decoded as an image.
+    @discardableResult
+    func setCustomCover(for comic: Comic, imageData rawData: Data) -> Bool {
+        guard let normalized = PageImageCache.storageCoverData(from: rawData) else {
+            AppLog.library.error(
+                "[LibraryViewModel] ❌ Could not decode custom cover image for \(comic.fileName)")
+            return false
+        }
+        var updated = comic
+        updated.customCoverImageData = normalized
+        updated.dateModified = Date()
+        updateComic(updated)
+        Task { await logActivity(.coverChanged, comic: updated, old: nil, new: "Custom picture") }
+        AppLog.library.info("[LibraryViewModel] ✅ Custom cover set for \(comic.fileName)")
+        return true
+    }
+
+    /// Remove the custom picture; the extracted first-page cover shows again.
+    func clearCustomCover(for comic: Comic) {
+        guard comic.customCoverImageData != nil else { return }
+        var updated = comic
+        updated.customCoverImageData = nil
+        updated.dateModified = Date()
+        updateComic(updated)
+        Task { await logActivity(.coverChanged, comic: updated, old: "Custom picture", new: "Extracted cover") }
+    }
+
     // MARK: - Save Metadata to File (ComicInfo.xml)
 
     /// Outcome of a "Save Metadata to File" batch.

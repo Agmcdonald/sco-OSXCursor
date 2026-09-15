@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 import os
 
 #if os(macOS)
@@ -48,6 +49,8 @@ struct ComicDetailView: View {
 
     @State private var showingSaveConfirmation = false
     @State private var saveError: String?
+    @State private var isHoveringCover = false
+    @State private var showingCoverPicker = false
 
     /// EPUB layout: whether the optional comic-specific fields are expanded.
     @State private var showComicFields = false
@@ -124,6 +127,7 @@ struct ComicDetailView: View {
             || draftColorist != (comic.colorist ?? "") || draftInker != (comic.inker ?? "")
             || draftEditor != (comic.editor ?? "") || draftSummary != (comic.summary ?? "")
             || draftRating != (comic.rating ?? 0)
+            || editedComic.customCoverImageData != comic.customCoverImageData
     }
 
     var body: some View {
@@ -565,34 +569,7 @@ struct ComicDetailView: View {
 
     private var headerView: some View {
         HStack(spacing: Spacing.lg) {
-            // Cover Image
-            if let coverData = editedComic.coverImageData,
-                let cover = PageImageCache.shared.coverImage(
-                    from: coverData, cacheKey: editedComic.id.uuidString)
-            {
-                #if os(macOS)
-                    Image(nsImage: cover)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 120, height: 180)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                #else
-                    Image(uiImage: cover)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 120, height: 180)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                #endif
-            } else {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(BackgroundColors.elevated)
-                    .frame(width: 120, height: 180)
-                    .overlay(
-                        Image(systemName: "book.closed")
-                            .font(.system(size: 40))
-                            .foregroundColor(TextColors.tertiary)
-                    )
-            }
+            coverThumb
 
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 // Display title built from current draft values so it updates as the user types
@@ -618,6 +595,83 @@ struct ComicDetailView: View {
 
             Spacer()
         }
+    }
+
+    // MARK: Cover thumb — click or drop an image to stage a custom cover
+
+    private var coverThumb: some View {
+        ZStack {
+            if let coverData = editedComic.displayCoverData,
+                let cover = PageImageCache.shared.coverImage(
+                    from: coverData, cacheKey: editedComic.id.uuidString)
+            {
+                #if os(macOS)
+                    Image(nsImage: cover)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                #else
+                    Image(uiImage: cover)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                #endif
+            } else {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(BackgroundColors.elevated)
+                    .overlay(
+                        Image(systemName: "book.closed")
+                            .font(.system(size: 40))
+                            .foregroundColor(TextColors.tertiary)
+                    )
+            }
+            // Edit hint on hover (same affordance as PublisherBannerView)
+            if isHoveringCover {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.black.opacity(0.45))
+                Image(systemName: "pencil")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.white)
+            }
+        }
+        .frame(width: 120, height: 180)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .onHover { isHoveringCover = $0 }
+        .onTapGesture { showingCoverPicker = true }
+        // Attached to this subview, not the sheet root — SwiftUI honors only
+        // one .fileImporter per view (see LibraryView.swift:717).
+        .fileImporter(
+            isPresented: $showingCoverPicker,
+            allowedContentTypes: [.image],
+            allowsMultipleSelection: false
+        ) { result in
+            handleCoverPick(result)
+        }
+        .onDrop(of: [.image], isTargeted: nil) { providers in
+            guard let provider = providers.first else { return false }
+            _ = provider.loadDataRepresentation(
+                forTypeIdentifier: UTType.image.identifier
+            ) { data, _ in
+                guard let data else { return }
+                Task { @MainActor in stageCustomCover(data) }
+            }
+            return true
+        }
+        .help("Click or drop an image to set a custom cover")
+    }
+
+    /// Normalize picked bytes and stage them on the draft — persisted when
+    /// the user hits Save, discarded on Cancel.
+    private func stageCustomCover(_ rawData: Data) {
+        guard let normalized = PageImageCache.storageCoverData(from: rawData) else { return }
+        editedComic.customCoverImageData = normalized
+    }
+
+    private func handleCoverPick(_ result: Result<[URL], Error>) {
+        guard case .success(let urls) = result, let url = urls.first else { return }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: url) else { return }
+        stageCustomCover(data)
     }
 
     // Live preview of the display title using the current draft values

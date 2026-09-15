@@ -126,7 +126,7 @@ final class BookPackageExporter {
             let sha256 = digest.map { String(format: "%02x", $0) }.joined()
 
             // ── 2. Cover (raw bytes, already a small downsampled JPEG) ──
-            if let coverData = comic.coverImageData {
+            if let coverData = comic.displayCoverData {
                 try addDataEntry(coverData, at: BookPackage.coverEntryPath, to: archive)
             }
 

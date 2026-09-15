@@ -31,6 +31,7 @@ struct ActivityEvent: Identifiable, Codable {
         case statusChanged = "status_changed"
         case ratingChanged = "rating_changed"
         case favoriteToggled = "favorite_toggled"
+        case coverChanged = "cover_changed"
 
         // Knowledge base
         case knowledgeAdded = "knowledge_added"
@@ -53,6 +54,7 @@ struct ActivityEvent: Identifiable, Codable {
             case .statusChanged: return "Status Changed"
             case .ratingChanged: return "Rating Changed"
             case .favoriteToggled: return "Favorite Toggled"
+            case .coverChanged: return "Cover Updated"
             case .knowledgeAdded: return "Knowledge Added"
             case .knowledgeDeleted: return "Knowledge Removed"
             }
@@ -75,6 +77,7 @@ struct ActivityEvent: Identifiable, Codable {
             case .statusChanged: return "checkmark.circle.fill"
             case .ratingChanged: return "star.fill"
             case .favoriteToggled: return "heart.fill"
+            case .coverChanged: return "photo.fill"
             case .knowledgeAdded: return "brain.head.profile"
             case .knowledgeDeleted: return "brain.head.profile"
             }

@@ -296,7 +296,7 @@ struct KnowledgeDetailView: View {
     private func bookRow(_ comic: Comic) -> some View {
         HStack(spacing: Spacing.md) {
             // Cover thumbnail
-            if let coverData = comic.coverImageData,
+            if let coverData = comic.displayCoverData,
                 let cover = PageImageCache.shared.coverImage(
                     from: coverData, cacheKey: comic.id.uuidString)
             {
