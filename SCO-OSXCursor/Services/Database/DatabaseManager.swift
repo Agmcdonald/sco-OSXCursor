@@ -761,6 +761,22 @@ final class DatabaseManager {
             AppLog.database.info("[DatabaseManager] ✅ Migration v33_trash_entries complete")
         }
 
+        // Version 34: user-picked custom book covers. Lives beside the
+        // extracted cover so regenerate/rescan/transfer keep writing
+        // cover_image_data without ever touching the user's choice.
+        migrator.registerMigration("v34_custom_cover") { db in
+            AppLog.database.info("[DatabaseManager] 🔄 Running migration: v34_custom_cover")
+            do {
+                try db.alter(table: "comics") { t in
+                    t.add(column: "custom_cover_image_data", .blob)
+                }
+                AppLog.database.info("[DatabaseManager] ✅ Added custom_cover_image_data column")
+            } catch {
+                AppLog.database.error("[DatabaseManager] ℹ️ custom_cover_image_data column may already exist: \(error.localizedDescription)")
+            }
+            AppLog.database.info("[DatabaseManager] ✅ Migration v34_custom_cover complete")
+        }
+
         return migrator
     }
 

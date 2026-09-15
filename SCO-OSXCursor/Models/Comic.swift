@@ -778,6 +778,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         static let editor = Column("editor")
         static let summary = Column("summary")
         static let coverImageData = Column("cover_image_data")
+        static let customCoverImageData = Column("custom_cover_image_data")
         static let status = Column("status")
         static let currentPage = Column("current_page")
         static let totalPages = Column("total_pages")
@@ -841,6 +842,7 @@ extension Comic: FetchableRecord, PersistableRecord {
         container[Columns.editor] = editor
         container[Columns.summary] = summary
         container[Columns.coverImageData] = coverImageData
+        container[Columns.customCoverImageData] = customCoverImageData
         container[Columns.status] = status.rawValue
         container[Columns.currentPage] = currentPage
         container[Columns.totalPages] = totalPages
@@ -986,6 +988,9 @@ extension Comic: FetchableRecord, PersistableRecord {
             dateAdded: dateAdded,
             dateModified: dateModified
         )
+        // Not an init parameter (see the property's doc comment) — read it
+        // off the row after the memberwise pass.
+        customCoverImageData = row["custom_cover_image_data"]
     }
 }
 
