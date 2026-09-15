@@ -98,6 +98,11 @@ struct LibraryView: View {
     /// Folder awaiting a custom cover picture (drives the image file importer).
     @State private var folderPendingCoverPicture: Folder?
     @State private var showingFolderCoverPicker = false
+    /// Book awaiting a custom cover picture (drives the image file importer).
+    @State private var comicPendingCoverPicture: Comic?
+    @State private var showingComicCoverPicker = false
+    /// "Couldn't read that image." feedback for a failed cover pick.
+    @State private var coverImportErrorMessage: String?
     /// Folder whose representative book is being chosen (drives the picker sheet).
     @State private var folderPendingBookPick: Folder?
     @State private var folderPendingVerticalZoom: Folder?
@@ -113,6 +118,10 @@ struct LibraryView: View {
         @State private var folderPendingCoverPhoto: Folder?
         @State private var showingPhotoPicker = false
         @State private var selectedPhotoItem: PhotosPickerItem?
+        /// Book awaiting a cover from the Photos library (iPad/iPhone).
+        @State private var comicPendingCoverPhoto: Comic?
+        @State private var showingComicCoverPhotoPicker = false
+        @State private var selectedComicCoverPhotoItem: PhotosPickerItem?
     #endif
 
     // Missing-file recovery (Locate File…)
@@ -446,6 +455,19 @@ struct LibraryView: View {
                 viewModel.updateComic(updated)
             },
             embedMetadata: { embedMetadataSingle($0) },
+            setCustomCover: { comic in
+                comicPendingCoverPicture = comic
+                showingComicCoverPicker = true
+            },
+            setCustomCoverFromPhotos: { comic in
+                #if os(iOS)
+                    comicPendingCoverPhoto = comic
+                    showingComicCoverPhotoPicker = true
+                #else
+                    _ = comic
+                #endif
+            },
+            removeCustomCover: { viewModel.clearCustomCover(for: $0) },
             folders: viewModel.folders,
             folderDisplayName: { viewModel.folderPathName($0) },
             foldersContaining: { viewModel.folders(containing: $0.id) },
@@ -763,14 +785,42 @@ struct LibraryView: View {
                 handleFolderCoverImport(result)
             }
         )
+        // Choose a custom cover picture for a single book
+        .background(
+            Color.clear.fileImporter(
+                isPresented: $showingComicCoverPicker,
+                allowedContentTypes: [.image],
+                allowsMultipleSelection: false
+            ) { result in
+                handleComicCoverImport(result)
+            }
+        )
+        .alert(
+            "Couldn't Set Cover",
+            isPresented: Binding(
+                get: { coverImportErrorMessage != nil },
+                set: { if !$0 { coverImportErrorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(coverImportErrorMessage ?? "")
+        }
         // iPad/iPhone: choose a folder cover from the Photos library.
         // Isolated in a ViewModifier so the main body stays type-checkable.
         #if os(iOS)
             .modifier(
-                FolderCoverPhotoPickerModifier(
+                CoverPhotoPickerModifier(
                     isPresented: $showingPhotoPicker,
                     selection: $selectedPhotoItem,
                     onPick: { handleFolderCoverPhoto($0) }
+                )
+            )
+            .modifier(
+                CoverPhotoPickerModifier(
+                    isPresented: $showingComicCoverPhotoPicker,
+                    selection: $selectedComicCoverPhotoItem,
+                    onPick: { handleComicCoverPhoto($0) }
                 )
             )
         #endif
@@ -1187,6 +1237,41 @@ struct LibraryView: View {
                     let data = (try? await item.loadTransferable(type: Data.self)) ?? nil
                 else { return }
                 await viewModel.setFolderCover(folder, imageData: data)
+            }
+        }
+    #endif
+
+    /// Read the picked image file and assign it as the book's custom cover.
+    private func handleComicCoverImport(_ result: Result<[URL], Error>) {
+        let comic = comicPendingCoverPicture
+        defer { comicPendingCoverPicture = nil }
+        guard case .success(let urls) = result, let url = urls.first,
+            let comic = comic
+        else { return }
+
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+
+        guard let data = try? Data(contentsOf: url),
+            viewModel.setCustomCover(for: comic, imageData: data)
+        else {
+            AppLog.library.error("[LibraryView] ❌ Could not read custom cover image")
+            coverImportErrorMessage = "Couldn't read that image."
+            return
+        }
+    }
+
+    #if os(iOS)
+        /// Load the chosen Photos-library item and assign it as the book's cover.
+        private func handleComicCoverPhoto(_ item: PhotosPickerItem) {
+            let comic = comicPendingCoverPhoto
+            comicPendingCoverPhoto = nil
+            selectedComicCoverPhotoItem = nil
+            Task {
+                guard let comic,
+                    let data = (try? await item.loadTransferable(type: Data.self)) ?? nil
+                else { return }
+                viewModel.setCustomCover(for: comic, imageData: data)
             }
         }
     #endif
@@ -1704,13 +1789,14 @@ struct LibraryView: View {
     }
 }
 
-// MARK: - Folder Cover Photo Picker (iOS)
+// MARK: - Cover Photo Picker (iOS)
 
 #if os(iOS)
-    /// Presents the Photos library picker for choosing a folder cover. Kept in
-    /// its own ViewModifier so the (very long) LibraryView body modifier chain
-    /// stays within the Swift type-checker's time budget.
-    private struct FolderCoverPhotoPickerModifier: ViewModifier {
+    /// Presents the Photos library picker for choosing a cover — used for both
+    /// folder covers and custom book covers. Kept in its own ViewModifier so
+    /// the (very long) LibraryView body modifier chain stays within the Swift
+    /// type-checker's time budget.
+    private struct CoverPhotoPickerModifier: ViewModifier {
         @Binding var isPresented: Bool
         @Binding var selection: PhotosPickerItem?
         let onPick: (PhotosPickerItem) -> Void
