@@ -42,6 +42,7 @@ final class ConvertToCBZViewModel: ObservableObject {
     init(selection: [Comic]) {
         let eligible = selection.filter {
             $0.fileType == .pdf && !Comic.isBundled($0) && !$0.needsAttention
+                && $0.bookFormat != .ebook && !$0.pdfReadsAsBook
         }
         self.candidates = eligible
         self.skippedCount = selection.count - eligible.count

@@ -82,10 +82,26 @@ extension LibraryViewModel {
                     onPageProgress: progress)
             }.value
         } catch {
-            // A cloud-synced source fails with an opaque sandbox error —
-            // translate it, same as LibraryFileService.moveToLibrary.
-            if LibraryFileService.isCloudDriveURL(sourceURL) {
-                throw LibraryFileError.cloudDriveSource(sourceURL)
+            // A sandbox write-permission failure is opaque on its own —
+            // translate it into something actionable. Any other failure
+            // (encrypted/zero-page PDFs, etc.) keeps its real message even
+            // when the source happens to live on a cloud drive.
+            if Self.isWritePermissionError(error) {
+                // Outside the home library root, a file-scoped bookmark
+                // doesn't grant write access to the containing directory —
+                // that's the real cause, not the cloud-drive heuristic below.
+                let libraryRootForCheck = scopedLibraryRoot ?? SettingsViewModel().resolveHomeLibraryURL()
+                let isUnderLibraryRoot = libraryRootForCheck.map {
+                    ConvertedPDFArchiver.relativePath(of: sourceURL, under: $0) != nil
+                } ?? false
+                if !isUnderLibraryRoot {
+                    throw PDFConversionError.notWritable(sourceURL.lastPathComponent)
+                }
+                // A cloud-synced source fails with the same opaque sandbox
+                // error — translate it, same as LibraryFileService.moveToLibrary.
+                if LibraryFileService.isCloudDriveURL(sourceURL) {
+                    throw LibraryFileError.cloudDriveSource(sourceURL)
+                }
             }
             throw error
         }
@@ -145,5 +161,20 @@ extension LibraryViewModel {
         }
 
         return ConvertedBook(comic: updated, archivedOriginalURL: archivedURL, warning: warning)
+    }
+
+    /// Whether `error` is a sandbox write-permission failure: a Cocoa
+    /// "no write permission" error, or the POSIX EACCES it sometimes
+    /// surfaces as instead.
+    fileprivate static func isWritePermissionError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain == NSCocoaErrorDomain,
+           nsError.code == CocoaError.fileWriteNoPermission.rawValue {
+            return true
+        }
+        if nsError.domain == NSPOSIXErrorDomain, nsError.code == 13 /* EACCES */ {
+            return true
+        }
+        return false
     }
 }

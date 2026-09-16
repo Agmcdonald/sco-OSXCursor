@@ -73,6 +73,7 @@ Unchanged. PDFs import natively.
   - *Done:* converted/failed counts and a per-item error list.
 - **Per successful book:** CBZ written beside the PDF → **`Comic.id` kept**, record updated in place: `filePath`, `fileName`, `fileType` (.pdf → .cbz), `fileSize`, `bookmarkData`, `dateModified`, `totalPages` (if page count changed), `pdfReadsAsBook` cleared → `ActivityEvent` logged with new kind `.converted` → original PDF moved to `Converted PDFs/`.
 - The record update mirrors the tail of `LibraryFileService.moveToLibrary` (DB updated only after the file operation succeeds).
+- Known limitation: books stored outside the home library root can't be converted in place under the sandbox (file-scoped bookmarks don't grant directory writes); the failure is reported with guidance to sort the book into the library first.
 
 ## 6. Error handling
 

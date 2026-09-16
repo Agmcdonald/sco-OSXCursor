@@ -180,13 +180,28 @@ final class OrganizeViewModel: ObservableObject {
             }
 
             if isDirectory.boolValue {
+                // Archived originals live under a reserved "Converted PDFs"
+                // folder mirroring the library structure — never re-stage
+                // them when a user rescans their library root.
+                if url.pathComponents.contains(ConvertedPDFArchiver.folderName) {
+                    continue
+                }
                 if let walker = fm.enumerator(
                     at: url,
                     includingPropertiesForKeys: [.isRegularFileKey],
                     options: [.skipsHiddenFiles, .skipsPackageDescendants]
                 ) {
-                    for case let fileURL as URL in walker
-                    where validExtensions.contains(fileURL.pathExtension.lowercased()) {
+                    for case let fileURL as URL in walker {
+                        if fileURL.pathComponents.contains(ConvertedPDFArchiver.folderName) {
+                            var isSubdirectory: ObjCBool = false
+                            if fm.fileExists(atPath: fileURL.path, isDirectory: &isSubdirectory),
+                               isSubdirectory.boolValue {
+                                walker.skipDescendants()
+                            }
+                            continue
+                        }
+                        guard validExtensions.contains(fileURL.pathExtension.lowercased())
+                        else { continue }
                         result.append(fileURL)
                     }
                 }
@@ -452,7 +467,8 @@ final class OrganizeViewModel: ObservableObject {
             convertedOriginals = mergeSources
             finalURL = cbzURL
         } else if finalURL.pathExtension.lowercased() == "pdf",
-                  Self.convertPDFsOnOrganizeEnabled
+                  Self.convertPDFsOnOrganizeEnabled,
+                  current.bookFormat != .ebook
         {
             let baseName = finalURL.deletingPathExtension().lastPathComponent
             if let cbzURL = await convertStagedPDF(
