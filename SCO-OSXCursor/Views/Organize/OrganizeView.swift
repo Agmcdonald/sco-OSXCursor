@@ -169,13 +169,22 @@ struct OrganizeView: View {
                         homeFolderBanner
                     }
 
-                    if viewModel.isProcessing {
+                    if viewModel.isProcessing || viewModel.processingDetail != nil {
                         VStack(alignment: .leading, spacing: Spacing.xs) {
-                            ProgressView(value: viewModel.processingProgress)
-                            if let detail = viewModel.processingDetail {
-                                Text(detail)
-                                    .font(Typography.caption)
-                                    .foregroundColor(TextColors.secondary)
+                            if viewModel.isProcessing {
+                                ProgressView(value: viewModel.processingProgress)
+                                if let detail = viewModel.processingDetail {
+                                    Text(detail)
+                                        .font(Typography.caption)
+                                        .foregroundColor(TextColors.secondary)
+                                }
+                            } else if let detail = viewModel.processingDetail {
+                                HStack(spacing: Spacing.xs) {
+                                    ProgressView()
+                                    Text(detail)
+                                        .font(Typography.caption)
+                                        .foregroundColor(TextColors.secondary)
+                                }
                             }
                         }
                         .padding(.horizontal, Spacing.lg)
