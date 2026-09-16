@@ -45,6 +45,8 @@ struct LibrarySelectionBar: View {
     var onEmbedMetadata: () -> Void = {}
     /// Disables Save Metadata to File while an embed batch is rewriting files.
     var isEmbeddingMetadata: Bool = false
+    /// Convert every selected PDF book to CBZ (opens the conversion sheet).
+    var onConvertToCBZ: () -> Void = {}
 
     var body: some View {
         // Two rows (Andrew, Aug 7): one long row squeezed the trailing
@@ -316,6 +318,29 @@ struct LibrarySelectionBar: View {
             .buttonStyle(.plain)
             .disabled(selectedComics.isEmpty || isEmbeddingMetadata)
             .help("Write each selected book's metadata into its CBZ file as ComicInfo.xml. Only CBZ files are rewritten; other formats are skipped.")
+
+            // Convert selected PDFs to CBZ — opens the conversion sheet.
+            Button(action: {
+                if !selectedComics.isEmpty {
+                    onConvertToCBZ()
+                }
+            }) {
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: "doc.zipper")
+                    Text("Convert to CBZ")
+                        .font(Typography.bodySmall)
+                }
+                .foregroundColor(
+                    selectedComics.isEmpty ? TextColors.tertiary : TextColors.primary
+                )
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .background(BackgroundColors.elevated)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+            .disabled(selectedComics.isEmpty)
+            .help("Convert the selected PDF books to CBZ. Non-PDFs are skipped.")
 
             // Send the selection to another device — Mac → iPad and
             // iPad/iPhone → Mac both go through the same export sheet.

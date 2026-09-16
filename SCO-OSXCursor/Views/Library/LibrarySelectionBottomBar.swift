@@ -117,6 +117,11 @@
             .disabled(actions.isEmbeddingMetadata)
             .help("Write each selected book's metadata into its CBZ file as ComicInfo.xml. Only CBZ files are rewritten; other formats are skipped.")
 
+            Button(action: actions.onConvertToCBZ) {
+                Label("Convert to CBZ…", systemImage: "doc.zipper")
+            }
+            .help("Convert the selected PDF books to CBZ. Non-PDFs are skipped.")
+
             let removable = actions.removalFolders()
             if !removable.isEmpty {
                 Divider()
