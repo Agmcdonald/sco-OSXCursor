@@ -61,7 +61,11 @@ struct MergePDFsSheet: View {
             }
         }
         .padding(Spacing.xl)
+        // Fixed minimum sizes are for the macOS sheet window; iOS sheets
+        // are screen-sized and a forced width clips portrait iPhones.
+        #if os(macOS)
         .frame(minWidth: 460, minHeight: 340)
+        #endif
         .onAppear { ordered = candidates }
     }
 }

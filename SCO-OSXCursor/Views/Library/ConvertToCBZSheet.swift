@@ -30,7 +30,11 @@ struct ConvertToCBZSheet: View {
             }
         }
         .padding(Spacing.xl)
+        // Fixed minimum sizes are for the macOS sheet window. On iOS the
+        // sheet is screen-sized — forcing 480pt clipped portrait iPhones.
+        #if os(macOS)
         .frame(minWidth: 480, minHeight: 360)
+        #endif
     }
 
     // MARK: - Ready (preview)
@@ -45,7 +49,7 @@ struct ConvertToCBZSheet: View {
             .fixedSize(horizontal: false, vertical: true)
 
             if viewModel.skippedCount > 0 {
-                Text("\(viewModel.skippedCount) selected item(s) aren't convertible PDFs and will be skipped.")
+                Text("\(viewModel.skippedCount) selected item(s) will be skipped — only PDF books can be converted (books marked as eBooks, bundled samples, and books with missing files are excluded).")
                     .font(Typography.caption)
                     .foregroundColor(TextColors.tertiary)
             }

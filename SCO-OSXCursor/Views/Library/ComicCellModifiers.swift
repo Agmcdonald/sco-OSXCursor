@@ -300,7 +300,11 @@ struct ComicCellInteraction: ViewModifier {
 
         // Convert a PDF into a CBZ — the record keeps its identity and the
         // original PDF is filed under Converted PDFs in the home library.
-        if comic.fileType == .pdf && !Comic.isBundled(comic) && !comic.needsAttention {
+        // Ebook-format PDFs are excluded to match the sheet's eligibility
+        // filter (converting prose to page images loses text). Book-mode
+        // (pdfReadsAsBook) is just a reader preference and doesn't exclude.
+        if comic.fileType == .pdf && !Comic.isBundled(comic) && !comic.needsAttention
+            && comic.bookFormat != .ebook {
             Button(action: { actions.convertToCBZ(comic) }) {
                 Label("Convert to CBZ…", systemImage: "doc.zipper")
             }

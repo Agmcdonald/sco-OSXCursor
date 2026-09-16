@@ -40,9 +40,12 @@ final class ConvertToCBZViewModel: ObservableObject {
     let skippedCount: Int
 
     init(selection: [Comic]) {
+        // pdfReadsAsBook is deliberately NOT an exclusion: it's a reader
+        // preference, not evidence the PDF is prose. Only the user-set
+        // ebook format opts a PDF out of explicit conversion.
         let eligible = selection.filter {
             $0.fileType == .pdf && !Comic.isBundled($0) && !$0.needsAttention
-                && $0.bookFormat != .ebook && !$0.pdfReadsAsBook
+                && $0.bookFormat != .ebook
         }
         self.candidates = eligible
         self.skippedCount = selection.count - eligible.count
