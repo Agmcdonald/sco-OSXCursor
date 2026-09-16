@@ -87,7 +87,7 @@ class PDFReader: ComicReaderProtocol {
             }
             
             // Render page to image
-            let imageData = renderPageToImageData(pdfPage)
+            let imageData = Self.renderPageToImageData(pdfPage)
             
             let page = ComicPage(
                 pageNumber: pageIndex + 1,
@@ -140,7 +140,7 @@ class PDFReader: ComicReaderProtocol {
         }
         
         // Render to image
-        let imageData = renderPageToImageData(pdfPage)
+        let imageData = Self.renderPageToImageData(pdfPage)
 
         return ComicPage(
             pageNumber: index + 1,
@@ -180,7 +180,7 @@ class PDFReader: ComicReaderProtocol {
             throw ComicReaderError.noImages
         }
         
-        return renderPageToImageData(firstPage)
+        return Self.renderPageToImageData(firstPage)
     }
     
     // MARK: - Get Page Count
@@ -218,7 +218,7 @@ class PDFReader: ComicReaderProtocol {
     /// Core Graphics path flipped EVERY landscape page on iOS as a workaround,
     /// which turned correctly-oriented pages upside down.)
     /// Encodes as JPEG (quality 0.85) — ~10x smaller and faster than PNG.
-    private func renderPageToImageData(_ page: PDFPage) -> Data {
+    static func renderPageToImageData(_ page: PDFPage) -> Data {
         let pageBounds = page.bounds(for: .mediaBox)
         let rotation = abs(page.rotation % 360)
 
