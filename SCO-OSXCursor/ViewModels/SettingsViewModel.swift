@@ -152,6 +152,11 @@ class SettingsViewModel: ObservableObject {
     /// bookmark so the sandbox can reach the folder across relaunches.
     func setHomeLibraryFolder(_ url: URL) {
         settings.rootLibraryPath = url
+        // The picker URL's security scope must be ACTIVE while minting the
+        // bookmark — on iOS an unscoped bookmarkData() silently returns nil
+        // and the library becomes permanently inaccessible ("read-only").
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
         #if os(macOS)
         settings.homeLibraryBookmark = try? url.bookmarkData(
             options: [.withSecurityScope],
@@ -218,8 +223,15 @@ class SettingsViewModel: ObservableObject {
     }
 
     /// Validates the home library folder and returns its current status.
+    ///
+    /// The bookmark's security scope MUST be open for every check below —
+    /// without it, iOS folders picked from Files always look unreachable
+    /// or read-only (the sandbox denies unscoped access), and macOS only
+    /// works by accident of POSIX permissions.
     func homeLibraryStatus() -> HomeLibraryStatus {
         guard let url = resolveHomeLibraryURL() else { return .notSet }
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
         let fm = FileManager.default
         // Check the volume is mounted
         var isReachable = false
@@ -235,8 +247,15 @@ class SettingsViewModel: ObservableObject {
             return .notFound
         }
         guard isReachable else { return .notFound }
-        guard fm.isWritableFile(atPath: url.path) else { return .notWritable }
-        return .accessible
+        if fm.isWritableFile(atPath: url.path) { return .accessible }
+        // POSIX writability is unreliable for security-scoped file-provider
+        // folders (iOS Files locations) — trust an actual write over stat.
+        let probe = url.appendingPathComponent(".sco-write-probe-\(UUID().uuidString)")
+        if fm.createFile(atPath: probe.path, contents: Data()) {
+            try? fm.removeItem(at: probe)
+            return .accessible
+        }
+        return .notWritable
     }
 
     /// Returns the raw stored `rootLibraryPath` URL **without** any bookmark

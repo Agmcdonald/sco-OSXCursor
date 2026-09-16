@@ -19,6 +19,15 @@ import os
 
 @MainActor
 struct SettingsView: View {
+    /// Platform-appropriate copy for the home-library cloud-drive warning.
+    static let cloudDriveWarningText: String = {
+        #if os(macOS)
+        return "Due to macOS sandbox restrictions, the app cannot create folders or move files inside iCloud Drive, Google Drive, Dropbox, OneDrive, or Network/NAS drives. Choose a purely local folder on your Mac's internal drive (like Downloads or Documents)."
+        #else
+        return "Due to sandbox restrictions, the app cannot create folders or move files inside iCloud Drive, Google Drive, Dropbox, or OneDrive. Choose a local folder under On My iPhone/iPad (like Downloads, or a folder you create in Files)."
+        #endif
+    }()
+
     @ObservedObject private var readerSettings = ReaderSettings.shared
     // The app-wide instance injected at the root (SCO_OSXCursorApp). Using
     // the shared instance — not a private copy — is what makes the theme
@@ -1071,7 +1080,7 @@ struct SettingsView: View {
                         Text("Avoid Cloud & Network Drives")
                             .font(Typography.bodySmall.weight(.semibold))
                             .foregroundColor(AccentColors.warning)
-                        Text("Due to macOS sandbox restrictions, the app cannot create folders or move files inside iCloud Drive, Google Drive, Dropbox, OneDrive, or Network/NAS drives. Choose a purely local folder on your Mac's internal drive (like Downloads or Documents).")
+                        Text(Self.cloudDriveWarningText)
                             .font(Typography.caption)
                             .foregroundColor(TextColors.secondary)
                             .lineSpacing(3)
