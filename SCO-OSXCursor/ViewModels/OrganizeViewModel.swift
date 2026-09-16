@@ -68,6 +68,12 @@ final class OrganizeViewModel: ObservableObject {
 
     // MARK: - Computed Properties
 
+    /// Settings → Organization toggle: convert PDFs to CBZ on confirm.
+    /// Its own UserDefaults key — see SettingsView's declaration.
+    static var convertPDFsOnOrganizeEnabled: Bool {
+        UserDefaults.standard.bool(forKey: "convertPDFsOnOrganize")
+    }
+
     var selectedComic: StagedComic? {
         guard let id = selectedComicID else { return nil }
         return stagedComics.first(where: { $0.id == id })

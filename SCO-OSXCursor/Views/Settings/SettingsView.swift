@@ -443,6 +443,11 @@ struct SettingsView: View {
     // Same key LibraryViewModel.autoEmbedComicInfoEnabled reads. Its own
     // UserDefaults entry, not an AppSettings field — see that property's note.
     @AppStorage("autoEmbedComicInfo") private var autoEmbedComicInfo = false
+    // Read by OrganizeViewModel.convertPDFsOnOrganizeEnabled. Its own
+    // UserDefaults key, NOT an AppSettings field (same reasoning as
+    // autoEmbedComicInfo — a new Codable field would invalidate saved
+    // settings on decode).
+    @AppStorage("convertPDFsOnOrganize") private var convertPDFsOnOrganize = false
     @ObservedObject private var comicVineQuota = ComicVineQuota.shared
 
     @AppStorage(ComicSource.defaultsKey) private var comicMetadataProvider: String = ComicSource.comicVine.rawValue
@@ -1110,6 +1115,32 @@ struct SettingsView: View {
             .background(BackgroundColors.elevated)
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .opacity(viewModel.settings.rootLibraryPath == nil ? 0.4 : 1)
+
+            // PDF → CBZ conversion on organize
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                HStack {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Text("Convert PDFs to CBZ When Organizing")
+                            .font(Typography.h3)
+                            .foregroundColor(TextColors.primary)
+
+                        Text(
+                            "When a PDF is confirmed in Organize, SCO converts it to a CBZ (scanned pages keep their original image quality), imports the CBZ, and files the original PDF under \"Converted PDFs\" in your home library. Quick Add always imports PDFs as-is. If a conversion fails, the PDF imports unchanged."
+                        )
+                        .font(Typography.bodySmall)
+                        .foregroundColor(TextColors.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer()
+
+                    Toggle("", isOn: $convertPDFsOnOrganize)
+                        .labelsHidden()
+                }
+            }
+            .padding(Spacing.md)
+            .background(BackgroundColors.elevated)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
 
             // Reorganize button
             if viewModel.settings.rootLibraryPath != nil && homeLibraryStatus == .accessible {

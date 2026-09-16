@@ -48,7 +48,7 @@ Name conflicts get " (2)" suffixes (`resolveConflict`). Cross-volume moves reuse
 
 ## 3. Organize flow
 
-- New `AppSettings.convertPDFsOnOrganize: Bool`, **default off**. Decoded with a safe default so previously saved settings JSON still loads (the settings decoder must not fail on the missing key). Toggle lives in the Organization section of `SettingsView` (same visual pattern as the "Automatically Save Metadata into CBZ Files" toggle).
+- New setting under UserDefaults key `"convertPDFsOnOrganize"` (default **off**), stored the same way as `autoEmbedComicInfo` — its own key, not an `AppSettings` Codable field, which would invalidate previously saved settings on decode (see LibraryViewModel.swift:605). Toggle lives in the Organization section of `SettingsView`.
 - When on, `OrganizeViewModel.confirmMatch` for a PDF becomes: rename in place → **convert to CBZ in the same folder** → import the **CBZ** into the library via `importStagedComic` (so the path-derived stable UUID is computed from the CBZ path from the start) → auto-sort via `moveToLibrary` as usual → move the original PDF to `Converted PDFs/`.
 - Progress: the existing `isProcessing`/`processingProgress` bar gains a live status label, e.g. *"Converting Batman 012.pdf — page 14 of 32"*.
 - **Failure fallback:** if conversion fails, the PDF imports natively exactly as today; the staged item completes with a visible warning and the batch continues.
