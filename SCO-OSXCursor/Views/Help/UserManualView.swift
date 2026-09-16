@@ -348,6 +348,13 @@ struct UserManualView: View {
                         )
 
                         FeatureRow(
+                            icon: "doc.badge.gearshape",
+                            title: "Convert PDFs to CBZ",
+                            description:
+                                "PDFs can be converted to CBZ automatically when confirmed (Settings → Organization), or merged — check two or more staged PDFs and choose Merge into One CBZ. Originals are kept under \"Converted PDFs\" in your home library. You can also convert any PDF already in your library from its right-click menu."
+                        )
+
+                        FeatureRow(
                             icon: "number",
                             title: "Book Formats: Issue, One-Shot, Volume",
                             description:
