@@ -85,6 +85,11 @@ final class PDFToCBZConverter {
         }
         let totalPages = documents.reduce(0) { $0 + $1.pageCount }
 
+        // ── The destination must exist before we can ask for an
+        //    .itemReplacementDirectory "appropriate for" it — Foundation
+        //    throws NSCocoaErrorDomain Code=4 otherwise. ──
+        try fm.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
+
         // ── Assemble in a temp dir on the destination volume ──
         let tempDir = try fm.url(
             for: .itemReplacementDirectory, in: .userDomainMask,
@@ -136,7 +141,6 @@ final class PDFToCBZConverter {
         else { throw PDFConversionError.verificationFailed }
 
         // ── Move into place, never overwriting ──
-        try fm.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
         var destination = destinationDirectory.appendingPathComponent("\(baseFileName).cbz")
         destination = LibraryFileService.shared.resolveConflict(at: destination)
         try fm.moveItem(at: tempURL, to: destination)

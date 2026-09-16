@@ -97,6 +97,22 @@ struct PDFToCBZConverterTests {
         #expect(try Data(contentsOf: occupied) == Data("not a real cbz".utf8))
     }
 
+    @Test func createsANotYetExistingDestinationDirectory() throws {
+        let jpeg = PDFConversionFixtures.solidJPEG(width: 400, height: 600)
+        let source = try PDFConversionFixtures.writeTemp(
+            PDFConversionFixtures.jpegOnlyPDF(jpeg: jpeg, width: 400, height: 600), ext: "pdf")
+        // A destination folder that does not exist yet — not created here.
+        let destination = try tempDir().appendingPathComponent("new/nested", isDirectory: true)
+
+        let result = try PDFToCBZConverter.convert(
+            sources: [source], metadata: makeMetadata(),
+            destinationDirectory: destination, baseFileName: "Fresh")
+
+        #expect(result.pageCount == 1)
+        #expect(FileManager.default.fileExists(atPath: result.cbzURL.path))
+        #expect(result.cbzURL.deletingLastPathComponent().path == destination.path)
+    }
+
     @Test func garbageInputThrowsCannotOpen() throws {
         let source = try PDFConversionFixtures.writeTemp(Data("junk".utf8), ext: "pdf")
         let destination = try tempDir()
