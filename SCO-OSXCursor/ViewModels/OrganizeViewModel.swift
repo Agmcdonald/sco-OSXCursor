@@ -391,8 +391,11 @@ final class OrganizeViewModel: ObservableObject {
         // 1. Rename file on disk to match the confirmed metadata.
         //    File I/O runs off the main thread — renaming dozens of staged
         //    files previously blocked the UI for the whole batch.
+        // Pending merges skip the rename: the sources keep their names
+        // (they end up in Converted PDFs) and the merged CBZ is created
+        // under proposedFileName directly.
         let newFileName = current.proposedFileName
-        if newFileName != originalURL.lastPathComponent {
+        if current.mergeSourceURLs == nil, newFileName != originalURL.lastPathComponent {
             let renamedURL: URL? = await Task.detached(priority: .userInitiated) {
                 let newURL = originalURL.deletingLastPathComponent()
                     .appendingPathComponent(newFileName)
@@ -427,12 +430,29 @@ final class OrganizeViewModel: ObservableObject {
             }
         }
 
-        // 1.5 Convert PDF → CBZ when the setting is on. The CBZ is written
-        //     next to the (renamed) PDF; the import below then targets the
-        //     CBZ. On failure the PDF imports natively, exactly as before.
+        // 1.5 Convert to CBZ: always for a pending merge, and for single
+        //     PDFs when the setting is on. On failure a single PDF imports
+        //     natively; a failed merge keeps the item staged with an error.
         var convertedOriginals: [URL] = []
-        if finalURL.pathExtension.lowercased() == "pdf",
-           Self.convertPDFsOnOrganizeEnabled
+        if let mergeSources = current.mergeSourceURLs {
+            let baseName = (newFileName as NSString).deletingPathExtension
+            guard let cbzURL = await convertStagedPDF(
+                sources: mergeSources,
+                staged: current,
+                destinationDirectory: mergeSources[0].deletingLastPathComponent(),
+                baseFileName: baseName)
+            else {
+                // Merge cannot fall back to a native import (there are
+                // several files). Mark the staged item and bail out.
+                if let index = stagedComics.firstIndex(where: { $0.id == current.id }) {
+                    stagedComics[index].status = .error
+                }
+                return
+            }
+            convertedOriginals = mergeSources
+            finalURL = cbzURL
+        } else if finalURL.pathExtension.lowercased() == "pdf",
+                  Self.convertPDFsOnOrganizeEnabled
         {
             let baseName = finalURL.deletingPathExtension().lastPathComponent
             if let cbzURL = await convertStagedPDF(
@@ -546,6 +566,35 @@ final class OrganizeViewModel: ObservableObject {
 
     /// Number of checked staged comics.
     var checkedCount: Int { checkedComicIDs.count }
+
+    /// Checked staged PDFs eligible for "Merge into One CBZ" (2+, all
+    /// plain PDFs, none already a pending merge). Empty when ineligible.
+    var checkedPDFsForMerge: [StagedComic] {
+        let checked = stagedComics.filter { checkedComicIDs.contains($0.id) }
+        guard checked.count >= 2,
+            checked.allSatisfy({
+                $0.originalURL.pathExtension.lowercased() == "pdf"
+                    && $0.mergeSourceURLs == nil
+            })
+        else { return [] }
+        return checked
+    }
+
+    /// Collapse `ordered` (2+) into one pending-merge staged item.
+    /// Metadata comes from the first item; the rest leave staging.
+    func mergeStagedPDFs(ordered: [StagedComic]) {
+        guard ordered.count >= 2, var merged = ordered.first else { return }
+        merged.mergeSourceURLs = ordered.map(\.originalURL)
+        merged.reevaluate(userEdited: false)
+        let absorbedIDs = Set(ordered.dropFirst().map(\.id))
+        stagedComics.removeAll { absorbedIDs.contains($0.id) }
+        if let index = stagedComics.firstIndex(where: { $0.id == merged.id }) {
+            stagedComics[index] = merged
+        }
+        checkedComicIDs.subtract(absorbedIDs)
+        checkedComicIDs.remove(merged.id)
+        selectedComicID = merged.id
+    }
 
     /// User folders for the "place into a folder" prompt, sorted alphabetically.
     var availableFolders: [Folder] {

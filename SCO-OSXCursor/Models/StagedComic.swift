@@ -65,6 +65,10 @@ struct StagedComic: Identifiable, Equatable {
     var editor: String?
     var summary: String?
 
+    /// When set, this staged item is a pending MERGE: confirming converts
+    /// these PDFs (in order) into one CBZ. nil for ordinary items.
+    var mergeSourceURLs: [URL]? = nil
+
     // Original File Info
     let originalFileName: String
     let fileSize: Int64
@@ -174,8 +178,9 @@ struct StagedComic: Identifiable, Equatable {
             parts.append("(\(y))")
         }
 
-        // Preserve original extension
-        let ext = originalURL.pathExtension
+        // Preserve original extension — except a pending merge, whose
+        // confirm produces a CBZ.
+        let ext = mergeSourceURLs == nil ? originalURL.pathExtension : "cbz"
         return parts.joined(separator: " ") + ".\(ext)"
     }
 }
