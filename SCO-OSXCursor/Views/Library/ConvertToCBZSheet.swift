@@ -42,7 +42,7 @@ struct ConvertToCBZSheet: View {
     private var readyView: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             Text(
-                "Each PDF becomes a CBZ next to it — scanned pages keep their original image quality. The book's entry keeps its reading progress, lists, and folders. Afterwards the original PDF is filed under \"Converted PDFs\" in your home library, so you can delete it whenever you like."
+                "Each PDF becomes a CBZ — written next to the PDF, or filed into your home library when the PDF lives outside it. Scanned pages keep their original image quality, and the book's entry keeps its reading progress, lists, and folders. Afterwards the original PDF is filed under \"Converted PDFs\" in your home library, so you can delete it whenever you like."
             )
             .font(Typography.bodySmall)
             .foregroundColor(TextColors.secondary)

@@ -40,7 +40,7 @@ enum PDFConversionError: LocalizedError {
         case .verificationFailed:
             return "The converted CBZ failed verification. The original PDF was not modified."
         case .notWritable(let name):
-            return "\"\(name)\" lives outside your home library, so SCO can't write the converted CBZ next to it. Move it into the library first (Settings → Organization → Sort into Home Library), then convert."
+            return "\"\(name)\" couldn't be converted in place. Set a Home Library folder (Settings → Organization) and try again — SCO will place the converted CBZ in your library."
         }
     }
 }

@@ -24,6 +24,32 @@ extension LibraryViewModel {
         let warning: String?
     }
 
+    /// Where a book's converted CBZ should be written.
+    ///
+    /// Beside the PDF when it already lives in the home library (or no
+    /// library is set). A book OUTSIDE the library converts straight into
+    /// its `destinationURL` folder under the root: a file-scoped bookmark
+    /// grants no write access to the PDF's containing directory, so
+    /// writing a sibling there is impossible under the sandbox — and the
+    /// library is where the book belongs anyway.
+    nonisolated static func conversionDestination(
+        source: URL, comic: Comic, libraryRoot: URL?,
+        folderStructure: AppSettings.FolderStructure = AppSettings.load().folderStructure
+    ) -> (directory: URL, baseName: String) {
+        let sourceDirectory = source.deletingLastPathComponent()
+        if let root = libraryRoot,
+            ConvertedPDFArchiver.relativePath(of: sourceDirectory, under: root) == nil
+        {
+            let destination = LibraryFileService.shared.destinationURL(
+                for: comic, in: root, folderStructure: folderStructure)
+            return (
+                destination.deletingLastPathComponent(),
+                destination.deletingPathExtension().lastPathComponent
+            )
+        }
+        return (sourceDirectory, source.deletingPathExtension().lastPathComponent)
+    }
+
     func convertPDFToCBZ(
         _ comic: Comic,
         pageProgress: (@Sendable (Int, Int) -> Void)? = nil
@@ -68,8 +94,10 @@ extension LibraryViewModel {
         defer { scopedLibraryRoot?.stopAccessingSecurityScopedResource() }
 
         let sourceURL = fileURL
-        let directory = sourceURL.deletingLastPathComponent()
-        let baseName = sourceURL.deletingPathExtension().lastPathComponent
+        let plan = Self.conversionDestination(
+            source: sourceURL, comic: comic, libraryRoot: scopedLibraryRoot)
+        let directory = plan.directory
+        let baseName = plan.baseName
         let metadata = comic
         let progress = pageProgress ?? { _, _ in }
 
@@ -87,19 +115,20 @@ extension LibraryViewModel {
             // (encrypted/zero-page PDFs, etc.) keeps its real message even
             // when the source happens to live on a cloud drive.
             if Self.isWritePermissionError(error) {
-                // Outside the home library root, a file-scoped bookmark
-                // doesn't grant write access to the containing directory —
-                // that's the real cause, not the cloud-drive heuristic below.
-                let libraryRootForCheck = scopedLibraryRoot ?? SettingsViewModel().resolveHomeLibraryURL()
-                let isUnderLibraryRoot = libraryRootForCheck.map {
-                    ConvertedPDFArchiver.relativePath(of: sourceURL, under: $0) != nil
-                } ?? false
-                if !isUnderLibraryRoot {
+                // Out-of-library books now convert INTO the library, so a
+                // write-permission failure here means either no home
+                // library is set (nowhere writable for the CBZ — a
+                // file-scoped bookmark grants no directory writes)…
+                if scopedLibraryRoot == nil,
+                    SettingsViewModel().resolveHomeLibraryURL() == nil
+                {
                     throw PDFConversionError.notWritable(sourceURL.lastPathComponent)
                 }
-                // A cloud-synced source fails with the same opaque sandbox
-                // error — translate it, same as LibraryFileService.moveToLibrary.
-                if LibraryFileService.isCloudDriveURL(sourceURL) {
+                // …or a cloud-synced location the sandbox refuses —
+                // translate it, same as LibraryFileService.moveToLibrary.
+                if LibraryFileService.isCloudDriveURL(sourceURL)
+                    || scopedLibraryRoot.map(LibraryFileService.isCloudDriveURL) == true
+                {
                     throw LibraryFileError.cloudDriveSource(sourceURL)
                 }
             }
@@ -153,7 +182,7 @@ extension LibraryViewModel {
                     sourceURL, libraryRoot: libraryRoot, mirrorSubpath: subpath)
             } catch {
                 warning =
-                    "\(comic.displayTitle): converted, but the original PDF couldn't be moved to Converted PDFs (\(error.localizedDescription)). It's still next to the new CBZ."
+                    "\(comic.displayTitle): converted, but the original PDF couldn't be moved to Converted PDFs (\(error.localizedDescription)). It stays where it was."
             }
         } else {
             warning =
