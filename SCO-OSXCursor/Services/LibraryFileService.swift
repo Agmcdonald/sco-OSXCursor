@@ -194,6 +194,20 @@ final class LibraryFileService {
         return updated
     }
 
+    // MARK: - Plain File Move
+
+    /// Same-volume rename, or copy → verify → delete across volumes.
+    /// Assumes the caller resolved conflicts and holds any security scopes.
+    /// The source is deleted only after a verified copy (cross-volume) —
+    /// same contract as moveToLibrary, without the DB coupling.
+    func moveFile(at source: URL, to destination: URL) throws {
+        if isCrossVolume(from: source, to: destination) {
+            try crossVolumeMove(from: source, to: destination)
+        } else {
+            try FileManager.default.moveItem(at: source, to: destination)
+        }
+    }
+
     // MARK: - Clean Filename Generation
 
     /// Generates a clean, canonical filename for a comic using the same convention as

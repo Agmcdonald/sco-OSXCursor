@@ -28,6 +28,8 @@ struct LibrarySelectionActions {
     var onSendToDevice: () -> Void = {}
     /// Write each selected book's metadata back into its CBZ as ComicInfo.xml.
     var onEmbedMetadata: () -> Void = {}
+    /// Convert every selected PDF book to CBZ (opens the conversion sheet).
+    var onConvertToCBZ: () -> Void = {}
 
     /// Disables the metadata button and shows a spinner while a batch runs.
     var isFetchingMetadata: Bool = false

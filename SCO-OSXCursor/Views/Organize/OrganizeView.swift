@@ -16,6 +16,7 @@ struct OrganizeView: View {
     @EnvironmentObject private var settingsViewModel: SettingsViewModel
     @State private var hideHomeFolderBanner = false
     @State private var showingBulkEdit = false
+    @State private var showingMergeSheet = false
     @State private var showingFolderPrompt = false
     @State private var folderPromptMode: FolderPromptMode = .allReady
     @State private var isDropTargeted = false
@@ -169,6 +170,35 @@ struct OrganizeView: View {
                         homeFolderBanner
                     }
 
+                    if viewModel.isProcessing || viewModel.processingDetail != nil {
+                        VStack(alignment: .leading, spacing: Spacing.xs) {
+                            if viewModel.isProcessing {
+                                ProgressView(value: viewModel.processingProgress)
+                                if let detail = viewModel.processingDetail {
+                                    Text(detail)
+                                        .font(Typography.caption)
+                                        .foregroundColor(TextColors.secondary)
+                                }
+                            } else if let detail = viewModel.processingDetail {
+                                HStack(spacing: Spacing.xs) {
+                                    ProgressView()
+                                    Text(detail)
+                                        .font(Typography.caption)
+                                        .foregroundColor(TextColors.secondary)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, Spacing.lg)
+                        .padding(.vertical, Spacing.sm)
+                    }
+
+                    if let warning = viewModel.lastConversionWarning {
+                        Label(warning, systemImage: "exclamationmark.triangle")
+                            .font(Typography.caption)
+                            .foregroundColor(.orange)
+                            .padding(.horizontal, Spacing.lg)
+                    }
+
                     // List
                     List(viewModel.stagedComics, selection: $viewModel.selectedComicID) { comic in
                         HStack(spacing: 8) {
@@ -186,9 +216,19 @@ struct OrganizeView: View {
                             }
 
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(comic.proposedFileName)
-                                    .font(.body)
-                                    .foregroundColor(.primary)
+                                HStack(spacing: 6) {
+                                    Text(comic.proposedFileName)
+                                        .font(.body)
+                                        .foregroundColor(.primary)
+
+                                    if comic.mergeSourceURLs != nil {
+                                        Text("MERGE · \(comic.mergeSourceURLs?.count ?? 0) PDFs")
+                                            .font(Typography.tiny)
+                                            .padding(.horizontal, 6).padding(.vertical, 2)
+                                            .background(AccentColors.primary.opacity(0.15))
+                                            .clipShape(Capsule())
+                                    }
+                                }
 
                                 HStack {
                                     Text(comic.originalFileName)
@@ -316,6 +356,11 @@ struct OrganizeView: View {
                     onCancel: { showingFolderPrompt = false }
                 )
             }
+            .sheet(isPresented: $showingMergeSheet) {
+                MergePDFsSheet(candidates: viewModel.checkedPDFsForMerge) { ordered in
+                    viewModel.mergeStagedPDFs(ordered: ordered)
+                }
+            }
         #else
             iOSBody
         #endif
@@ -386,6 +431,14 @@ struct OrganizeView: View {
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                         .help(summary)
+                }
+
+                if viewModel.checkedPDFsForMerge.count >= 2 {
+                    Button {
+                        showingMergeSheet = true
+                    } label: {
+                        Label("Merge into One CBZ", systemImage: "doc.zipper")
+                    }
                 }
 
                 Spacer()
@@ -753,10 +806,20 @@ struct OrganizeView: View {
                 .buttonStyle(.plain)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(comic.proposedFileName)
-                        .font(.body)
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(comic.proposedFileName)
+                            .font(.body)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+
+                        if comic.mergeSourceURLs != nil {
+                            Text("MERGE · \(comic.mergeSourceURLs?.count ?? 0) PDFs")
+                                .font(Typography.tiny)
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(AccentColors.primary.opacity(0.15))
+                                .clipShape(Capsule())
+                        }
+                    }
 
                     HStack {
                         Text(comic.originalFileName)

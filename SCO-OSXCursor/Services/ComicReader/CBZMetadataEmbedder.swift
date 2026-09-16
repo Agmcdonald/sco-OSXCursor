@@ -181,8 +181,8 @@ final class CBZMetadataEmbedder {
         }
     }
 
-    /// Page-image count, used to prove the rewrite lost nothing.
-    private static func imageEntryCount(in archive: Archive) -> Int {
+    /// Page-image count (jpg/jpeg/png/gif/webp/bmp, skipping __MACOSX).
+    static func imageEntryCount(in archive: Archive) -> Int {
         let imageExtensions = ["jpg", "jpeg", "png", "gif", "webp", "bmp"]
         return archive.filter { entry in
             let pathExtension = (entry.path as NSString).pathExtension.lowercased()

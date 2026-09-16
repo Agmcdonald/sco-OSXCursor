@@ -19,6 +19,7 @@ struct ActivityEvent: Identifiable, Codable {
         case renamed = "renamed"
         case fileMoved = "file_moved"
         case fileMoveFailed = "file_move_failed"
+        case converted = "converted_to_cbz"
 
         // Metadata edits
         case titleChanged = "title_changed"
@@ -44,6 +45,7 @@ struct ActivityEvent: Identifiable, Codable {
             case .renamed: return "Renamed"
             case .fileMoved: return "Moved to Library"
             case .fileMoveFailed: return "Move Failed"
+            case .converted: return "Converted to CBZ"
             case .titleChanged: return "Title Updated"
             case .seriesChanged: return "Series Updated"
             case .issueChanged: return "Issue # Updated"
@@ -67,6 +69,7 @@ struct ActivityEvent: Identifiable, Codable {
             case .renamed: return "pencil.circle.fill"
             case .fileMoved: return "folder.fill.badge.plus"
             case .fileMoveFailed: return "folder.fill.badge.xmark"
+            case .converted: return "doc.zipper"
             case .titleChanged: return "textformat"
             case .seriesChanged: return "books.vertical.fill"
             case .issueChanged: return "number.circle.fill"
@@ -90,6 +93,7 @@ struct ActivityEvent: Identifiable, Codable {
             case .renamed: return "orange"
             case .fileMoved: return "teal"
             case .fileMoveFailed: return "red"
+            case .converted: return "teal"
             case .statusChanged: return "green"
             case .favoriteToggled: return "pink"
             case .knowledgeAdded, .knowledgeDeleted: return "purple"

@@ -42,6 +42,8 @@ struct ComicCellActions {
     /// Write the library's metadata back into the book's CBZ as
     /// ComicInfo.xml (offered on writable CBZ files only).
     var embedMetadata: (Comic) -> Void = { _ in }
+    /// Convert a PDF book to CBZ (post-hoc, moves the original to Converted PDFs).
+    var convertToCBZ: (Comic) -> Void = { _ in }
     /// Open the image file picker to set a user-chosen cover picture.
     var setCustomCover: (Comic) -> Void = { _ in }
     /// iOS only: pick the custom cover from the Photos library.
@@ -293,6 +295,14 @@ struct ComicCellInteraction: ViewModifier {
         if comic.fileType == .cbz && !Comic.isBundled(comic) && !comic.needsAttention {
             Button(action: { actions.embedMetadata(comic) }) {
                 Label("Save Metadata to File", systemImage: "square.and.arrow.down")
+            }
+        }
+
+        // Convert a PDF into a CBZ — the record keeps its identity and the
+        // original PDF is filed under Converted PDFs in the home library.
+        if comic.fileType == .pdf && !Comic.isBundled(comic) && !comic.needsAttention {
+            Button(action: { actions.convertToCBZ(comic) }) {
+                Label("Convert to CBZ…", systemImage: "doc.zipper")
             }
         }
 

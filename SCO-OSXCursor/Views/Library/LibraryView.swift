@@ -148,6 +148,9 @@ struct LibraryView: View {
     @State private var showingBatchReview = false
     // Save Metadata to File (ComicInfo.xml embed) — single + batch
     @State private var isEmbeddingMetadata = false
+    // Convert to CBZ (post-hoc) — single + batch sheet
+    @State private var showingConvertSheet = false
+    @State private var convertSelection: [Comic] = []
 
     // MARK: - Derived Data
 
@@ -455,6 +458,7 @@ struct LibraryView: View {
                 viewModel.updateComic(updated)
             },
             embedMetadata: { embedMetadataSingle($0) },
+            convertToCBZ: { convertToCBZSingle($0) },
             setCustomCover: { comic in
                 comicPendingCoverPicture = comic
                 showingComicCoverPicker = true
@@ -572,6 +576,7 @@ struct LibraryView: View {
                 transferExportRequest = TransferExportRequest(comics: selected)
             },
             onEmbedMetadata: embedMetadataForSelected,
+            onConvertToCBZ: { convertToCBZForSelected() },
             isFetchingMetadata: isBatchFetching,
             isEmbeddingMetadata: isEmbeddingMetadata,
             folders: viewModel.folders,
@@ -888,6 +893,9 @@ struct LibraryView: View {
                 isSelectionMode = false
                 selectedComics.removeAll()
             }
+        }
+        .sheet(isPresented: $showingConvertSheet) {
+            ConvertToCBZSheet(selection: convertSelection, library: viewModel)
         }
         // Mac → iPad transfer: package the book(s) then hand to the share sheet
         .sheet(item: $transferExportRequest) { request in
@@ -1678,6 +1686,19 @@ struct LibraryView: View {
             isEmbeddingMetadata = false
             flashComicVineStatus(summary.message)
         }
+    }
+
+    // MARK: - Convert to CBZ
+
+    private func convertToCBZSingle(_ comic: Comic) {
+        convertSelection = [comic]
+        showingConvertSheet = true
+    }
+
+    private func convertToCBZForSelected() {
+        guard !selectedComics.isEmpty else { return }
+        convertSelection = viewModel.comics.filter { selectedComics.contains($0.id) }
+        showingConvertSheet = true
     }
 
     // MARK: - Import

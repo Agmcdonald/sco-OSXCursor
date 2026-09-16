@@ -46,6 +46,10 @@ final class OrganizeViewModel: ObservableObject {
     // Processing State
     @Published var isProcessing: Bool = false
     @Published var processingProgress: Double = 0.0
+    /// Live line under the progress bar, e.g. "Converting X — page 3 of 32".
+    @Published var processingDetail: String?
+    /// Shown when a conversion failed and the PDF imported natively.
+    @Published var lastConversionWarning: String?
     /// Path description shown after a successful library sort (e.g. "Marvel/X-Men/")
     @Published var lastMoveDestination: String?
 
@@ -67,6 +71,12 @@ final class OrganizeViewModel: ObservableObject {
     }
 
     // MARK: - Computed Properties
+
+    /// Settings → Organization toggle: convert PDFs to CBZ on confirm.
+    /// Its own UserDefaults key — see SettingsView's declaration.
+    static var convertPDFsOnOrganizeEnabled: Bool {
+        UserDefaults.standard.bool(forKey: "convertPDFsOnOrganize")
+    }
 
     var selectedComic: StagedComic? {
         guard let id = selectedComicID else { return nil }
@@ -170,13 +180,28 @@ final class OrganizeViewModel: ObservableObject {
             }
 
             if isDirectory.boolValue {
+                // Archived originals live under a reserved "Converted PDFs"
+                // folder mirroring the library structure — never re-stage
+                // them when a user rescans their library root.
+                if url.pathComponents.contains(ConvertedPDFArchiver.folderName) {
+                    continue
+                }
                 if let walker = fm.enumerator(
                     at: url,
                     includingPropertiesForKeys: [.isRegularFileKey],
                     options: [.skipsHiddenFiles, .skipsPackageDescendants]
                 ) {
-                    for case let fileURL as URL in walker
-                    where validExtensions.contains(fileURL.pathExtension.lowercased()) {
+                    for case let fileURL as URL in walker {
+                        if fileURL.pathComponents.contains(ConvertedPDFArchiver.folderName) {
+                            var isSubdirectory: ObjCBool = false
+                            if fm.fileExists(atPath: fileURL.path, isDirectory: &isSubdirectory),
+                               isSubdirectory.boolValue {
+                                walker.skipDescendants()
+                            }
+                            continue
+                        }
+                        guard validExtensions.contains(fileURL.pathExtension.lowercased())
+                        else { continue }
                         result.append(fileURL)
                     }
                 }
@@ -370,6 +395,7 @@ final class OrganizeViewModel: ObservableObject {
     /// Note: We look up the CURRENT comic from stagedComics (not the passed-in parameter)
     /// because StagedComic is a struct — the parameter may be a stale copy from view init.
     func confirmMatch(_ comic: StagedComic) async {
+        lastConversionWarning = nil
         guard let index = stagedComics.firstIndex(where: { $0.id == comic.id }) else { return }
 
         // Use the CURRENT version from the array (reflects user edits via updateMetadata)
@@ -380,8 +406,11 @@ final class OrganizeViewModel: ObservableObject {
         // 1. Rename file on disk to match the confirmed metadata.
         //    File I/O runs off the main thread — renaming dozens of staged
         //    files previously blocked the UI for the whole batch.
+        // Pending merges skip the rename: the sources keep their names
+        // (they end up in Converted PDFs) and the merged CBZ is created
+        // under proposedFileName directly.
         let newFileName = current.proposedFileName
-        if newFileName != originalURL.lastPathComponent {
+        if current.mergeSourceURLs == nil, newFileName != originalURL.lastPathComponent {
             let renamedURL: URL? = await Task.detached(priority: .userInitiated) {
                 let newURL = originalURL.deletingLastPathComponent()
                     .appendingPathComponent(newFileName)
@@ -413,6 +442,43 @@ final class OrganizeViewModel: ObservableObject {
             if let renamedURL {
                 finalURL = renamedURL
                 AppLog.organize.debug("[OrganizeViewModel] 📝 Renamed staged file: \(originalURL.lastPathComponent) → \(newFileName)")
+            }
+        }
+
+        // 1.5 Convert to CBZ: always for a pending merge, and for single
+        //     PDFs when the setting is on. On failure a single PDF imports
+        //     natively; a failed merge keeps the item staged with an error.
+        var convertedOriginals: [URL] = []
+        if let mergeSources = current.mergeSourceURLs {
+            let baseName = (newFileName as NSString).deletingPathExtension
+            guard let cbzURL = await convertStagedPDF(
+                sources: mergeSources,
+                staged: current,
+                destinationDirectory: mergeSources[0].deletingLastPathComponent(),
+                baseFileName: baseName)
+            else {
+                // Merge cannot fall back to a native import (there are
+                // several files). Mark the staged item and bail out.
+                if let index = stagedComics.firstIndex(where: { $0.id == current.id }) {
+                    stagedComics[index].status = .error
+                }
+                return
+            }
+            convertedOriginals = mergeSources
+            finalURL = cbzURL
+        } else if finalURL.pathExtension.lowercased() == "pdf",
+                  Self.convertPDFsOnOrganizeEnabled,
+                  current.bookFormat != .ebook
+        {
+            let baseName = finalURL.deletingPathExtension().lastPathComponent
+            if let cbzURL = await convertStagedPDF(
+                sources: [finalURL],
+                staged: current,
+                destinationDirectory: finalURL.deletingLastPathComponent(),
+                baseFileName: baseName)
+            {
+                convertedOriginals = [finalURL]
+                finalURL = cbzURL
             }
         }
 
@@ -473,6 +539,11 @@ final class OrganizeViewModel: ObservableObject {
             lastMoveDestination = nil
         }
 
+        // 3.5 File converted originals under Converted PDFs (best-effort).
+        if !convertedOriginals.isEmpty {
+            archiveConvertedOriginals(convertedOriginals, importedAt: finalURL, staged: current)
+        }
+
         // 3. LEARN from this confirmation:
         //    - remember the series → publisher/format association
         //    - if the user corrected what the filename parse produced, store
@@ -512,6 +583,35 @@ final class OrganizeViewModel: ObservableObject {
     /// Number of checked staged comics.
     var checkedCount: Int { checkedComicIDs.count }
 
+    /// Checked staged PDFs eligible for "Merge into One CBZ" (2+, all
+    /// plain PDFs, none already a pending merge). Empty when ineligible.
+    var checkedPDFsForMerge: [StagedComic] {
+        let checked = stagedComics.filter { checkedComicIDs.contains($0.id) }
+        guard checked.count >= 2,
+            checked.allSatisfy({
+                $0.originalURL.pathExtension.lowercased() == "pdf"
+                    && $0.mergeSourceURLs == nil
+            })
+        else { return [] }
+        return checked
+    }
+
+    /// Collapse `ordered` (2+) into one pending-merge staged item.
+    /// Metadata comes from the first item; the rest leave staging.
+    func mergeStagedPDFs(ordered: [StagedComic]) {
+        guard ordered.count >= 2, var merged = ordered.first else { return }
+        merged.mergeSourceURLs = ordered.map(\.originalURL)
+        merged.reevaluate(userEdited: false)
+        let absorbedIDs = Set(ordered.dropFirst().map(\.id))
+        stagedComics.removeAll { absorbedIDs.contains($0.id) }
+        if let index = stagedComics.firstIndex(where: { $0.id == merged.id }) {
+            stagedComics[index] = merged
+        }
+        checkedComicIDs.subtract(absorbedIDs)
+        checkedComicIDs.remove(merged.id)
+        selectedComicID = merged.id
+    }
+
     /// User folders for the "place into a folder" prompt, sorted alphabetically.
     var availableFolders: [Folder] {
         libraryViewModel.folders.sorted {
@@ -522,6 +622,7 @@ final class OrganizeViewModel: ObservableObject {
     /// Confirm all comics with "Ready" status at once, with batch progress.
     /// Optionally files every newly imported book into a folder.
     func confirmAllReady(folderChoice: ImportFolderChoice = .none) async {
+        lastConversionWarning = nil
         let readyComics = stagedComics.filter { $0.status == .ready }
         guard !readyComics.isEmpty else { return }
 
@@ -552,6 +653,108 @@ final class OrganizeViewModel: ObservableObject {
         if let targetFolderID {
             let newIDs = libraryViewModel.comics.map(\.id).filter { !beforeIDs.contains($0) }
             await libraryViewModel.addComics(newIDs, toFolder: targetFolderID)
+        }
+    }
+
+    // MARK: - PDF → CBZ on Confirm
+
+    /// A metadata carrier for ComicInfoWriter — the staged fields as a Comic.
+    private func comicForConversion(from staged: StagedComic) -> Comic {
+        Comic(
+            filePath: staged.originalURL,
+            fileName: staged.originalURL.lastPathComponent,
+            title: staged.title,
+            publisher: staged.publisher,
+            series: staged.series.isEmpty ? nil : staged.series,
+            issueNumber: staged.issueNumber,
+            volume: staged.volume,
+            year: staged.year,
+            bookFormat: staged.bookFormat,
+            writer: staged.writer,
+            artist: staged.artist,
+            coverArtist: staged.coverArtist,
+            colorist: staged.colorist,
+            inker: staged.inker,
+            editor: staged.editor,
+            summary: staged.summary,
+            fileType: .pdf
+        )
+    }
+
+    /// Converts staged PDF source(s) into one CBZ in `destinationDirectory`.
+    /// Returns the CBZ URL, or nil on failure (caller imports the PDF
+    /// natively — conversion failure never blocks an import).
+    private func convertStagedPDF(
+        sources: [URL],
+        staged: StagedComic,
+        destinationDirectory: URL,
+        baseFileName: String
+    ) async -> URL? {
+        let metadata = comicForConversion(from: staged)
+        let displayName = sources.first?.lastPathComponent ?? staged.originalFileName
+        var scoped: [URL] = []
+        for url in sources where url.startAccessingSecurityScopedResource() {
+            scoped.append(url)
+        }
+        defer { for url in scoped { url.stopAccessingSecurityScopedResource() } }
+
+        do {
+            let result = try await Task.detached(priority: .userInitiated) {
+                try PDFToCBZConverter.convert(
+                    sources: sources, metadata: metadata,
+                    destinationDirectory: destinationDirectory,
+                    baseFileName: baseFileName
+                ) { page, total in
+                    Task { @MainActor [weak self] in
+                        self?.processingDetail =
+                            "Converting \(displayName) — page \(page) of \(total)"
+                    }
+                }
+            }.value
+            processingDetail = nil
+            return result.cbzURL
+        } catch {
+            AppLog.organize.error(
+                "[OrganizeViewModel] ⚠️ PDF→CBZ failed (importing natively): \(error.localizedDescription)")
+            processingDetail = nil
+            lastConversionWarning =
+                "\(displayName): conversion failed (\(error.localizedDescription)) — imported as PDF."
+            return nil
+        }
+    }
+
+    /// Files converted originals under <root>/Converted PDFs/…, mirroring
+    /// the folder the imported CBZ lives in. Best-effort: failures log.
+    private func archiveConvertedOriginals(
+        _ urls: [URL], importedAt cbzURL: URL, staged: StagedComic
+    ) {
+        guard let libraryRoot = SettingsViewModel().resolveHomeLibraryURL() else {
+            AppLog.organize.info(
+                "[OrganizeViewModel] No home library set — converted original(s) left in place")
+            return
+        }
+        let rootAccessing = libraryRoot.startAccessingSecurityScopedResource()
+        defer { if rootAccessing { libraryRoot.stopAccessingSecurityScopedResource() } }
+
+        // Mirror where the CBZ actually landed (auto-sort may have moved
+        // it). If the record can't be found, fall back to the staged
+        // metadata — mirrorSubpath then computes the destination folder
+        // the CBZ would be filed into.
+        let landed = libraryViewModel.comics.first {
+            $0.filePath.standardizedFileURL == cbzURL.standardizedFileURL
+                || $0.fileName == cbzURL.lastPathComponent
+        }
+        let subpathSource = landed ?? comicForConversion(from: staged)
+        let subpath = ConvertedPDFArchiver.mirrorSubpath(
+            for: subpathSource, libraryRoot: libraryRoot)
+        for url in urls {
+            do {
+                try ConvertedPDFArchiver.archiveOriginal(
+                    url, libraryRoot: libraryRoot, mirrorSubpath: subpath)
+            } catch {
+                AppLog.organize.error(
+                    "[OrganizeViewModel] ⚠️ Couldn't file original \(url.lastPathComponent): \(error.localizedDescription)")
+            }
         }
     }
 
