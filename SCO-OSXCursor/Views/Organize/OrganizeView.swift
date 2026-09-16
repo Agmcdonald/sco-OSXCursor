@@ -169,6 +169,26 @@ struct OrganizeView: View {
                         homeFolderBanner
                     }
 
+                    if viewModel.isProcessing {
+                        VStack(alignment: .leading, spacing: Spacing.xs) {
+                            ProgressView(value: viewModel.processingProgress)
+                            if let detail = viewModel.processingDetail {
+                                Text(detail)
+                                    .font(Typography.caption)
+                                    .foregroundColor(TextColors.secondary)
+                            }
+                        }
+                        .padding(.horizontal, Spacing.lg)
+                        .padding(.vertical, Spacing.sm)
+                    }
+
+                    if let warning = viewModel.lastConversionWarning {
+                        Label(warning, systemImage: "exclamationmark.triangle")
+                            .font(Typography.caption)
+                            .foregroundColor(.orange)
+                            .padding(.horizontal, Spacing.lg)
+                    }
+
                     // List
                     List(viewModel.stagedComics, selection: $viewModel.selectedComicID) { comic in
                         HStack(spacing: 8) {
