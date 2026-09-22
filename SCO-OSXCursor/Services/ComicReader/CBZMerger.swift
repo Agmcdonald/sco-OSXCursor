@@ -8,10 +8,15 @@
 //
 //  Page order is the contract. Each source is read in the same natural
 //  order the reader uses (CBZReader.sortedImageEntries), and pages are
-//  re-named to a single zero-padded sequence (0001.jpg, 0002.png, …) so the
-//  merged book reads front-to-back in SCO and in every other reader that
-//  sorts entries by path. Original page names are deliberately NOT kept:
-//  two parts that both call their first page "001.jpg" would interleave.
+//  re-named to a single continuous sequence so the merged book reads
+//  front-to-back in SCO and in every other reader that sorts entries by
+//  path. Original page names are deliberately NOT kept: two parts that
+//  both call their first page "001.jpg" would interleave.
+//
+//  The naming, the compression choices, and the assemble-verify-move
+//  contract are deliberately the same as PDFToCBZConverter's: P00001.jpg,
+//  P00002.png, … A CBZ this app produced should look the same inside
+//  whether conversion or merging made it.
 //
 //  Safety contract: nothing is written over. The merged archive is built in
 //  a temp folder on the destination's volume, verified there, and only then
@@ -192,7 +197,7 @@ final class CBZMerger {
                 }
 
                 pageNumber += 1
-                let path = Self.pageName(number: pageNumber, total: totalPages, like: entry.path)
+                let path = Self.pageName(number: pageNumber, like: entry.path)
                 try output.addEntry(
                     with: path, type: .file,
                     uncompressedSize: Int64(data.count),
@@ -281,13 +286,13 @@ final class CBZMerger {
 
     // MARK: - Helpers
 
-    /// Flat, zero-padded page name that keeps the source's file extension
-    /// (readers pick the decoder from it). Padding grows with the page
-    /// count so 10,000-page merges still sort correctly.
-    static func pageName(number: Int, total: Int, like originalPath: String) -> String {
-        let digits = max(4, String(total).count)
+    /// Flat page name in PDFToCBZConverter's `P%05d` sequence, keeping the
+    /// source page's own file extension — readers pick the decoder from it,
+    /// so a PNG page must not be renamed to .jpg (the converter's pages are
+    /// always JPEG, hence its hard-coded extension).
+    static func pageName(number: Int, like originalPath: String) -> String {
         let ext = (originalPath as NSString).pathExtension.lowercased()
-        let stem = String(format: "%0\(digits)d", number)
+        let stem = String(format: "P%05d", number)
         return ext.isEmpty ? stem : "\(stem).\(ext)"
     }
 
@@ -302,31 +307,21 @@ final class CBZMerger {
         guard roundTrip == expected else { throw CBZMergeError.verificationFailed }
     }
 
-    /// A `.cbz` URL inside `folder` for `baseName`, with " 2", " 3"… appended
-    /// until the name is free. Used so a merge never has to ask the user to
-    /// resolve a collision it can resolve itself.
+    /// A free `.cbz` URL inside `folder` for `baseName`. Collisions are
+    /// resolved by LibraryFileService — the same "Name (2).cbz" shape every
+    /// other file SCO writes gets, PDF conversions included.
     static func availableURL(in folder: URL, baseName: String) -> URL {
         let stem = sanitizedFileName(baseName)
-        var candidate = folder.appendingPathComponent("\(stem).cbz")
-        var suffix = 2
-        while FileManager.default.fileExists(atPath: candidate.path) {
-            candidate = folder.appendingPathComponent("\(stem) \(suffix).cbz")
-            suffix += 1
-        }
-        return candidate
+        let candidate = folder.appendingPathComponent("\(stem).cbz")
+        return LibraryFileService.shared.resolveConflict(at: candidate)
     }
 
-    /// Strips the characters a file name can't carry, collapses whitespace,
-    /// and falls back to a generic stem when nothing usable is left.
+    /// File-name stem with illegal characters stripped, falling back to a
+    /// generic name when nothing usable is left. Delegates the stripping to
+    /// LibraryFileService so a merged book's name is cleaned by the same
+    /// rules as an organized or converted one.
     static func sanitizedFileName(_ raw: String) -> String {
-        let illegal = CharacterSet(charactersIn: "/\\:*?\"<>|\n\r\t")
-        let cleaned = raw.components(separatedBy: illegal).joined(separator: " ")
-        let collapsed = cleaned.split(separator: " ", omittingEmptySubsequences: true)
-            .joined(separator: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            // A leading dot would hide the file; trailing dots break on some
-            // volumes.
-            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
-        return collapsed.isEmpty ? "Merged Comic" : collapsed
+        let cleaned = LibraryFileService.shared.sanitizeFolderName(raw)
+        return cleaned.isEmpty ? "Merged Comic" : cleaned
     }
 }
