@@ -260,7 +260,8 @@ struct LibraryHeaderView: View {
             onSendToDevice: selectionActions.onSendToDevice,
             onEmbedMetadata: selectionActions.onEmbedMetadata,
             isEmbeddingMetadata: selectionActions.isEmbeddingMetadata,
-            onConvertToCBZ: selectionActions.onConvertToCBZ
+            onConvertToCBZ: selectionActions.onConvertToCBZ,
+            onMergeToCBZ: selectionActions.onMergeToCBZ
         )
     }
 

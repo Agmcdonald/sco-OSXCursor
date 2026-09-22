@@ -47,6 +47,8 @@ struct LibrarySelectionBar: View {
     var isEmbeddingMetadata: Bool = false
     /// Convert every selected PDF book to CBZ (opens the conversion sheet).
     var onConvertToCBZ: () -> Void = {}
+    /// Combine the selected CBZ files into one larger CBZ.
+    var onMergeToCBZ: () -> Void = {}
 
     var body: some View {
         // Two rows (Andrew, Aug 7): one long row squeezed the trailing
@@ -341,6 +343,31 @@ struct LibrarySelectionBar: View {
             .buttonStyle(.plain)
             .disabled(selectedComics.isEmpty)
             .help("Convert the selected PDF books to CBZ. Non-PDFs are skipped.")
+
+            // Combine the selection into one larger CBZ. Two books is the
+            // minimum a merge can mean, so it stays disabled below that
+            // rather than opening a sheet that can't proceed.
+            Button(action: {
+                if selectedComics.count >= 2 {
+                    onMergeToCBZ()
+                }
+            }) {
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: "square.stack.3d.down.right")
+                    Text("Merge to CBZ")
+                        .font(Typography.bodySmall)
+                }
+                .foregroundColor(
+                    selectedComics.count < 2 ? TextColors.tertiary : TextColors.primary
+                )
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .background(BackgroundColors.elevated)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+            .disabled(selectedComics.count < 2)
+            .help("Combine the selected CBZ files into one larger CBZ, in an order you choose. Originals are kept unless you ask for them to be trashed.")
 
             // Send the selection to another device — Mac → iPad and
             // iPad/iPhone → Mac both go through the same export sheet.

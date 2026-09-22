@@ -84,13 +84,8 @@ extension LibraryViewModel {
         defer { if didStartAccess { fileURL.stopAccessingSecurityScopedResource() } }
 
         // Conversions rewrite files under the home library root — hold
-        // its scope for the whole operation (same rule as embedComicInfo,
-        // whose `beginHomeLibraryScope()` is `private` to LibraryViewModel.swift
-        // and so isn't reachable from this extension; inlined here instead).
-        let scopedLibraryRoot: URL? = {
-            guard let root = SettingsViewModel().resolveHomeLibraryURL() else { return nil }
-            return root.startAccessingSecurityScopedResource() ? root : nil
-        }()
+        // its scope for the whole operation (same rule as embedComicInfo).
+        let scopedLibraryRoot = beginHomeLibraryScope()
         defer { scopedLibraryRoot?.stopAccessingSecurityScopedResource() }
 
         let sourceURL = fileURL

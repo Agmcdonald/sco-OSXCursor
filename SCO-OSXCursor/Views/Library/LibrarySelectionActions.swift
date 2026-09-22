@@ -30,6 +30,9 @@ struct LibrarySelectionActions {
     var onEmbedMetadata: () -> Void = {}
     /// Convert every selected PDF book to CBZ (opens the conversion sheet).
     var onConvertToCBZ: () -> Void = {}
+    /// Combine the selected CBZ files into one larger CBZ. Needs two or
+    /// more books, so the control is disabled below that.
+    var onMergeToCBZ: () -> Void = {}
 
     /// Disables the metadata button and shows a spinner while a batch runs.
     var isFetchingMetadata: Bool = false

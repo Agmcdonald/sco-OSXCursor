@@ -10,6 +10,7 @@
 		1A3F2CAD2EBCD7F400257033 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 1A3F2CAC2EBCD7F400257033 /* GRDB */; };
 		1A7CB0012F41FA0000CB0001 /* Unrar in Frameworks */ = {isa = PBXBuildFile; productRef = 1A7CB0002F41FA0000CB0001 /* Unrar */; };
 		1ABFF6492EBC640E00485435 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 1ABFF6482EBC640E00485435 /* ZIPFoundation */; };
+		1AC0FE022FA100010000CB01 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 1AC0FE012FA100010000CB01 /* ZIPFoundation */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -89,6 +90,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1AC0FE022FA100010000CB01 /* ZIPFoundation in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -168,6 +170,7 @@
 			);
 			name = "SCO-OSXCursorTests";
 			packageProductDependencies = (
+				1AC0FE012FA100010000CB01 /* ZIPFoundation */,
 			);
 			productName = "SCO-OSXCursorTests";
 			productReference = 1ABFF61D2EBC3B6800485435 /* SCO-OSXCursorTests.xctest */;
@@ -735,6 +738,11 @@
 			productName = Unrar;
 		};
 		1ABFF6482EBC640E00485435 /* ZIPFoundation */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1ABFF6472EBC640E00485435 /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
+			productName = ZIPFoundation;
+		};
+		1AC0FE012FA100010000CB01 /* ZIPFoundation */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 1ABFF6472EBC640E00485435 /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
 			productName = ZIPFoundation;

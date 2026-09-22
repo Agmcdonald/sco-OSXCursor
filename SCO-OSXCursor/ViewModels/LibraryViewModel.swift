@@ -1291,7 +1291,9 @@ final class LibraryViewModel: ObservableObject {
     /// started) — the operation then proceeds exactly as it did before, and
     /// `TrashFileStore` reports an unwritable destination as a fallback rather
     /// than a hard failure.
-    private func beginHomeLibraryScope() -> URL? {
+    /// Internal (not private): the ConvertPDF and MergeCBZ extensions in
+    /// their own files hold the home-library scope the same way.
+    func beginHomeLibraryScope() -> URL? {
         guard let root = SettingsViewModel().resolveHomeLibraryURL() else { return nil }
         return root.startAccessingSecurityScopedResource() ? root : nil
     }

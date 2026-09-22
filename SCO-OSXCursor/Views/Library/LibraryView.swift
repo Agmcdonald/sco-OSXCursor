@@ -148,9 +148,11 @@ struct LibraryView: View {
     @State private var showingBatchReview = false
     // Save Metadata to File (ComicInfo.xml embed) — single + batch
     @State private var isEmbeddingMetadata = false
-    // Convert to CBZ (post-hoc) — single + batch sheet
+// Convert to CBZ (post-hoc) — single + batch sheet
     @State private var showingConvertSheet = false
     @State private var convertSelection: [Comic] = []
+    /// Drives the "Merge into CBZ…" sheet for the current selection.
+    @State private var mergeRequest: CBZMergeRequest?
 
     // MARK: - Derived Data
 
@@ -576,7 +578,12 @@ struct LibraryView: View {
                 transferExportRequest = TransferExportRequest(comics: selected)
             },
             onEmbedMetadata: embedMetadataForSelected,
-            onConvertToCBZ: { convertToCBZForSelected() },
+onConvertToCBZ: { convertToCBZForSelected() },
+            onMergeToCBZ: {
+                let selected = viewModel.comics.filter { selectedComics.contains($0.id) }
+                guard selected.count >= 2 else { return }
+                mergeRequest = CBZMergeRequest(comics: selected)
+            },
             isFetchingMetadata: isBatchFetching,
             isEmbeddingMetadata: isEmbeddingMetadata,
             folders: viewModel.folders,
@@ -894,8 +901,20 @@ struct LibraryView: View {
                 selectedComics.removeAll()
             }
         }
-        .sheet(isPresented: $showingConvertSheet) {
+.sheet(isPresented: $showingConvertSheet) {
             ConvertToCBZSheet(selection: convertSelection, library: viewModel)
+        }
+        // Merge the selection into one larger CBZ — order, output metadata,
+        // and what happens to the originals are all decided in the sheet.
+        .sheet(item: $mergeRequest) { request in
+            MergeCBZSheet(viewModel: viewModel, comics: request.comics) { message in
+                mergeRequest = nil
+                if let message { flashComicVineStatus(message) }
+                if isSelectionMode {
+                    selectedComics.removeAll()
+                    isSelectionMode = false
+                }
+            }
         }
         // Mac → iPad transfer: package the book(s) then hand to the share sheet
         .sheet(item: $transferExportRequest) { request in
