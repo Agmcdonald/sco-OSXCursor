@@ -259,7 +259,8 @@ struct LibraryHeaderView: View {
             onRemoveFromFolder: selectionActions.onRemoveFromFolder,
             onSendToDevice: selectionActions.onSendToDevice,
             onEmbedMetadata: selectionActions.onEmbedMetadata,
-            isEmbeddingMetadata: selectionActions.isEmbeddingMetadata
+            isEmbeddingMetadata: selectionActions.isEmbeddingMetadata,
+            onMergeToCBZ: selectionActions.onMergeToCBZ
         )
     }
 

@@ -28,6 +28,9 @@ struct LibrarySelectionActions {
     var onSendToDevice: () -> Void = {}
     /// Write each selected book's metadata back into its CBZ as ComicInfo.xml.
     var onEmbedMetadata: () -> Void = {}
+    /// Combine the selected CBZ files into one larger CBZ. Needs two or
+    /// more books, so the control is disabled below that.
+    var onMergeToCBZ: () -> Void = {}
 
     /// Disables the metadata button and shows a spinner while a batch runs.
     var isFetchingMetadata: Bool = false

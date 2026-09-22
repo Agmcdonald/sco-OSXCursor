@@ -117,6 +117,14 @@
             .disabled(actions.isEmbeddingMetadata)
             .help("Write each selected book's metadata into its CBZ file as ComicInfo.xml. Only CBZ files are rewritten; other formats are skipped.")
 
+            Divider()
+
+            Button(action: actions.onMergeToCBZ) {
+                Label("Merge into CBZ…", systemImage: "square.stack.3d.down.right")
+            }
+            .disabled(selectedCount < 2)
+            .help("Combine the selected CBZ files into one larger CBZ, in an order you choose.")
+
             let removable = actions.removalFolders()
             if !removable.isEmpty {
                 Divider()

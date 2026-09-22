@@ -46,7 +46,7 @@ class CBZReader: ComicReaderProtocol {
 
         // Open archive and list pages
         let archive = try Archive(url: url, accessMode: .read)
-        let sortedEntries = try sortedImageEntries(from: archive)
+        let sortedEntries = try Self.sortedImageEntries(from: archive)
 
         guard !sortedEntries.isEmpty else {
             throw ComicReaderError.noImages
@@ -109,7 +109,7 @@ class CBZReader: ComicReaderProtocol {
         // Re-opening the archive per page is cheap for ZIP (central directory
         // read only) and keeps this method safe to call from concurrent tasks.
         let archive = try Archive(url: url, accessMode: .read)
-        let sortedEntries = try sortedImageEntries(from: archive)
+        let sortedEntries = try Self.sortedImageEntries(from: archive)
 
         guard index >= 0 && index < sortedEntries.count else {
             throw ComicReaderError.extractionFailed
@@ -165,7 +165,7 @@ class CBZReader: ComicReaderProtocol {
         }
 
         let archive = try Archive(url: url, accessMode: .read)
-        let sortedEntries = try sortedImageEntries(from: archive)
+        let sortedEntries = try Self.sortedImageEntries(from: archive)
 
         guard let firstEntry = sortedEntries.first else {
             throw ComicReaderError.noImages
@@ -199,13 +199,17 @@ class CBZReader: ComicReaderProtocol {
         }
 
         let archive = try Archive(url: url, accessMode: .read)
-        return try sortedImageEntries(from: archive).count
+        return try Self.sortedImageEntries(from: archive).count
     }
 
     // MARK: - Helper Methods
 
     /// All image entries from the archive, naturally sorted (1, 2, 10 — not 1, 10, 2).
-    private func sortedImageEntries(from archive: Archive) throws -> [Entry] {
+    ///
+    /// Static and shared: CBZMerger has to lay pages out in exactly the
+    /// order the reader will show them, and a second copy of this rule
+    /// would be free to drift from it.
+    static func sortedImageEntries(from archive: Archive) throws -> [Entry] {
         let imageExtensions = ["jpg", "jpeg", "png", "gif", "webp", "bmp"]
 
         let imageEntries = archive.filter { entry in

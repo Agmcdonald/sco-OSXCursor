@@ -45,6 +45,8 @@ struct LibrarySelectionBar: View {
     var onEmbedMetadata: () -> Void = {}
     /// Disables Save Metadata to File while an embed batch is rewriting files.
     var isEmbeddingMetadata: Bool = false
+    /// Combine the selected CBZ files into one larger CBZ.
+    var onMergeToCBZ: () -> Void = {}
 
     var body: some View {
         // Two rows (Andrew, Aug 7): one long row squeezed the trailing
@@ -316,6 +318,31 @@ struct LibrarySelectionBar: View {
             .buttonStyle(.plain)
             .disabled(selectedComics.isEmpty || isEmbeddingMetadata)
             .help("Write each selected book's metadata into its CBZ file as ComicInfo.xml. Only CBZ files are rewritten; other formats are skipped.")
+
+            // Combine the selection into one larger CBZ. Two books is the
+            // minimum a merge can mean, so it stays disabled below that
+            // rather than opening a sheet that can't proceed.
+            Button(action: {
+                if selectedComics.count >= 2 {
+                    onMergeToCBZ()
+                }
+            }) {
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: "square.stack.3d.down.right")
+                    Text("Merge to CBZ")
+                        .font(Typography.bodySmall)
+                }
+                .foregroundColor(
+                    selectedComics.count < 2 ? TextColors.tertiary : TextColors.primary
+                )
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .background(BackgroundColors.elevated)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+            .disabled(selectedComics.count < 2)
+            .help("Combine the selected CBZ files into one larger CBZ, in an order you choose. Originals are kept unless you ask for them to be trashed.")
 
             // Send the selection to another device — Mac → iPad and
             // iPad/iPhone → Mac both go through the same export sheet.

@@ -555,6 +555,13 @@ struct UserManualView: View {
                         )
 
                         FeatureRow(
+                            icon: "square.stack.3d.down.right",
+                            title: "Merging Several CBZ Files Into One",
+                            description:
+                                "Collecting a run into a single book? Select the issues, then choose 'Merge to CBZ' in the selection bar (iPad and iPhone: More → Merge into CBZ…). The sheet lists the parts in reading order — sort them by file name or nudge any of them up and down — and lets you name the merged book and set its series, publisher, year, and volume before it's written as a standard ComicInfo.xml inside the new archive. Pages are copied in order and renumbered as one sequence, so the merged file reads front-to-back everywhere. Nothing is overwritten: the merged archive is built aside, verified, and only then saved into your Home Library (or a folder you pick), and your original files are left exactly as they were unless you tick 'Move the original files to the Trash' — and even then they go to SCO's Trash, restorable from Maintenance. CBZ only; any PDF, CBR, or EPUB in the selection is listed as left out instead of being silently dropped."
+                        )
+
+                        FeatureRow(
                             icon: "photo.artframe",
                             title: "Publisher Banners",
                             description:
