@@ -472,10 +472,10 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "RapturePress.SuperComicOrganizer-App";
 				PRODUCT_MODULE_NAME = SCO_OSXCursor;
 				PRODUCT_NAME = "Super Comic Organizer";
+				REGISTER_APP_GROUPS = YES;
 				SCO_DISPLAY_NAME = "Super Comic Organizer";
 				"SCO_DISPLAY_NAME[sdk=iphoneos*]" = SCOrganizer;
 				"SCO_DISPLAY_NAME[sdk=iphonesimulator*]" = SCOrganizer;
-				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
@@ -533,10 +533,10 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "RapturePress.SuperComicOrganizer-App";
 				PRODUCT_MODULE_NAME = SCO_OSXCursor;
 				PRODUCT_NAME = "Super Comic Organizer";
+				REGISTER_APP_GROUPS = YES;
 				SCO_DISPLAY_NAME = "Super Comic Organizer";
 				"SCO_DISPLAY_NAME[sdk=iphoneos*]" = SCOrganizer;
 				"SCO_DISPLAY_NAME[sdk=iphonesimulator*]" = SCOrganizer;
-				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
