@@ -116,7 +116,7 @@ import ZIPFoundation
         let merged = try pages(in: destination)
         #expect(
             merged.map { $0.path } == [
-                "0001.jpg", "0002.jpg", "0003.jpg", "0004.jpg", "0005.jpg",
+                "P00001.jpg", "P00002.jpg", "P00003.jpg", "P00004.jpg", "P00005.jpg",
             ])
         #expect(
             merged.map { String(decoding: $0.data) } == [
@@ -147,7 +147,7 @@ import ZIPFoundation
             into: destination, metadata: nil)
 
         let merged = try pages(in: destination)
-        #expect(merged.map { $0.path } == ["0001.png", "0002.webp"])
+        #expect(merged.map { $0.path } == ["P00001.png", "P00002.webp"])
     }
 
     @Test func mergeIgnoresNonImageEntriesFromTheParts() throws {
@@ -178,7 +178,7 @@ import ZIPFoundation
             into: destination, metadata: nil)
 
         let archive = try Archive(url: destination, accessMode: .read)
-        #expect(archive.map(\.path).sorted() == ["0001.jpg", "0002.jpg"])
+        #expect(archive.map(\.path).sorted() == ["P00001.jpg", "P00002.jpg"])
     }
 
     // MARK: - ComicInfo.xml
@@ -379,10 +379,16 @@ import ZIPFoundation
 
     // MARK: - Naming Helpers
 
-    @Test func pageNamesPadToTheMergedPageCount() {
-        #expect(CBZMerger.pageName(number: 7, total: 9, like: "x/y/p.JPG") == "0007.jpg")
-        #expect(CBZMerger.pageName(number: 7, total: 20000, like: "p.jpg") == "00007.jpg")
-        #expect(CBZMerger.pageName(number: 1, total: 2, like: "noextension") == "0001")
+    // Merged pages must be named exactly the way PDFToCBZConverter names
+    // converted ones, so a CBZ this app produced looks the same inside
+    // whichever feature built it.
+    @Test func pageNamesMatchTheConvertersSequence() {
+        #expect(CBZMerger.pageName(number: 7, like: "x/y/p.JPG") == "P00007.jpg")
+        #expect(CBZMerger.pageName(number: 12345, like: "p.jpg") == "P12345.jpg")
+        // The converter always writes JPEG; a merge carries whatever the
+        // source page was, because the extension picks the decoder.
+        #expect(CBZMerger.pageName(number: 2, like: "art.webp") == "P00002.webp")
+        #expect(CBZMerger.pageName(number: 1, like: "noextension") == "P00001")
     }
 
     @Test func sanitizedFileNameStripsPathAndPaddingCharacters() {
@@ -392,6 +398,8 @@ import ZIPFoundation
         #expect(CBZMerger.sanitizedFileName("") == "Merged Comic")
     }
 
+    // Collisions get LibraryFileService's "(2)" shape, the same one a
+    // converted PDF or an organized file gets — not a second dialect.
     @Test func availableURLSidestepsNamesAlreadyOnDisk() throws {
         let scratch = try makeScratch()
         defer { try? FileManager.default.removeItem(at: scratch) }
@@ -403,12 +411,12 @@ import ZIPFoundation
         try Data().write(to: scratch.appendingPathComponent("Saga Vol. 1.cbz"))
         #expect(
             CBZMerger.availableURL(in: scratch, baseName: "Saga Vol. 1").lastPathComponent
-                == "Saga Vol. 1 2.cbz")
+                == "Saga Vol. 1 (2).cbz")
 
-        try Data().write(to: scratch.appendingPathComponent("Saga Vol. 1 2.cbz"))
+        try Data().write(to: scratch.appendingPathComponent("Saga Vol. 1 (2).cbz"))
         #expect(
             CBZMerger.availableURL(in: scratch, baseName: "Saga Vol. 1").lastPathComponent
-                == "Saga Vol. 1 3.cbz")
+                == "Saga Vol. 1 (3).cbz")
     }
 
     // MARK: - Selection Filtering
